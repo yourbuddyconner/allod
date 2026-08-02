@@ -1,0 +1,100 @@
+# Part 5 — Provenance & Attestation *(L1 lineage / L3 attestation)*
+
+## 5.1 Lineage model
+
+Every object revision carries lineage. Lineage is REQUIRED at L1.
+
+| Field | Description |
+|---|---|
+| `derived_from` | Document refs and/or object refs this revision derives from |
+| `derived_by` | The principal that produced it: a human, a service, or an indexer |
+| `method` | `manual` \| `deterministic` \| `model-assisted` |
+| `tool` | For non-manual methods: tool identity plus version, e.g. `rust-analyzer@0.4.2110` or a model ID |
+| `changeset` | The changeset that introduced this revision. The log implies this. It is restated for projection convenience |
+
+Lineage composes transitively. A claim derived from a summary derived from
+a transcript carries the full chain. An implementation MUST be able to
+answer, from the log alone: "show me every document this claim rests on."
+
+## 5.2 Attestation envelope
+
+An attestation envelope is a signed statement by an **attester** about an
+execution. Lineage says "the log says X did this." An envelope strengthens
+that to "an attested environment provably did this."
+
+| Field | Description |
+|---|---|
+| `statement` | What is attested: `{ changeset_hash, policy_context_hash?, decision?, indexer_identity?, input_hashes[] }` |
+| `attester` | Principal ref of the attesting environment |
+| `evidence` | Platform evidence: a TEE quote or measurement chain (e.g. AWS Nitro attestation document, TDX quote), or `none` for a bare signature |
+| `evidence_type` | Names the verification procedure for `evidence` |
+| `signature` | By the attested environment's key, bound to the measurement in `evidence` |
+
+Design constraints:
+
+- The envelope is agnostic to evidence format. A new TEE platform adds an
+  `evidence_type` entry. It does not require a spec revision.
+- The envelope is shaped so a W3C Verifiable Credential or a C2PA manifest
+  can carry it. Allod does not invent a rival outer wrapper.
+- An envelope with `evidence: none` is just a signature. It attests to key
+  possession, not execution integrity. Verification results MUST
+  distinguish the two.
+
+## 5.3 Verification procedures
+
+A verifier receives a graph, or a subgraph plus checkpoint. It can check
+four levels, in increasing strength. Each level needs only the log and
+public keys. Level 4 also needs hardware vendor roots.
+
+1. **Integrity.** Every revision hash and state hash recomputes.
+2. **Authorship.** Every changeset signature verifies against its
+   principal's registered keys (§6.2), as of that changeset's parent
+   state.
+3. **Governance** (L2). Every changeset's decision-record set satisfies
+   the policy in force at its proposal. This is the audit question of
+   §4.5.
+4. **Attestation** (L3). Every envelope's evidence chain verifies to a
+   trusted measurement root. The measured code identity is one the
+   verifier accepts.
+
+Verification MUST NOT require contact with the graph's host. This is
+design principle 3 in operational form.
+
+## 5.4 Selective disclosure
+
+A holder can prove properties of a graph without revealing its contents.
+
+- **Subgraph proofs.** The state hash is a Merkle root (§1.7). A holder
+  can reveal a subgraph plus Merkle paths. This proves membership in a
+  state without revealing siblings.
+- **Attested predicates.** At L3, an attested environment can evaluate a
+  predicate over a private graph. It emits an envelope that attests the
+  result. Example: "a node classified `kyc/verified` exists for subject
+  S." The fact is revealed. The node is not. The predicate's code
+  identity is in the measurement, so the verifier knows exactly what
+  question was answered.
+- **Redacted projections.** A redacted projection (Part 7) carries
+  tombstone hashes. Its state stays checkable against the full graph's
+  state hash.
+
+## 5.5 Attested execution (L3)
+
+Two workloads justify TEE execution. Both are small on purpose.
+
+1. **The attested indexer** (Part 8). Classification runs inside an
+   attested environment. This matters most for model-assisted
+   classification. The envelope binds the input document hashes, the
+   indexer code identity, the model identity, and the output changeset
+   hash. Consumers can trust machine-written knowledge to exactly the
+   degree they trust the measured pipeline. This matters most in
+   multi-writer and federated settings, where writers do not trust each
+   other.
+2. **The attested admission gate** (§4.5). The L2-enforced write path
+   runs attested. A third party can verify that nothing enters the graph
+   except through policy. "Our process requires review" changes from an
+   org-chart claim into a cryptographic one. Compliance regimes buy that
+   property.
+
+L3 is an optional strengthening. Nothing outside this section depends on
+it (design principle 2). The reference MVP demonstrates it once. It does
+not require it throughout.
