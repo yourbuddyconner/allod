@@ -1,0 +1,15 @@
+# spec — specification taxonomy, version 1 (projection form, §2.5)
+
+taxonomy: spec
+version: 1
+terms:
+
+  # Normative text gets elevated review. Informative text moves faster.
+  - { name: spec,             parents: [] }
+  - { name: spec/normative,   parents: [spec] }
+  - { name: spec/informative, parents: [spec] }
+
+  # Stability.
+  - { name: stability,        parents: [] }
+  - { name: stability/draft,  parents: [stability] }
+  - { name: stability/stable, parents: [stability] }

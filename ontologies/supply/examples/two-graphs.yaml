@@ -1,0 +1,106 @@
+# Federation across two sovereign graphs. Objects above the divider
+# live in the supplier's graph, objects below it in the manufacturer's.
+# Hashes and IDs are illustrative.
+
+# ======================= SUPPLIER'S GRAPH ==========================
+# Graph ID: sha256:5a9d… (its genesis hash, §9.2)
+
+# The batch and its conflict-free certification, anchored to the
+# certificate bytes and classified for customer disclosure.
+---
+kind: node
+id: "bt10…"
+rev: "sha256:1010…"
+type: supply/Batch@1
+attributes:
+  lot: "TA-2026-0331"
+  produced_on: 2026-03-31
+  quantity: 50000
+---
+kind: node
+id: "ct20…"
+rev: "sha256:2020…"
+type: supply/Certification@1
+attributes:
+  standard: "RMI conflict-free"
+  issued_on: 2026-01-15
+  expires_on: 2027-01-15
+  certificate: { document: "docC…", content_hash: "sha256:cafe…" }
+---
+kind: edge
+type: supply/certifies@1
+from: "node:ct20…"
+to: "node:bt10…"
+---
+kind: classification
+subject: "node:ct20…"
+term: disclosure/customer@1
+asserted_by: "principal:supplier-quality"
+basis: manual
+
+# The grant that authorizes disclosure to the manufacturer. Issuing it
+# was a governed changeset, so the supplier's log answers who shared
+# what, with whom, under whose approval (§9.4).
+---
+kind: node
+id: "gr30…"
+rev: "sha256:3030…"
+type: core/Grant@1
+attributes:
+  audience: "graph:sha256:77e1…"       # the manufacturer's graph ID
+  scope: { region: "disclosure/customer" }
+  rights: [ "state", "subscribe" ]
+  valid_until: 2027-01-15T00:00:00Z
+
+# ===================== MANUFACTURER'S GRAPH ========================
+# Graph ID: sha256:77e1…
+
+# The supplier as a peer (§9.3). Key learning happened once,
+# out-of-band, and rotation verifies from the supplier's own
+# governance chain after that.
+---
+kind: node
+id: "pr40…"
+rev: "sha256:4040…"
+type: core/Peer@1
+attributes:
+  graph_id: "sha256:5a9d…"
+  root_keys: [ "key:ed25519:aa88…" ]
+  locators: [ "https://graph.supplier.example/allod/sync" ]
+  trust_basis: "out-of-band"
+
+# The imported certification. The manufacturer's importer authored the
+# proposal, its policy admitted it, and lineage points at the
+# supplier's objects by allod: reference (§9.6). The provenance chain
+# crosses the boundary intact: local claim, foreign changeset, foreign
+# certificate bytes.
+---
+kind: node
+id: "ic50…"
+rev: "sha256:5050…"
+type: supply/Certification@1
+attributes:
+  standard: "RMI conflict-free"
+  issued_on: 2026-01-15
+  expires_on: 2027-01-15
+  certificate: { document: "docC…", content_hash: "sha256:cafe…" }
+provenance:
+  derived_from: ["allod:sha256:5a9d…/ct20…@sha256:2020…"]
+  derived_by: "principal:import-runner"
+  method: deterministic
+  tool: "allod-import@0.3"
+  changeset: "sha256:6060…"
+---
+kind: decision-record
+subject: "sha256:6060…"                # the import proposal
+policy_context: "sha256:8181…"
+verdict: approve
+deciders: [ { principal: "principal:mfg-quality", signature: "sig:…" } ]
+timestamp: 2026-08-02T20:11:00-07:00
+
+# The payoff, at L3: a customer asks "does every component batch in
+# shipment S carry an unexpired conflict-free certification" and the
+# manufacturer's attested environment evaluates the predicate over the
+# private graph and emits an envelope attesting the answer (§5.4).
+# The customer verifies the envelope against hardware vendor roots and
+# learns the fact. The supplier list stays private.

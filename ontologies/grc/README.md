@@ -1,0 +1,40 @@
+# grc: controls and audit evidence
+
+The compliance story made concrete. §5.5 claims that "our process
+requires review" can change from an organizational claim into a
+cryptographic one, and this package is the shape of that claim:
+controls, the evidence that satisfies them, the assessments that test
+them, and the findings and exceptions that fall out.
+
+## Contents
+
+| File | Contents |
+|---|---|
+| [ontology.yaml](ontology.yaml) | Frameworks, controls, evidence, assessments, findings, exceptions |
+| [taxonomy.yaml](taxonomy.yaml) | Framework regions and audit regions |
+| [policy.yaml](policy.yaml) | Attested evidence collection, reviewed findings, deliberate exceptions |
+| [examples/soc2.yaml](examples/soc2.yaml) | A control, its automated evidence, a finding, and an owner-approved exception |
+
+## The auditor is a verifier, then a peer
+
+The traditional audit collects screenshots into a shared folder and
+asks the auditee to promise they are real. Here, evidence is a
+document anchored by content hash, collected by a service principal
+whose lineage names the collector version, attested at L3 so the
+collection pipeline itself is measured. The auditor holds a grant
+scoped to `disclosure` for the framework region (§9.4), syncs the
+evidence subgraph, and verifies it from the log and keys alone, which
+is §5.3 doing compliance work.
+
+## Exceptions are the honest part
+
+Every real compliance program has exceptions, and most tools hide
+them. Here an `Exception` is a first-class object with a required
+justification and expiry, its creation demands the owner plus a
+cooling-off window, and its decision record is permanent. The audit
+question "what did you waive, when, and who signed" is a log query.
+
+## Status
+
+Draft, tracks spec v0.3. Import hashes are placeholders until the
+reference implementation generates real state hashes (Appendix H).

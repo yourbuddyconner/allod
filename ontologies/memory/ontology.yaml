@@ -1,0 +1,45 @@
+# memory — personal agent memory ontology, version 1 (projection form, §2.5)
+#
+# What an assistant learns about its owner: observations, preferences,
+# routines, and commitments, all provenance-carrying and governed.
+
+ontology: memory
+version: 1
+imports:
+  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+
+entity_types:
+
+  Note:
+    attributes:
+      title:   { type: string }
+      content: { type: string, required: true }   # long text; projects to the markdown body
+
+  Preference:
+    attributes:
+      statement: { type: string, required: true } # e.g. "no meetings before 09:00"
+      strength:  { type: string }                 # hard | soft
+      context:   { type: string }                 # when it applies
+
+  Routine:
+    attributes:
+      name:        { type: string, required: true }
+      cadence:     { type: string }               # e.g. "weekly, Monday morning"
+      description: { type: string }               # long text
+
+  Commitment:
+    attributes:
+      description: { type: string, required: true }
+      due_at:      { type: timestamp }
+      status:      { type: string }               # open | done | dropped
+
+  Interest:
+    attributes:
+      topic:    { type: string, required: true }
+      affinity: { type: string }                  # growing | steady | fading
+
+edge_types:
+  about:      { domain: [Note, Preference, Commitment, Routine], range: [core/Person, core/Company, Interest], cardinality: many-to-many }
+  owed_to:    { domain: Commitment, range: core/Person, cardinality: many-to-one }
+  supersedes: { domain: Preference, range: Preference, cardinality: one-to-one }
+  relates_to: { domain: Note, range: Note, cardinality: many-to-many }

@@ -1,0 +1,17 @@
+# supply — supply chain taxonomy, version 1 (projection form, §2.5)
+
+taxonomy: supply
+version: 1
+terms:
+
+  # Disclosure regions. What each audience may see is a classification,
+  # and grant scopes (§9.4) select these regions. Changing what gets
+  # shared is a governed mutation.
+  - { name: disclosure,          parents: [] }
+  - { name: disclosure/customer, parents: [disclosure] }
+  - { name: disclosure/auditor,  parents: [disclosure] }
+
+  # Compliance regions.
+  - { name: compliance,                   parents: [] }
+  - { name: compliance/conflict-minerals, parents: [compliance] }
+  - { name: compliance/export-controlled, parents: [compliance] }

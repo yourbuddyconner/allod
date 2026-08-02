@@ -1,0 +1,40 @@
+# research-baseline — reference governance policy for a research graph
+# (projection form, §2.5)
+
+policy: research-baseline
+version: 1
+default_posture: restricted
+roles:
+  owner:    [ "principal:…" ]
+  reviewer: [ "principal:…" ]
+rules:
+
+  - name: agent-extractions-are-proposals
+    select: { author_kind: agent }
+    require:
+      reviewers: { role: reviewer, quorum: 1 }
+
+  - name: model-assisted-needs-attestation
+    select: { basis: model-assisted }
+    require:
+      attestation_required: { attester_class: attested-indexer }
+
+  # Entering the verified region takes a reviewer. Publishing sits
+  # beneath verified in the taxonomy, so it inherits this rule and
+  # adds the owner.
+  - name: verification-takes-a-reviewer
+    select: { region: "review/verified" }
+    require:
+      reviewers: { role: reviewer, quorum: 1 }
+
+  - name: publication-takes-the-owner
+    select: { region: "review/published" }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  # Retraction is an update to a claim others may build on. Slow it
+  # down and put the owner in the loop.
+  - name: retractions-are-deliberate
+    select: { type: research/Claim, operation: [update] }
+    require:
+      reviewers: { role: owner, quorum: 1 }

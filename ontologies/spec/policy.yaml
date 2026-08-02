@@ -1,0 +1,28 @@
+# spec-baseline — governance for the spec's own graph
+# (projection form, §2.5)
+#
+# Applies Part 4 to the specification itself, per §0.1.
+
+policy: spec-baseline
+version: 1
+default_posture: restricted
+roles:
+  owner:  [ "principal:…" ]
+  editor: [ "principal:…" ]
+rules:
+
+  - name: normative-changes-are-serious
+    select: { region: "spec/normative" }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+      review_window: { min: "24h" }
+
+  - name: informative-changes-take-an-editor
+    select: { region: "spec/informative" }
+    require:
+      reviewers: { role: editor, quorum: 1 }
+
+  - name: agent-drafts-are-proposals
+    select: { author_kind: agent }
+    require:
+      reviewers: { role: editor, quorum: 1 }

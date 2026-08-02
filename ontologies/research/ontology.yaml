@@ -1,0 +1,56 @@
+# research — claims and evidence ontology, version 1 (projection form, §2.5)
+#
+# Knowledge as claims anchored to sources. The evidence chain is edges
+# plus lineage, so verification walks the graph instead of trusting
+# the prose.
+
+ontology: research
+version: 1
+imports:
+  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+
+entity_types:
+
+  Question:
+    attributes:
+      statement: { type: string, required: true }
+      status:    { type: string }                 # open | answered
+
+  Claim:
+    attributes:
+      statement:  { type: string, required: true }
+      confidence: { type: decimal }               # 0 to 1
+      status:     { type: string }                # asserted | contested | retracted
+
+  Source:
+    attributes:
+      title:        { type: string, required: true }
+      kind:         { type: string }              # paper | article | dataset | webpage | transcript
+      published_on: { type: date }
+      content:      { type: document-ref, required: true }   # the exact bytes
+
+  Quotation:
+    attributes:
+      text:     { type: string, required: true }
+      location: { type: string }                  # page, section, or span
+
+  Dataset:
+    attributes:
+      name:    { type: string, required: true }
+      format:  { type: string }
+      content: { type: document-ref }
+
+edge_types:
+  quotes:      { domain: Quotation, range: Source, cardinality: many-to-one }
+  cites:       { domain: Claim, range: [Source, Quotation, Dataset], cardinality: many-to-many }
+  supports:    { domain: [Claim, Quotation, Dataset], range: Claim, cardinality: many-to-many }
+  contradicts: { domain: [Claim, Quotation, Dataset], range: Claim, cardinality: many-to-many }
+  answers:     { domain: Claim, range: Question, cardinality: many-to-many }
+  supersedes:  { domain: Claim, range: Claim, cardinality: one-to-one }
+  authored_by: { domain: Source, range: core/Person, cardinality: many-to-many }
+
+validation_rules:
+  - name: claims-cite-evidence
+    rule: "a Claim must gain at least one cites edge within the same changeset"
+  - name: contested-claims-show-the-conflict
+    rule: "a Claim with status contested must have at least one inbound contradicts edge"

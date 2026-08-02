@@ -1,0 +1,34 @@
+# grc-baseline — reference governance policy for a compliance graph
+# (projection form, §2.5)
+
+policy: grc-baseline
+version: 1
+default_posture: restricted
+roles:
+  owner:           [ "principal:…" ]
+  compliance-lead: [ "principal:…" ]
+rules:
+
+  # Automated evidence must come from a measured collector. The
+  # screenshot-in-a-folder era ends here (§5.5).
+  - name: automated-evidence-is-attested
+    select: { region: "audit/evidence", author_kind: service }
+    require:
+      attestation_required: { attester_class: attested-collector }
+
+  - name: findings-are-reviewed
+    select: { region: "audit/finding" }
+    require:
+      reviewers: { role: compliance-lead, quorum: 1 }
+
+  # Waiving a control is deliberate, owner-signed, and slow.
+  - name: exceptions-are-deliberate
+    select: { type: grc/Exception }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+      review_window: { min: "24h" }
+
+  - name: model-assisted-needs-attestation
+    select: { basis: model-assisted }
+    require:
+      attestation_required: { attester_class: attested-indexer }

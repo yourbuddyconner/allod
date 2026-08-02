@@ -84,6 +84,15 @@ between two local graphs.
 | `corp` | [ontologies/corp/](ontologies/corp/) | Base company ontology: org structure, external parties, contracts, work artifacts, plus a taxonomy and a reference policy |
 | `code` | [ontologies/code/](ontologies/code/) | Derived code-graph ontology for repo imports (§8.3) |
 | `eng` | [ontologies/eng/](ontologies/eng/) | Engineering organization: services, change management, code review, incidents |
+| `memory` | [ontologies/memory/](ontologies/memory/) | Personal agent memory with owner-governed promotion |
+| `research` | [ontologies/research/](ontologies/research/) | Claims, evidence chains, and the review ladder |
+| `supply` | [ontologies/supply/](ontologies/supply/) | Cross-organization supply chain and disclosure regions |
+| `grc` | [ontologies/grc/](ontologies/grc/) | Controls, attested audit evidence, findings, exceptions |
+| `spec` | [ontologies/spec/](ontologies/spec/) | The specification governing itself |
+
+The packages are validated by [tools/allod-lint.py](tools/allod-lint.py),
+which checks ontology, taxonomy, policy, and example files against the
+rules of Parts 1, 2, and 4.
 
 These packages are projections (§2.5). In a live graph, ontologies are
 versioned objects, and imports bind by state hash.

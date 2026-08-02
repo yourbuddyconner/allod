@@ -1,0 +1,90 @@
+# A real design decision from this spec's own history, as graph data.
+# Hashes and IDs are illustrative.
+
+---
+kind: node
+id: "pt03…"
+rev: "sha256:0333…"
+type: spec/SpecPart@1
+attributes:
+  number: "3"
+  title: "Changeset Substrates"
+  conformance: "L1"
+---
+kind: node
+id: "sc26…"
+rev: "sha256:3260…"
+type: spec/Section@1
+attributes:
+  number: "3.2.6"
+  title: "Operation Merkle tree and elision"
+---
+kind: edge
+type: spec/in_part@1
+from: "node:sc26…"
+to: "node:pt03…"
+
+# The issue that forced the design, and the decision that resolved it.
+---
+kind: node
+id: "is09…"
+rev: "sha256:9is0…"
+type: spec/Issue@1
+attributes:
+  description: "Scoped federation shares need authentic history slices: a receiver must verify signatures on changesets whose out-of-scope operations it cannot see"
+  status: "resolved"
+---
+kind: node
+id: "dd14…"
+rev: "sha256:dd14…"
+type: spec/DesignDecision@1
+attributes:
+  summary: "Hash changesets over a Merkle root of operations instead of the raw list"
+  rationale: "Elision keeps signatures verifiable over partial disclosure, and the same leaf-hash mechanism gives redact-operation a way to remove content without breaking chains. Cost: more complex hashing, accepted while the spec is pre-v1."
+  status: "adopted"
+---
+kind: edge
+type: spec/resolved_by@1
+from: "node:is09…"
+to: "node:dd14…"
+---
+kind: edge
+type: spec/affects@1
+from: "node:dd14…"
+to: "node:sc26…"
+
+# The requirement the section states, and the test vector that will
+# verify it when Appendix H lands. A requirement with no inbound
+# verifies edge is a conformance gap you can list mechanically.
+---
+kind: node
+id: "rq77…"
+rev: "sha256:7rq7…"
+type: spec/Requirement@1
+attributes:
+  keyword: "MUST"
+  statement: "An elided changeset's hash and signature verify unchanged from the disclosed operations, their leaf hashes, and tree positions"
+  level: "L1"
+---
+kind: edge
+type: spec/states@1
+from: "node:sc26…"
+to: "node:rq77…"
+---
+kind: node
+id: "tv05…"
+rev: "sha256:t0v5…"
+type: spec/TestVector@1
+attributes:
+  name: "elided-changeset-roundtrip"
+---
+kind: edge
+type: spec/verifies@1
+from: "node:tv05…"
+to: "node:rq77…"
+---
+kind: classification
+subject: "node:sc26…"
+term: spec/normative@1
+asserted_by: "principal:conner"
+basis: manual

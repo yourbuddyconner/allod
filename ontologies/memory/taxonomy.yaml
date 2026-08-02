@@ -1,0 +1,25 @@
+# memory — personal memory taxonomy, version 1 (projection form, §2.5)
+
+taxonomy: memory
+version: 1
+terms:
+
+  # Sensitivity. life/health and life/finances carry sensitivity/private
+  # as a parent, so one classification puts a record behind the private
+  # region's rules.
+  - { name: sensitivity,         parents: [] }
+  - { name: sensitivity/private, parents: [sensitivity] }
+
+  # Life regions.
+  - { name: life,          parents: [] }
+  - { name: life/family,   parents: [life] }
+  - { name: life/health,   parents: [life, sensitivity/private] }
+  - { name: life/finances, parents: [life, sensitivity/private] }
+
+  # Work.
+  - { name: work, parents: [] }
+
+  # Workspace. Scratch admits freely; curated is promoted knowledge.
+  - { name: workspace,         parents: [] }
+  - { name: workspace/scratch, parents: [workspace] }
+  - { name: workspace/curated, parents: [workspace] }

@@ -1,0 +1,92 @@
+# A model-assisted extraction with its full evidence chain. Hashes and
+# IDs are illustrative.
+
+# The source: a paper, anchored to exact bytes.
+---
+kind: node
+id: "src1…"
+rev: "sha256:a001…"
+type: research/Source@1
+attributes:
+  title: "Sleep restriction and decision quality: a randomized crossover trial"
+  kind: "paper"
+  published_on: 2026-03-14
+  content: { document: "doc1…", content_hash: "sha256:9e9e…" }
+
+# The quotation the claim rests on, located in the source.
+---
+kind: node
+id: "qt55…"
+rev: "sha256:b002…"
+type: research/Quotation@1
+attributes:
+  text: "Participants in the restricted condition showed a 23% increase in risk-seeking choices (p < 0.01)."
+  location: "Section 4.2, p. 11"
+---
+kind: edge
+type: research/quotes@1
+from: "node:qt55…"
+to: "node:src1…"
+
+# The extracted claim. The validation rule claims-cite-evidence
+# required the cites edges in this same changeset, and the lineage
+# names the extraction pipeline. At L3 the changeset carries an
+# attestation envelope binding input hashes, pipeline identity, and
+# output hash (§5.5).
+---
+kind: node
+id: "cl09…"
+rev: "sha256:c003…"
+type: research/Claim@1
+attributes:
+  statement: "Sleep restriction increases risk-seeking in economic choices"
+  confidence: 0.7
+  status: "asserted"
+provenance:
+  derived_from: ["document:sha256:9e9e…"]
+  derived_by: "principal:extractor"
+  method: model-assisted
+  tool: "research-extractor@1.2.0 (model: example-llm@2026-05)"
+  changeset: "sha256:e005…"
+---
+kind: edge
+type: research/cites@1
+from: "node:cl09…"
+to: "node:qt55…"
+---
+kind: edge
+type: research/cites@1
+from: "node:cl09…"
+to: "node:src1…"
+
+# The claim supports a broader synthesis claim, and a dataset from a
+# failed replication contradicts that synthesis. Both relationships
+# are queryable structure, and the synthesis claim's status shows the
+# conflict.
+---
+kind: edge
+type: research/supports@1
+from: "node:cl09…"
+to: "node:syn7…"                       # "Acute sleep loss degrades economic rationality"
+---
+kind: edge
+type: research/contradicts@1
+from: "node:ds33…"                     # replication Dataset node
+to: "node:syn7…"
+
+# Promotion to verified: a classification change, which is a governed
+# mutation, which leaves a decision record. The editorial history of
+# the claim is the log.
+---
+kind: classification
+subject: "node:cl09…"
+term: review/verified@1
+asserted_by: "principal:dana"          # reviewer
+basis: manual
+---
+kind: decision-record
+subject: "sha256:f006…"                # the changeset carrying the classification
+policy_context: "sha256:77bb…"
+verdict: approve
+deciders: [ { principal: "principal:dana", signature: "sig:…" } ]
+timestamp: 2026-08-02T19:04:00-07:00

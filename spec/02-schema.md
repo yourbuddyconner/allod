@@ -16,8 +16,9 @@ An ontology declares the typed shape of a graph.
 
 **Edge types.** Each edge type declares a `name`, a `version`, a `domain`
 (allowed `from` entity types), a `range` (allowed `to` types), a
-cardinality (`one-to-one` | `one-to-many` | `many-to-many`), and attribute
-schemas.
+cardinality (`one-to-one` | `one-to-many` | `many-to-one` |
+`many-to-many`), and attribute schemas. Direction is semantic (§1.4), so
+`one-to-many` and `many-to-one` are distinct declarations.
 
 **Validation rules.** An ontology MAY declare validation predicates beyond
 per-object schema validity. Example: "a `Company` node must gain at least

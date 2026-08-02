@@ -1,0 +1,16 @@
+# grc — compliance taxonomy, version 1 (projection form, §2.5)
+
+taxonomy: grc
+version: 1
+terms:
+
+  # Framework regions. Grant scopes for auditors select these.
+  - { name: framework,          parents: [] }
+  - { name: framework/soc2,     parents: [framework] }
+  - { name: framework/iso27001, parents: [framework] }
+
+  # Audit regions.
+  - { name: audit,           parents: [] }
+  - { name: audit/evidence,  parents: [audit] }
+  - { name: audit/finding,   parents: [audit] }
+  - { name: audit/exception, parents: [audit] }

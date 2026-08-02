@@ -1,0 +1,61 @@
+# grc — controls and audit evidence ontology, version 1
+# (projection form, §2.5)
+
+ontology: grc
+version: 1
+imports:
+  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+
+entity_types:
+
+  Framework:
+    attributes:
+      name:    { type: string, required: true }   # e.g. "SOC 2", "ISO 27001"
+      version: { type: string }
+
+  Control:
+    attributes:
+      identifier: { type: string, required: true } # e.g. "CC6.1"
+      statement:  { type: string, required: true }
+      frequency:  { type: string }                 # continuous | daily | quarterly | annual
+      status:     { type: string }                 # active | retired
+
+  Evidence:
+    attributes:
+      description:  { type: string, required: true }
+      collected_at: { type: timestamp, required: true }
+      artifact:     { type: document-ref, required: true }  # the exact bytes
+
+  Assessment:
+    attributes:
+      period: { type: string, required: true }     # e.g. "2026-H1"
+      status: { type: string }                     # planned | fieldwork | complete
+      report: { type: document-ref }
+
+  Finding:
+    attributes:
+      description: { type: string, required: true }
+      severity:    { type: string }                # low | medium | high
+      status:      { type: string }                # open | remediated | accepted
+
+  Exception:
+    attributes:
+      justification: { type: string, required: true }
+      expires_on:    { type: date, required: true }
+      status:        { type: string }              # active | expired | withdrawn
+
+edge_types:
+  part_of:     { domain: Control, range: Framework, cardinality: many-to-many }
+  satisfies:   { domain: Evidence, range: Control, cardinality: many-to-many,
+                 attributes: { period: { type: string } } }
+  owned_by:    { domain: Control, range: core/Person, cardinality: many-to-one }
+  assessed:    { domain: Assessment, range: Control, cardinality: many-to-many }
+  raised_in:   { domain: Finding, range: Assessment, cardinality: many-to-one }
+  against:     { domain: Finding, range: Control, cardinality: many-to-one }
+  excepts:     { domain: Exception, range: Control, cardinality: many-to-one }
+
+validation_rules:
+  - name: evidence-anchors-to-bytes
+    rule: "an Evidence node must have an artifact document ref whose content hash resolves"
+  - name: findings-name-their-control
+    rule: "a Finding must gain an against edge within the same changeset"

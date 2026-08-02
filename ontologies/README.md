@@ -12,6 +12,11 @@ the spec uses for examples.
 | `corp` | [corp/](corp/) | The base company ontology: org structure, external parties, contracts, work artifacts, plus a taxonomy and a reference policy |
 | `code` | [code/](code/) | The derived code-graph ontology indexers emit into (§8.3): repositories, files, functions, types, and their relationships |
 | `eng` | [eng/](eng/) | The engineering organization: services, releases, change management, code review regions, incidents, postmortems |
+| `memory` | [memory/](memory/) | Personal agent memory: notes, preferences, commitments, with owner-governed promotion |
+| `research` | [research/](research/) | Claims and evidence: sources, quotations, citation chains, review ladder |
+| `supply` | [supply/](supply/) | Cross-organization supply chain: parts, batches, certifications, disclosure regions for federation |
+| `grc` | [grc/](grc/) | Controls and audit evidence: frameworks, attested collection, findings, exceptions |
+| `spec` | [spec/](spec/) | The specification governing itself: parts, requirements, design decisions, test vectors |
 
 ## Imports bind by hash
 

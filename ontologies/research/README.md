@@ -1,0 +1,51 @@
+# research: claims and evidence
+
+The verifiability showcase. Every claim in a research graph traces to
+exact bytes, the extraction method travels with the claim, and the
+transitive question from §5.1, "show me every document this claim
+rests on," has a checkable answer.
+
+## Contents
+
+| File | Contents |
+|---|---|
+| [ontology.yaml](ontology.yaml) | Questions, claims, sources, quotations, datasets |
+| [taxonomy.yaml](taxonomy.yaml) | Review ladder: unverified, verified, published |
+| [policy.yaml](policy.yaml) | Review gates and attested extraction |
+| [examples/extraction.yaml](examples/extraction.yaml) | A model-extracted claim, its evidence chain, and its promotion to verified |
+
+## Two rules carry the design
+
+**Claims cannot exist without evidence.** The validation rule
+`claims-cite-evidence` requires every new `Claim` to arrive with at
+least one `cites` edge in the same changeset. An unsupported assertion
+fails admission structurally, before any reviewer looks at it.
+
+**Extraction method is first-class.** A human-asserted claim, a
+parser-derived claim, and a model-extracted claim carry different
+lineage bases (§8.2), and policy treats them differently. The
+model-assisted path demands an attestation envelope, so a
+machine-extracted claim is exactly as trustworthy as the measured
+pipeline that produced it, and a reader can check which pipeline that
+was.
+
+## The review ladder
+
+`review/published` nests under `review/verified`, so publishing
+accumulates verification's requirements and adds the owner's sign-off
+(§4.1). Moving a claim up the ladder is a classification change, which
+is a governed mutation, which produces a decision record. The full
+editorial history of every claim, who verified it, against which
+policy version, is the log.
+
+## Why this matters now
+
+Machine-generated text is cheap, and provenance is the scarce good.
+A research graph in this shape gives a reader the choice the open web
+cannot: accept a claim, or walk its chain to the quotation, the
+source bytes, and the identity of whatever extracted it.
+
+## Status
+
+Draft, tracks spec v0.3. Import hashes are placeholders until the
+reference implementation generates real state hashes (Appendix H).

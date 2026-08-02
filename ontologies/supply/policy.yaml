@@ -1,0 +1,33 @@
+# supply-baseline — reference governance policy for a supply chain
+# graph (projection form, §2.5)
+
+policy: supply-baseline
+version: 1
+default_posture: restricted
+roles:
+  owner:   [ "principal:…" ]
+  quality: [ "principal:…" ]
+rules:
+
+  - name: certifications-are-quality-business
+    select: { type: supply/Certification }
+    require:
+      reviewers: { role: quality, quorum: 1 }
+
+  # Imported knowledge from peers routes through admission with the
+  # same discipline as model-assisted writes (§9.6): a foreign graph's
+  # standards are its own.
+  - name: agent-and-import-proposals
+    select: { author_kind: agent }
+    require:
+      reviewers: { role: quality, quorum: 1 }
+
+  - name: disclosure-changes-are-owner-business
+    select: { region: "disclosure" }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  - name: model-assisted-needs-attestation
+    select: { basis: model-assisted }
+    require:
+      attestation_required: { attester_class: attested-indexer }

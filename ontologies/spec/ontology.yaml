@@ -1,0 +1,55 @@
+# spec — specification self-hosting ontology, version 1
+# (projection form, §2.5)
+
+ontology: spec
+version: 1
+imports:
+  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+
+entity_types:
+
+  SpecPart:
+    attributes:
+      number:      { type: string, required: true }   # "3", "9", "A"
+      title:       { type: string, required: true }
+      conformance: { type: string }                   # "L1", "L1+F"
+
+  Section:
+    attributes:
+      number: { type: string, required: true }        # "3.2.6"
+      title:  { type: string, required: true }
+
+  Requirement:
+    attributes:
+      keyword:   { type: string, required: true }     # MUST | MUST NOT | SHOULD | MAY
+      statement: { type: string, required: true }
+      level:     { type: string }                     # L0 | L1 | L2 | L3 | F
+
+  DesignDecision:
+    attributes:
+      summary:   { type: string, required: true }
+      rationale: { type: string }                     # long text
+      status:    { type: string }                     # open | adopted | superseded
+
+  Issue:
+    attributes:
+      description: { type: string, required: true }
+      status:      { type: string }                   # open | resolved | rejected
+
+  TestVector:
+    attributes:
+      name:     { type: string, required: true }
+      artifact: { type: document-ref }                # the vector bytes (Appendix H)
+
+edge_types:
+  in_part:     { domain: Section, range: SpecPart, cardinality: many-to-one }
+  states:      { domain: Section, range: Requirement, cardinality: one-to-many }
+  depends_on:  { domain: Requirement, range: Requirement, cardinality: many-to-many }
+  resolved_by: { domain: Issue, range: DesignDecision, cardinality: many-to-one }
+  affects:     { domain: DesignDecision, range: [SpecPart, Section], cardinality: many-to-many }
+  supersedes:  { domain: DesignDecision, range: DesignDecision, cardinality: one-to-one }
+  verifies:    { domain: TestVector, range: Requirement, cardinality: many-to-many }
+
+validation_rules:
+  - name: adopted-decisions-touch-the-spec
+    rule: "a DesignDecision with status adopted must have at least one affects edge"

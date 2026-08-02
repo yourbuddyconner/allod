@@ -1,0 +1,103 @@
+# A personal memory graph in operation. Hashes and IDs are
+# illustrative. The cast: Conner (owner, User principal) and Jarvis
+# (Agent principal, delegated by Conner).
+
+# The agent principal is a graph object (§6.1). The delegation chain is
+# data, so "who does this agent act for" is a query, and revoking the
+# delegation is a governed changeset.
+---
+kind: node
+id: "ag01…"
+rev: "sha256:aaaa…"
+type: core/Agent@1
+attributes:
+  display_name: "Jarvis"
+  keys: [ { key_id: "sha256:k3y1…", algorithm: "ed25519", status: "active" } ]
+  status: "active"
+  delegated_by: "node:usr1…"           # Conner's User node
+  scope: { region: "workspace" }
+
+# A scratch note. Author kind is agent and the region is
+# workspace/scratch, so the carve-out applies and the note admitted
+# without review. The agent thinks at full speed here.
+---
+kind: node
+id: "nt42…"
+rev: "sha256:bbbb…"
+type: memory/Note@1
+attributes:
+  title: "Meeting pattern"
+  content: "Conner declined 4 of the last 5 meetings before 09:00, all with a reschedule note."
+provenance:
+  derived_from: ["document:sha256:ca1e…"]   # calendar export
+  derived_by: "principal:jarvis"
+  method: model-assisted
+  tool: "jarvis-memory@0.9 (model: example-llm@2026-05)"
+  changeset: "sha256:1111…"
+---
+kind: classification
+subject: "node:nt42…"
+term: workspace/scratch@1
+asserted_by: "principal:jarvis"
+basis: model-assisted
+
+# The promotion: Jarvis proposes a Preference derived from the pattern.
+# Two rules fire, agent-writes-are-proposals and
+# preferences-are-owner-business, and both demand the owner.
+---
+kind: changeset
+hash: "sha256:2222…"
+parents: ["sha256:1111…"]
+author: { principal: "principal:jarvis", key: "key:ed25519:k3y1…" }
+timestamp: 2026-08-02T18:03:00-07:00
+intent: "Propose morning-meeting preference from observed decline pattern"
+schema_context: "sha256:5c4e…"
+operations:
+  - create:
+      kind: node
+      id: "pf07…"
+      type: memory/Preference@1
+      attributes:
+        statement: "No meetings before 09:00"
+        strength: "soft"
+        context: "Recurring internal meetings; exceptions for customer calls"
+  - create:
+      kind: edge
+      type: memory/relates_to@1
+      from: "node:pf07…"
+      to: "node:nt42…"
+  - create:
+      kind: classification
+      subject: "node:pf07…"
+      term: work@1
+signature: "sig:ed25519:2b2b…"
+
+# The owner's approval. This is the sovereign-memory claim as an
+# object: the preference exists because Conner signed, and any host,
+# or no host, can verify that.
+---
+kind: decision-record
+subject: "sha256:2222…"
+policy_context: "sha256:90aa…"
+verdict: approve
+deciders: [ { principal: "principal:conner", signature: "sig:…" } ]
+timestamp: 2026-08-02T18:20:41-07:00
+
+# A commitment in a private region. life/health carries
+# sensitivity/private as a parent, so this record sat behind owner
+# sign-off with one classification.
+---
+kind: node
+id: "cm88…"
+rev: "sha256:dddd…"
+type: memory/Commitment@1
+attributes:
+  description: "Book the annual physical before the end of Q3"
+  due_at: 2026-09-30T17:00:00-07:00
+  status: "open"
+---
+kind: classification
+subject: "node:cm88…"
+term: life/health@1
+asserted_by: "principal:jarvis"
+basis: model-assisted

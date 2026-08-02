@@ -1,0 +1,12 @@
+# research — review taxonomy, version 1 (projection form, §2.5)
+
+taxonomy: research
+version: 1
+terms:
+
+  # The review ladder. published nests under verified, so publication
+  # accumulates verification's requirements and adds its own (§4.1).
+  - { name: review,            parents: [] }
+  - { name: review/unverified, parents: [review] }
+  - { name: review/verified,   parents: [review] }
+  - { name: review/published,  parents: [review/verified] }

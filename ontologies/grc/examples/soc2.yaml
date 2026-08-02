@@ -1,0 +1,111 @@
+# A SOC 2 control with automated evidence, a finding, and an
+# owner-approved exception. Hashes and IDs are illustrative.
+
+---
+kind: node
+id: "fw01…"
+rev: "sha256:f001…"
+type: grc/Framework@1
+attributes:
+  name: "SOC 2"
+  version: "2017 TSC"
+---
+kind: node
+id: "ct61…"
+rev: "sha256:c611…"
+type: grc/Control@1
+attributes:
+  identifier: "CC6.1"
+  statement: "Logical access to systems is restricted through defined access control mechanisms"
+  frequency: "continuous"
+  status: "active"
+---
+kind: edge
+type: grc/part_of@1
+from: "node:ct61…"
+to: "node:fw01…"
+---
+kind: edge
+type: grc/owned_by@1
+from: "node:ct61…"
+to: "node:ma41…"                       # the control owner
+
+# Automated evidence: the IAM export, collected nightly by a service
+# principal. The artifact is exact bytes, the lineage names the
+# collector, and the policy required an attestation envelope because
+# the author is a service writing into audit/evidence.
+---
+kind: node
+id: "ev88…"
+rev: "sha256:e881…"
+type: grc/Evidence@1
+attributes:
+  description: "Nightly IAM policy export showing access review state"
+  collected_at: 2026-08-02T02:00:00Z
+  artifact: { document: "docE…", content_hash: "sha256:1ac3…" }
+provenance:
+  derived_by: "principal:evidence-collector"
+  method: deterministic
+  tool: "grc-collector@3.2.0"
+  changeset: "sha256:ab12…"
+---
+kind: edge
+type: grc/satisfies@1
+from: "node:ev88…"
+to: "node:ct61…"
+attributes: { period: "2026-H2" }
+---
+kind: classification
+subject: "node:ev88…"
+term: audit/evidence@1
+asserted_by: "principal:evidence-collector"
+basis: deterministic
+
+# Fieldwork surfaces a finding. The validation rule required the
+# against edge in the same changeset, and the region rule required
+# compliance-lead review.
+---
+kind: node
+id: "fd12…"
+rev: "sha256:fd12…"
+type: grc/Finding@1
+attributes:
+  description: "Two former contractors retained repository access 30+ days after offboarding"
+  severity: "medium"
+  status: "open"
+---
+kind: edge
+type: grc/against@1
+from: "node:fd12…"
+to: "node:ct61…"
+---
+kind: classification
+subject: "node:fd12…"
+term: audit/finding@1
+asserted_by: "principal:auditor-liaison"
+basis: manual
+
+# The exception: a legacy system that cannot meet the control until
+# its Q4 retirement. Owner-signed after the cooling-off window, with
+# a required justification and expiry. Permanent record.
+---
+kind: node
+id: "ex71…"
+rev: "sha256:ee71…"
+type: grc/Exception@1
+attributes:
+  justification: "Legacy billing system lacks SSO support; retiring 2026-Q4; compensating control: quarterly manual access review"
+  expires_on: 2026-12-31
+  status: "active"
+---
+kind: edge
+type: grc/excepts@1
+from: "node:ex71…"
+to: "node:ct61…"
+---
+kind: decision-record
+subject: "sha256:9d9d…"                # the changeset creating the exception
+policy_context: "sha256:5e5e…"
+verdict: approve
+deciders: [ { principal: "principal:conner", signature: "sig:…" } ]
+timestamp: 2026-08-02T21:30:00-07:00

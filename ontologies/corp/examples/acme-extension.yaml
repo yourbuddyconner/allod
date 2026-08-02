@@ -1,0 +1,10 @@
+# Acme's extension of the corp taxonomy (§2.3): company-specific org
+# regions beneath the base org term. The northwind example classifies
+# into org/sales, which this extension defines.
+
+taxonomy: acme
+version: 1
+extends: corp
+terms:
+  - { name: org/sales,       parents: [org] }
+  - { name: org/engineering, parents: [org] }

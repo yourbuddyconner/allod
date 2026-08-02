@@ -1,0 +1,36 @@
+# memory-baseline — reference governance policy for a personal memory
+# graph (projection form, §2.5)
+#
+# One human, one or more delegated agents. The owner role binds to the
+# root authority at genesis.
+
+policy: memory-baseline
+version: 1
+default_posture: restricted
+roles:
+  owner: [ "principal:…" ]
+rules:
+
+  - name: agent-writes-are-proposals
+    select:
+      all:
+        - { author_kind: agent }
+        - { not: { region: "workspace/scratch" } }  # scratch is the carve-out
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  # The agent can propose a preference. Only the owner can make it true.
+  - name: preferences-are-owner-business
+    select: { type: memory/Preference }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  - name: private-region-guarded
+    select: { region: "sensitivity/private" }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  - name: model-assisted-needs-attestation
+    select: { basis: model-assisted }
+    require:
+      attestation_required: { attester_class: attested-indexer }

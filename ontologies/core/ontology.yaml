@@ -28,22 +28,22 @@ entity_types:
   User:
     attributes:
       display_name: { type: string, required: true }
-      keys:         { type: list<map<string, string>>, required: true }
+      keys:         { type: "list<map<string, string>>", required: true }
       status:       { type: string }                  # active | suspended
 
   Service:
     attributes:
       display_name: { type: string, required: true }
-      keys:         { type: list<map<string, string>>, required: true }
+      keys:         { type: "list<map<string, string>>", required: true }
       status:       { type: string }
 
   Agent:
     attributes:
       display_name: { type: string, required: true }
-      keys:         { type: list<map<string, string>>, required: true }
+      keys:         { type: "list<map<string, string>>", required: true }
       status:       { type: string }
       delegated_by: { type: node-ref, target: User, required: true }   # §6.1
-      scope:        { type: map<string, string> }     # delegation scope
+      scope:        { type: "map<string, string>" }     # delegation scope
 
   # Federation objects (Part 9).
 
@@ -59,7 +59,7 @@ entity_types:
     # issuance needs no separate signature field (§9.4).
     attributes:
       audience:    { type: string, required: true }   # principal ref, graph ID, or public
-      scope:       { type: map<string, string>, required: true }  # selector, §4.1 grammar
+      scope:       { type: "map<string, string>", required: true }  # selector, §4.1 grammar
       rights:      { type: list<string>, required: true }         # state | history | subscribe
       valid_from:  { type: timestamp }
       valid_until: { type: timestamp }

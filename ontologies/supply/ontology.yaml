@@ -1,0 +1,69 @@
+# supply — supply chain ontology, version 1 (projection form, §2.5)
+#
+# Parts, batches, facilities, and the certifications that make them
+# trustworthy across organizational boundaries.
+
+ontology: supply
+version: 1
+imports:
+  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+
+entity_types:
+
+  Part:
+    attributes:
+      name:        { type: string, required: true }
+      sku:         { type: string }
+      description: { type: string }
+
+  Batch:
+    attributes:
+      lot:         { type: string, required: true }
+      produced_on: { type: date }
+      quantity:    { type: int }
+
+  Facility:
+    attributes:
+      name:     { type: string, required: true }
+      location: { type: string }
+      operator: { type: node-ref, target: core/Company }
+
+  Certification:
+    attributes:
+      standard:    { type: string, required: true }   # e.g. "RMI conflict-free"
+      issued_on:   { type: date, required: true }
+      expires_on:  { type: date }
+      certificate: { type: document-ref, required: true }  # the certificate bytes
+    constraints:
+      - "expires_on >= issued_on"
+
+  Shipment:
+    attributes:
+      shipped_on:  { type: date, required: true }
+      received_on: { type: date }
+      quantity:    { type: int }
+
+  Inspection:
+    attributes:
+      performed_on: { type: date, required: true }
+      result:       { type: string }               # pass | fail
+      report:       { type: document-ref }
+
+edge_types:
+  makes:         { domain: Facility, range: Part, cardinality: many-to-many }
+  of_part:       { domain: Batch, range: Part, cardinality: many-to-one }
+  produced_at:   { domain: Batch, range: Facility, cardinality: many-to-one }
+  component_of:  { domain: Part, range: Part, cardinality: many-to-many,
+                   attributes: { quantity: { type: int } } }   # the bill of materials
+  contains:      { domain: Shipment, range: Batch, cardinality: many-to-many }
+  from_facility: { domain: Shipment, range: Facility, cardinality: many-to-one }
+  to_facility:   { domain: Shipment, range: Facility, cardinality: many-to-one }
+  certifies:     { domain: Certification, range: [Facility, Part, Batch], cardinality: many-to-many }
+  issued_by:     { domain: Certification, range: core/Company, cardinality: many-to-one }
+  inspected:     { domain: Inspection, range: [Batch, Facility], cardinality: many-to-many }
+
+validation_rules:
+  - name: certifications-anchor-to-bytes
+    rule: "a Certification must have a certificate document ref whose content hash resolves"
+  - name: shipments-have-contents
+    rule: "a Shipment must gain at least one contains edge within the same changeset"
