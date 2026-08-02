@@ -31,9 +31,15 @@ when it satisfies the four properties.
 | `intent` | string (optional) | Rationale for the change, readable by humans and agents. Analogous to a commit message |
 | `operations` | list<operation> | §3.2.2. Applied atomically |
 | `schema_context` | hash | State hash of the schema the author validated against |
-| `signature` | sig | Over `hash`, by the author's key |
+| `signature` | sig \| list<sig> | Over `hash`, by the author's key. A list where a signature threshold applies (§4.6) |
 
 A changeset is atomic. All operations apply, or none do.
+
+Validation always uses the schema at the changeset's first parent.
+`schema_context` records the schema the author validated against. When
+the two differ, the changeset fails evaluation unless policy explicitly
+admits the mismatch, and the admission records it. This closes the
+loophole of pinning a stale schema to dodge new constraints.
 
 ### 3.2.2 Operation set
 
@@ -48,11 +54,17 @@ travel like any other operation, though policy usually holds them to
 stricter review.
 
 `delete` writes a tombstone. The log is append-only and history is never
-rewritten. To remove genuinely toxic content, use the explicit, governed
-`redact-document` operation, which removes the stored bytes and preserves
-the hash chain. The removal itself, who performed it, and under what
-authority all stay permanently verifiable. This design interacts with
-erasure law. See threat T8 in Appendix E.
+rewritten. Two governed redaction operations remove content while every
+hash and signature stays verifiable. `redact-document` removes a
+document's stored bytes and keeps its content hash. `redact-operation`
+removes the recorded content of a prior operation, or a changeset's
+intent text, and keeps the corresponding leaf or intent hash (§3.2.6).
+An object revision produced by a redacted operation keeps its identity,
+revision hash, and lineage, and loses its materialized content. The
+removal itself, who performed it, and under what authority all stay
+permanently verifiable. This design interacts with erasure law, and
+redaction now reaches attributes and intent text as well as document
+bytes. See threat T8 in Appendix E.
 
 ### 3.2.3 Ordering and merges
 
@@ -75,9 +87,12 @@ The state at revision R is the topological fold of all changesets
 reachable from R. At fold time, implementations MUST reject three things:
 results that violate the schema, dangling references, and `update`
 operations whose prior-revision hash does not match. A merge with
-`resolve` operations clears the third case. A rejected changeset affects
-only itself: consumers skip it, flag it, and fold the rest of the log
-normally.
+`resolve` operations clears the third case. Failures attribute to the
+first revision at which they appear: a merge whose combined result
+violates the schema or dangles a reference is itself the rejected
+changeset, and the merge author must add operations that repair the
+result. A rejected changeset affects only itself: consumers skip it,
+flag it, and fold the rest of the log normally.
 
 ### 3.2.5 Checkpoints
 
@@ -86,6 +101,14 @@ state projection. Checkpoints allow cold-start without full replay. A
 checkpoint is an optimization. Replay MUST be able to verify it, and a
 checkpoint that disagrees with replay is invalid.
 
+**Anchoring.** A graph SHOULD periodically publish signed checkpoint
+references to at least one external witness: a peer graph (§9.3), a git
+repository, a transparency log, or any host outside the owner's sole
+control. Anchors bound when a revision existed, and they turn
+equivocation into a provable event: two anchors that bind the same
+revision to different state hashes convict the equivocator. Anchors
+also give governance audits an external time bracket (§4.2).
+
 ### 3.2.6 Operation Merkle tree and elision
 
 For hashing, the `operations` list is summarized as a Merkle tree: each
@@ -93,7 +116,9 @@ leaf is the hash of one operation's canonical encoding, in list order,
 and leaf and interior hashes carry domain-separated prefixes. The
 changeset `hash` covers this root in place of the raw list, so the wire
 form can carry all operations, a subset, or none while the hash and
-signature stay verifiable.
+signature stay verifiable. The canonical encoding also covers the
+`intent` field by its hash, so `redact-operation` (§3.2.2) can remove
+intent text with the chain intact.
 
 An **elided changeset** replaces undisclosed operations with their leaf
 hashes and tree positions. A verifier can confirm authorship,
@@ -122,6 +147,12 @@ Git already satisfies the §3.1 interface:
 The binding maps git onto Allod's vocabulary so that Parts 4 to 6 apply. A
 commit is a changeset. Its operations are its file diff. The tree hash is
 the state hash. Refs are branch heads. Commit signatures are authorship.
+
+For policy evaluation, a commit's operation set is computed by
+byte-level tree comparison against the first parent, with rename
+detection disabled. Two evaluators MUST derive identical operation sets
+from the same commit. Rename heuristics vary across tools, and a rule
+match must never depend on one.
 
 Governance policy for a git substrate keys on repo, path, and branch
 patterns instead of taxonomy terms (§4.1). CODEOWNERS and branch

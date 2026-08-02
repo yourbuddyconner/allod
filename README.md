@@ -59,7 +59,7 @@ and import each other's knowledge through their own admission flow.
 | 8: Indexing contract | [spec/08-indexing.md](spec/08-indexing.md) | L0/L3 |
 | 9: Federation | [spec/09-federation.md](spec/09-federation.md) | L1+F |
 | 10: Non-goals | [spec/10-non-goals.md](spec/10-non-goals.md) | |
-| Appendices A to G | [spec/appendices.md](spec/appendices.md) | |
+| Appendices A to H | [spec/appendices.md](spec/appendices.md) | |
 
 ## Conformance levels at a glance
 

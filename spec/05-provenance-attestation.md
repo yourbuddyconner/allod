@@ -69,7 +69,9 @@ built from (§9.5).
 
 - **Subgraph proofs.** The state hash is a Merkle root (§1.7). A holder
   can reveal a subgraph plus Merkle paths, which proves membership in a
-  state without revealing siblings.
+  state without revealing siblings. Sorted leaves also support absence:
+  adjacent-leaf paths prove that no object with a given logical ID
+  exists in the state.
 - **Attested predicates.** At L3, an attested environment can evaluate a
   predicate over a private graph and emit an envelope that attests the
   result. Example: "a node classified `kyc/verified` exists for subject
@@ -91,9 +93,15 @@ small:
    classification. The envelope binds the input document hashes, the
    indexer code identity, the model identity, and the output changeset
    hash. Consumers can then trust machine-written knowledge to exactly
-   the degree they trust the measured pipeline. The setting where this
-   matters most is multi-writer and federated graphs, where writers do
-   not trust each other.
+   the degree they trust the measured pipeline. One limit deserves
+   plain statement: when classification calls a hosted model API, the
+   measurement covers the pipeline around the call, and the model runs
+   unmeasured on the provider's hardware. The envelope then proves
+   exactly what was sent and received, while the model identity stays
+   an assertion relayed by the API. Running the weights inside the
+   enclave closes that gap where hardware allows it. The setting where
+   attested indexing matters most is multi-writer and federated graphs,
+   where writers do not trust each other.
 2. **The attested admission gate** (§4.5). The L2-enforced write path
    runs attested, so a third party can verify that nothing enters the
    graph except through policy. The statement "our process requires

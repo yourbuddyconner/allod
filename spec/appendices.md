@@ -108,12 +108,15 @@ roles:
   steward: [ "principal:conner", "principal:jarvis" ]
 rules:
   - name: agent-writes-are-proposals
-    select: { author_kind: agent }
+    select:
+      all:
+        - { author_kind: agent }
+        - { not: { region: "workspace/scratch" } }  # scratch is the carve-out
     require:
-      reviewers: { role: owner, quorum: 1 }     # every agent write needs owner sign-off…
-  - name: …except-low-stakes-regions
-    select: { author_kind: agent, region: "workspace/scratch" }
-    require: { reviewers: none }                 # …unless it lands in scratch space
+      reviewers: { role: owner, quorum: 1 }
+  - name: deterministic-indexer-writes
+    select: { author_kind: service, basis: deterministic }
+    require: { schema_valid: true }
   - name: private-region-elevated
     select: { region: "sensitivity/private" }
     require:
@@ -135,9 +138,10 @@ rules:
       substrate_checks: [ ci-attestation-present ]
 ```
 
-Rules 1 and 2 compose: requirements only tighten, so the more specific
-selector carves out the exception. Rule 6 governs a git substrate with
-the same vocabulary as the knowledge rules.
+The carve-out in the first rule lives inside the selector as a `not`
+clause (§4.1): requirements only tighten, so an exception must narrow a
+selector instead of overriding another rule. The final rule governs a
+git substrate with the same vocabulary as the knowledge rules.
 
 ## Appendix D: RDF / JSON-LD mapping (export, lossy)
 
@@ -164,8 +168,8 @@ RDF-native home, which is the gap Allod exists to fill.
 | T4 | Model-assisted fabrication | `basis` is first-class. Policy routes model output through stricter admission (§8.2, Appendix C rule 4) |
 | T5 | Stolen agent credentials | The agent kind plus delegation scope bounds the blast radius (§6.1). Revocation is a governed changeset. Historical validity is preserved (§6.2) |
 | T6 | Projection tampering: an edited bundle passed off as state | A modified projection re-enters as a proposal that must pass admission (§7.2). The state-hash manifest detects divergence |
-| T7 | Replay or equivocation across copies | The state hash decides "same graph." Checkpoints are signed. An equivocating host produces detectably divergent hashes |
-| T8 | Erasure-law conflict with an append-only log | `redact-document` removes bytes and keeps hashes plus tombstoned lineage (§3.2.2, §8.4). Legal analysis is open. The spec flags it rather than hiding it |
+| T7 | Replay or equivocation across copies | The state hash decides "same graph." Checkpoints are signed, and anchors make equivocation provable from two witnesses (§3.2.5) |
+| T8 | Erasure-law conflict with an append-only log | Redaction reaches document bytes, operation content, and intent text while every hash still verifies (§3.2.2, §3.2.6, §8.4). Legal analysis is open. The spec flags it rather than hiding it |
 | T9 | Root key loss | Unrecoverable when policy declares no recovery path. This is by design. Genesis SHOULD declare recovery rules (§4.6) |
 | T10 | TEE compromise or attestation forgery | The envelope pins the evidence type and vendor chain. A failed L3 claim degrades to L2, and verification reports the downgrade (§5.2 requires distinguishing `evidence: none`) |
 | T11 | Forged or tampered peer history | Graph IDs are self-certifying (§9.2). Every foreign changeset verifies against the peer's key history, replayed from its genesis (§4.6) |
@@ -217,3 +221,14 @@ A minimal binding for §9.7 over HTTPS:
 
 The binding adds no state beyond the graph itself. Any transport that
 moves the same bytes conforms equally well.
+
+## Appendix H: Test vectors (normative, forthcoming)
+
+v1.0 MUST ship canonical test vectors: a small log in wire form, the
+hash of every changeset, the state hash at every revision, one elided
+changeset with its membership proofs, one redaction, and one passing
+plus one failing governance audit. Two implementations agree when they
+reproduce these bytes and hashes exactly. The reference implementation
+generates the vectors, and they land in this repository with its first
+release. Draft v0.3 defines the obligation so that no implementation
+ships against guesswork.

@@ -49,6 +49,15 @@ the source state hash. A modified bundle ingests as a **proposal**
 (§4.3), authored by the ingesting principal. A human edit to a file is a
 governed mutation like any other.
 
+The write path is deliberately narrow. The editable surface is:
+front-matter fields that project attributes, the designated long-text
+attributes in the prose body, and typed wiki-link edges. Each modified
+file maps to `update` operations on exactly the objects it projects. An
+edit outside this surface, or one that cannot map to schema-valid
+operations, fails ingest with a report that names the file and the
+reason, and the rest of the bundle still ingests. Implementations MAY
+support richer mappings and MUST declare them as part of the binding.
+
 ## 7.3 Parquet binding (optional)
 
 This is the analytical projection, for columnar and tabular engines:

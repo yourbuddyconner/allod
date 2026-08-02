@@ -17,12 +17,15 @@ Selectors key on:
   objects.
 - **Path or branch pattern** (git substrate). Repo, path glob, target
   ref.
-- **Operation kind.** Example: any `redact-document`, any schema
+- **Operation kind.** Example: any redaction (§3.2.2), any schema
   mutation.
 
-Selectors compose with AND and OR. When multiple rules match, ALL of
-their requirements apply. Requirements are conjunctive, so adding a rule
-can only tighten policy.
+Selectors compose with `all`, `any`, and `not`. When multiple rules
+match, ALL of their requirements apply. Requirements are conjunctive, so
+adding a rule can only tighten policy for the changes its selector
+matches. Exceptions therefore live inside selectors: a carve-out is a
+`not` clause in the broad rule. Evaluation stays order-independent, and
+no rule overrides another.
 
 When no rule matches, the graph's declared **default posture** applies:
 `open` (any authenticated principal) or `restricted` (root authority
@@ -45,6 +48,15 @@ Implementations MUST evaluate this requirement vocabulary:
 Requirements reference principals by role, e.g. `role:owner` or
 `role:steward`. Roles resolve through the graph's principal objects, so
 policy survives personnel change without edits.
+
+Time-based requirements such as `review_window` bind the admitting
+party, because log timestamps are author-asserted (§3.2.1). The
+admitting event records the clock readings it relied on. An auditor
+checks the recorded times against DAG order and against any anchors that
+bracket the revisions (§3.2.5). Where anchors bound the window, the
+requirement audits as verified. Where they do not, it audits as
+degraded, and the result names the clock that was trusted. At L3, an
+attested gate's clock reading is covered by its envelope (§5.5).
 
 ## 4.3 Admission flow and decision records
 
@@ -115,7 +127,10 @@ them. Conflating the two is the most likely way to oversell this spec.
 - Every graph declares a **root authority** at genesis: one or more
   principal keys, with a threshold such as 2-of-3. The genesis changeset
   is self-admitted by root signature. It is the one changeset exempt from
-  policy, because it creates the policy.
+  policy, because it creates the policy. Where a threshold is declared,
+  every changeset that requires root signature, genesis included,
+  carries at least the threshold number of signatures in its `signature`
+  field (§3.2.1).
 - A policy change is a changeset, evaluated under the **previous** policy
   version. No change may authorize itself, so the chain of authority from
   genesis to any current rule is fully verifiable.

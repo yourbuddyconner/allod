@@ -26,10 +26,11 @@ decision.
 | `type` | ontology-type-ref | Entity type plus ontology version, e.g. `core/Person@2` |
 | `attributes` | map<name, typed-value> | Per §1.3. Validated against the type's attribute schema |
 
-A node MUST validate against its declared entity type. Validation uses the
-ontology version that was current when the creating or updating changeset
-was admitted. A node that was valid under `core/Person@2` therefore stays
-valid after version 3 ships. §2.4 governs migration.
+A node MUST validate against its declared entity type. Validation uses
+the schema in force at the changeset's parent revision, which the
+changeset pins as `schema_context` (§3.2.1). A node that was valid under
+`core/Person@2` therefore stays valid after version 3 ships. §2.4
+governs migration.
 
 ## 1.3 Attributes and the type system
 
@@ -38,7 +39,7 @@ Attribute values are typed. Implementations MUST support:
 | Type | Notes |
 |---|---|
 | `string` | UTF-8. NFC-normalized for hashing |
-| `int` / `float` / `decimal` | `decimal` is exact. Use it where drift matters |
+| `int` / `float` / `decimal` | `decimal` is exact. Use it where drift matters. A `float` MUST be finite, and encoders normalize negative zero to zero, so hashes stay stable across platforms |
 | `bool` | |
 | `timestamp` / `date` / `duration` | RFC 3339. Timestamps carry offsets |
 | `bytes` | Inline below an implementation-declared threshold. Above it, use a document reference |
@@ -104,16 +105,21 @@ classifications, so the act of classifying is itself a governed mutation.
 
 ## 1.7 Identifiers and hashing
 
-- **Logical IDs** are UUIDv7 values, minted by the creating principal. They
-  are stable across revisions and MUST NOT encode meaning.
+- **Logical IDs** are UUIDv4 values, minted by the creating principal.
+  They are stable across revisions and MUST NOT encode meaning. Full
+  randomness is the point of version 4: a timestamp-bearing ID such as
+  UUIDv7 leaks creation time through every reference and survives
+  redaction.
 - **Revision hashes** are SHA-256 over the object's canonical wire encoding
   (§7.1) with the `rev` field zeroed. Every hash carries an algorithm
   prefix, e.g. `sha256:`. An implementation that encounters an unknown
   algorithm MUST reject the hash rather than guess.
 - **The graph state hash** is the root of a Merkle tree over all live
   object revision hashes and the tombstones of deleted objects, grouped
-  by kind and sorted by logical ID. Leaf and interior hashes carry
-  domain-separated prefixes. Two implementations that fold the same log
+  by kind and sorted by logical ID. The tree is binary, built over the
+  sorted leaves, with an odd node promoted unchanged. Leaf and interior
+  hashes carry domain-separated prefixes. Two implementations that fold
+  the same log
   MUST produce the same state hash. The state hash anchors round-trip
   conformance (§7.4), replay verification (§5.3), and the subgraph
   proofs that federation shares are built on (§5.4, §9.5).
