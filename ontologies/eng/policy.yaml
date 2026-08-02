@@ -1,0 +1,56 @@
+# eng-baseline — reference governance policy for an engineering graph
+# (projection form, §2.5)
+#
+# Additive to corp-baseline: a graph installs both, and requirements
+# only tighten (§4.1), so these rules layer onto the corp ones without
+# edits. Role bindings are placeholders to fill at genesis.
+
+policy: eng-baseline
+version: 1
+default_posture: restricted
+roles:
+  eng-lead:   [ "principal:…" ]
+  sre:        [ "principal:…" ]
+  security:   [ "principal:…" ]
+  code-owner: [ "principal:…" ]
+rules:
+
+  # Code review on the git substrate (§3.3, Appendix F). The same rule
+  # shape as CODEOWNERS plus branch protection, with portable signed
+  # outcomes. Companies narrow the repo pattern per repository.
+  - name: main-requires-review
+    select: { substrate: git, repo: "*", target_ref: "refs/heads/main" }
+    require:
+      reviewers: { role: code-owner, quorum: 1 }
+      substrate_checks: [ ci-attestation-present ]
+
+  # Region rule over the derived code graph: any change that touches a
+  # subject classified security/critical needs a security reviewer.
+  # With commit-aligned derivation, this reaches git changes whose
+  # semantic diff lands on classified functions (§8.3).
+  - name: security-critical-code
+    select: { region: "security/critical" }
+    require:
+      reviewers: { role: security, quorum: 1 }
+
+  # Change management. High-risk changes get review plus a cooling-off
+  # window. Emergencies get an SRE and a short clock instead, and the
+  # taxonomy keeps the two regions apart so the requirements stay
+  # independent.
+  - name: high-risk-changes
+    select: { region: "change/high-risk" }
+    require:
+      reviewers: { role: eng-lead, quorum: 1 }
+      review_window: { min: "24h" }
+
+  - name: emergency-changes
+    select: { region: "change/emergency" }
+    require:
+      reviewers: { role: sre, quorum: 1 }
+      review_window: { max: "4h", on_expiry: reject }
+
+  # Learning loop: postmortems get reviewed before they count.
+  - name: postmortems-reviewed
+    select: { region: "ops/postmortem" }
+    require:
+      reviewers: { role: eng-lead, quorum: 1 }

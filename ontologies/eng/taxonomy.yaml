@@ -1,0 +1,39 @@
+# eng — engineering taxonomy, version 1 (projection form, §2.5)
+#
+# Regions for change management, code criticality, and operations.
+# Composes with the corp taxonomy: a graph installs both, and terms
+# from either can classify the same subject.
+
+taxonomy: eng
+version: 1
+terms:
+
+  # Change regions. Classifying a change request or a changeset here is
+  # what routes it through the matching policy rules.
+  #
+  # change/emergency sits beside change/high-risk on purpose. Ancestor
+  # requirements only tighten (§4.1), so nesting emergency beneath
+  # high-risk would add the 24 hour cooling-off to emergencies, which is
+  # the opposite of what an emergency needs. Sibling regions get
+  # independent rules.
+  - { name: change,           parents: [] }
+  - { name: change/standard,  parents: [change] }
+  - { name: change/high-risk, parents: [change] }
+  - { name: change/emergency, parents: [change] }
+
+  # Code criticality. Classify derived code-graph nodes (functions,
+  # files, types) here, and the region rule then guards every change
+  # that touches them. Companies extend beneath security/, e.g.
+  # security/spend-path in the Appendix F walkthrough.
+  - { name: security,          parents: [] }
+  - { name: security/critical, parents: [security] }
+
+  # Reliability tiers for services. tier-0 is the pager-at-3am set.
+  - { name: reliability,        parents: [] }
+  - { name: reliability/tier-0, parents: [reliability] }
+  - { name: reliability/tier-1, parents: [reliability] }
+
+  # Operational records.
+  - { name: ops,            parents: [] }
+  - { name: ops/incident,   parents: [ops] }
+  - { name: ops/postmortem, parents: [ops] }

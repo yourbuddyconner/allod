@@ -1,0 +1,127 @@
+# eng — engineering organization ontology, version 1 (projection form, §2.5)
+#
+# The human layer of an engineering org: services, environments,
+# releases, change management, incidents, and design records. Imports
+# corp for the org structure and code for the derived code graph, and
+# bridges the two: org units own services and repositories, changes
+# target them, incidents trace back to them.
+
+ontology: eng
+version: 1
+imports:
+  - { ontology: corp, state_hash: "sha256:…" }   # placeholders until Appendix H vectors land
+  - { ontology: code, state_hash: "sha256:…" }
+
+entity_types:
+
+  # Systems ---------------------------------------------------------------
+
+  Service:
+    attributes:
+      name:        { type: string, required: true }
+      description: { type: string }                # long text; projects to the markdown body
+      tier:        { type: string }                # 0 | 1 | 2, criticality
+      status:      { type: string }                # active | deprecated | retired
+      runbook:     { type: document-ref }
+
+  Environment:
+    attributes:
+      name:   { type: string, required: true }     # production | staging | dev
+      region: { type: string }
+
+  Release:
+    attributes:
+      version:     { type: string, required: true }
+      released_at: { type: timestamp }
+      artifact:    { type: external-ref }          # registry digest; the hash is the identity
+      notes:       { type: string }                # long text
+
+  Deployment:
+    attributes:
+      deployed_at: { type: timestamp, required: true }
+      status:      { type: string }                # in-progress | healthy | rolled-back
+
+  # Change management -----------------------------------------------------
+
+  ChangeRequest:
+    attributes:
+      title:         { type: string, required: true }
+      summary:       { type: string }              # long text
+      risk:          { type: string, required: true }  # standard | high | emergency
+      status:        { type: string }              # draft | proposed | approved | applied | rolled-back | rejected
+      window_start:  { type: timestamp }
+      window_end:    { type: timestamp }
+      rollback_plan: { type: string }              # long text
+    constraints:
+      - "window_end >= window_start"
+
+  DesignDoc:
+    attributes:
+      title:  { type: string, required: true }
+      status: { type: string }                     # draft | review | accepted | superseded
+      doc:    { type: document-ref, required: true }
+
+  # Incidents and learning ------------------------------------------------
+
+  Incident:
+    attributes:
+      title:       { type: string, required: true }
+      severity:    { type: string, required: true }    # sev1 | sev2 | sev3 | sev4
+      status:      { type: string }                    # open | mitigated | resolved
+      opened_at:   { type: timestamp, required: true }
+      resolved_at: { type: timestamp }
+      timeline:    { type: string }                    # long text
+    constraints:
+      - "resolved_at >= opened_at"
+
+  Postmortem:
+    attributes:
+      doc:    { type: document-ref, required: true }
+      status: { type: string }                     # draft | reviewed
+
+  ActionItem:
+    attributes:
+      description: { type: string, required: true }
+      due_on:      { type: date }
+      status:      { type: string }                # open | done | dropped
+
+  Slo:
+    attributes:
+      objective: { type: string, required: true }  # e.g. "p99 checkout latency under 300ms"
+      target:    { type: decimal }
+      window:    { type: duration }
+
+edge_types:
+  # Ownership: the CODEOWNERS shape, as governed graph data.
+  owns:        { domain: corp/OrgUnit, range: [Service, code/Repository], cardinality: many-to-many }
+  on_call_for: { domain: corp/Employee, range: Service, cardinality: many-to-many,
+                 attributes: { from: { type: date }, until: { type: date } } }
+
+  # Systems.
+  built_from:  { domain: Service, range: code/Repository, cardinality: many-to-many }
+  depends_on:  { domain: Service, range: Service, cardinality: many-to-many,
+                 attributes: { nature: { type: string } } }   # sync | async | data
+  of_service:  { domain: Release, range: Service, cardinality: many-to-one }
+  deploys:     { domain: Deployment, range: Release, cardinality: many-to-one }
+  runs_in:     { domain: Deployment, range: Environment, cardinality: many-to-one }
+  measures:    { domain: Slo, range: Service, cardinality: many-to-one }
+
+  # Change management.
+  fulfills:    { domain: Deployment, range: ChangeRequest, cardinality: many-to-one }
+  targets:     { domain: ChangeRequest, range: [Service, Environment, code/Repository], cardinality: many-to-many }
+  informs:     { domain: DesignDoc, range: [ChangeRequest, Service], cardinality: many-to-many }
+
+  # Incidents.
+  impacts:     { domain: Incident, range: Service, cardinality: many-to-many }
+  caused_by:   { domain: Incident, range: [Deployment, ChangeRequest], cardinality: many-to-many }
+  analyzed_by: { domain: Incident, range: Postmortem, cardinality: one-to-one }
+  yields:      { domain: Postmortem, range: ActionItem, cardinality: one-to-many }
+  assigned_to: { domain: ActionItem, range: corp/Employee, cardinality: many-to-one }
+
+validation_rules:
+  - name: high-risk-has-rollback-plan
+    rule: "a ChangeRequest with risk high or emergency must have a rollback_plan"
+  - name: production-deploys-fulfill-changes
+    rule: "a Deployment with a runs_in edge to an Environment named production must gain a fulfills edge to a ChangeRequest with status approved within the same changeset"
+  - name: resolved-incidents-have-timestamps
+    rule: "an Incident with status resolved must have resolved_at"

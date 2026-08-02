@@ -10,6 +10,8 @@ the spec uses for examples.
 |---|---|---|
 | `core` | [core/](core/) | The minimal shared vocabulary: Person, Company, principals (§6.1), peers (§9.3), grants (§9.4) |
 | `corp` | [corp/](corp/) | The base company ontology: org structure, external parties, contracts, work artifacts, plus a taxonomy and a reference policy |
+| `code` | [code/](code/) | The derived code-graph ontology indexers emit into (§8.3): repositories, files, functions, types, and their relationships |
+| `eng` | [eng/](eng/) | The engineering organization: services, releases, change management, code review regions, incidents, postmortems |
 
 ## Imports bind by hash
 

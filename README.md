@@ -82,6 +82,8 @@ between two local graphs.
 |---|---|---|
 | `core` | [ontologies/core/](ontologies/core/) | Person, Company, principals, peers, grants |
 | `corp` | [ontologies/corp/](ontologies/corp/) | Base company ontology: org structure, external parties, contracts, work artifacts, plus a taxonomy and a reference policy |
+| `code` | [ontologies/code/](ontologies/code/) | Derived code-graph ontology for repo imports (§8.3) |
+| `eng` | [ontologies/eng/](ontologies/eng/) | Engineering organization: services, change management, code review, incidents |
 
 These packages are projections (§2.5). In a live graph, ontologies are
 versioned objects, and imports bind by state hash.

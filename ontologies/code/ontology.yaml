@@ -1,0 +1,50 @@
+# code — derived code-graph ontology, version 1 (projection form, §2.5)
+#
+# Indexers propose into this ontology (§8.3). Nodes reference source
+# through git: external refs, and every object carries deterministic or
+# model-assisted lineage (§5.1). The graph describes code and never
+# contains it.
+
+ontology: code
+version: 1
+imports:
+  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+
+entity_types:
+
+  Repository:
+    attributes:
+      name:           { type: string, required: true }
+      origin:         { type: string }             # locator hint; commits are the identity
+      default_branch: { type: string }
+
+  SourceFile:
+    attributes:
+      path:     { type: string, required: true }
+      language: { type: string }
+      blob:     { type: external-ref, required: true }   # git:<repo>#<commit>:<path> plus content hash
+
+  Module:
+    attributes:
+      name: { type: string, required: true }
+      path: { type: string }
+
+  Function:
+    attributes:
+      name:      { type: string, required: true }
+      signature: { type: string }
+      span:      { type: string }                  # e.g. "L120-L184"
+
+  Type:
+    attributes:
+      name: { type: string, required: true }
+      kind: { type: string }                       # struct | class | enum | interface | alias
+
+edge_types:
+  in_repo:    { domain: SourceFile, range: Repository, cardinality: many-to-one }
+  in_module:  { domain: SourceFile, range: Module, cardinality: many-to-one }
+  declares:   { domain: SourceFile, range: [Function, Type], cardinality: one-to-many }
+  imports:    { domain: [SourceFile, Module], range: [SourceFile, Module], cardinality: many-to-many }
+  calls:      { domain: Function, range: Function, cardinality: many-to-many }
+  references: { domain: [Function, Type], range: [Function, Type], cardinality: many-to-many }
+  implements: { domain: Type, range: Type, cardinality: many-to-many }

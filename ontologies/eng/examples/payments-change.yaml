@@ -1,0 +1,201 @@
+# A worked high-risk change under the eng ontology: rotating the
+# signing keys on the payments spend path. Hashes and IDs are
+# illustrative. The flow: classify the code, propose the change,
+# collect both required reviews, deploy, and close the loop when the
+# deploy causes an incident.
+
+# The service, owned by an org unit, classified tier-0.
+---
+kind: node
+id: "svc1…"
+rev: "sha256:aa10…"
+type: eng/Service@1
+attributes:
+  name: "payments"
+  tier: "0"
+  status: "active"
+  runbook: { document: "rb77…", content_hash: "sha256:beef…" }
+---
+kind: edge
+type: eng/owns@1
+from: "node:unit-payments…"          # corp/OrgUnit
+to: "node:svc1…"
+---
+kind: classification
+subject: "node:svc1…"
+term: reliability/tier-0@1
+asserted_by: "principal:priya"       # eng-lead
+basis: manual
+
+# A derived function node from the code graph, classified as
+# security-critical. The indexer created the node; a human asserted
+# the classification. From here on, any change whose semantic diff
+# touches this function pulls in the security-critical-code rule.
+---
+kind: node
+id: "fn88…"
+rev: "sha256:c4fe…"
+type: code/Function@1
+attributes:
+  name: "authorize_spend"
+  signature: "fn authorize_spend(req: SpendRequest) -> Result<Auth>"
+  span: "L120-L184"
+provenance:
+  derived_from: ["document:sha256:b10b…"]   # the blob, via git: ref
+  derived_by: "principal:scip-indexer"
+  method: deterministic
+  tool: "scip-rust@0.5.2"
+  changeset: "sha256:d3aa…"
+---
+kind: classification
+subject: "node:fn88…"
+term: security/critical@1
+asserted_by: "principal:wei"         # security
+basis: manual
+
+# The change request. Two classifications route it: change/high-risk
+# demands an eng-lead and a 24 hour window, and because the change
+# targets the spend path, security/critical demands a security
+# reviewer. Requirements accumulate (§4.1).
+---
+kind: node
+id: "cr41…"
+rev: "sha256:e001…"
+type: eng/ChangeRequest@1
+attributes:
+  title: "Rotate spend-path signing keys"
+  summary: "Move authorize_spend to the new KMS alias, dual-write for one week"
+  risk: "high"
+  status: "approved"
+  window_start: 2026-08-04T09:00:00-07:00
+  window_end: 2026-08-04T11:00:00-07:00
+  rollback_plan: "Flip spend_path_kms_alias back to v1; keys stay live for 30 days"
+---
+kind: edge
+type: eng/targets@1
+from: "node:cr41…"
+to: "node:svc1…"
+---
+kind: classification
+subject: "node:cr41…"
+term: change/high-risk@1
+asserted_by: "principal:omar"        # the proposing engineer
+basis: manual
+
+# The design doc that informs the change, anchored to exact bytes.
+---
+kind: node
+id: "dd23…"
+rev: "sha256:0d0c…"
+type: eng/DesignDoc@1
+attributes:
+  title: "Spend-path key rotation"
+  status: "accepted"
+  doc: { document: "doc9…", content_hash: "sha256:fade…" }
+---
+kind: edge
+type: eng/informs@1
+from: "node:dd23…"
+to: "node:cr41…"
+
+# Both required decision records, satisfying both region rules. Each is
+# a signed, portable object: the approval survives any migration off
+# the current tooling.
+---
+kind: decision-record
+subject: "sha256:71aa…"              # the changeset that set cr41 to approved
+policy_context: "sha256:9ee2…"
+verdict: approve
+deciders: [ { principal: "principal:priya", signature: "sig:…" } ]   # eng-lead
+timestamp: 2026-08-03T10:02:00-07:00
+---
+kind: decision-record
+subject: "sha256:71aa…"
+policy_context: "sha256:9ee2…"
+verdict: approve
+deciders: [ { principal: "principal:wei", signature: "sig:…" } ]     # security
+timestamp: 2026-08-03T14:30:00-07:00
+
+# The deployment, authored by the CD runner as a service principal.
+# The production-deploys-fulfill-changes validation rule required the
+# fulfills edge in this same changeset.
+---
+kind: node
+id: "dep7…"
+rev: "sha256:1f2e…"
+type: eng/Deployment@1
+attributes:
+  deployed_at: 2026-08-04T09:12:00-07:00
+  status: "healthy"
+provenance:
+  derived_by: "principal:cd-runner"
+  method: deterministic
+  tool: "acme-deploy@4.1.0"
+  changeset: "sha256:88cc…"
+---
+kind: edge
+type: eng/fulfills@1
+from: "node:dep7…"
+to: "node:cr41…"
+---
+kind: edge
+type: eng/runs_in@1
+from: "node:dep7…"
+to: "node:env-prod…"
+
+# The loop closes. A sev2 the next morning traces to the deployment,
+# and the postmortem region requires eng-lead review before the record
+# counts as reviewed.
+---
+kind: node
+id: "inc3…"
+rev: "sha256:0bad…"
+type: eng/Incident@1
+attributes:
+  title: "Spend authorizations failing for legacy merchants"
+  severity: "sev2"
+  status: "resolved"
+  opened_at: 2026-08-05T06:40:00-07:00
+  resolved_at: 2026-08-05T08:05:00-07:00
+---
+kind: edge
+type: eng/caused_by@1
+from: "node:inc3…"
+to: "node:dep7…"
+---
+kind: edge
+type: eng/impacts@1
+from: "node:inc3…"
+to: "node:svc1…"
+---
+kind: node
+id: "pm55…"
+rev: "sha256:5afe…"
+type: eng/Postmortem@1
+attributes:
+  doc: { document: "docA…", content_hash: "sha256:ca11…" }
+  status: "reviewed"
+---
+kind: edge
+type: eng/analyzed_by@1
+from: "node:inc3…"
+to: "node:pm55…"
+---
+kind: node
+id: "ai91…"
+rev: "sha256:600d…"
+type: eng/ActionItem@1
+attributes:
+  description: "Add legacy-merchant contract tests to the spend-path CI gate"
+  due_on: 2026-08-21
+  status: "open"
+---
+kind: edge
+type: eng/yields@1
+from: "node:pm55…"
+to: "node:ai91…"
+---
+kind: edge
+type: eng/assigned_to@1
+from: "node:ai91…"
+to: "node:omar…"
