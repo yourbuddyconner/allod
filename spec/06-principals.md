@@ -14,10 +14,12 @@ There are three kinds:
 | `service` | A deterministic system component | A sync daemon. A CI runner. An admission gate |
 | `agent` | An AI system acting under delegation from a user or an org | A personal assistant writing memory. A code-review agent |
 
-The kind is not cosmetic. Policy selectors key on it (§4.2 `authors`),
+The kind has direct policy consequences. Selectors key on it (§4.2
+`authors`),
 and default postures SHOULD differ by kind: what a `user` may assert
-directly, an `agent` may only propose. **An agent is an extension of its
-delegating user, never an independent authority.** Every agent principal
+directly, an `agent` may only propose. **An agent acts as an extension
+of its delegating user, and all of its authority comes from that
+delegation.** Every agent principal
 carries a `delegated_by` reference and acts within that delegation's
 scope.
 
@@ -27,7 +29,7 @@ scope.
 |---|---|
 | `key_id` | Hash of the public key |
 | `algorithm` | REQUIRED support: Ed25519 and ECDSA P-256. Others by registry |
-| `valid_from` / `valid_until` | Key validity window. Evaluated against the DAG position (parent state), not wall clocks |
+| `valid_from` / `valid_until` | Key validity window. Evaluated against the DAG position (parent state) of the changeset under verification |
 | `status` | `active` \| `rotated` \| `revoked` |
 
 Key rotation and revocation are ordinary governed changesets. Historical
@@ -38,21 +40,18 @@ revocation is admitted.
 
 ## 6.3 The indexer is a principal
 
-The most consequential rule in this Part:
-
 **Any process that derives knowledge authors its changes as a principal,
 subject to policy, carrying lineage. This includes model-assisted
 classification.**
 
-There is no side door. No "importer" or "indexer" writes state without
-authorship. When an LLM classifies a document into the graph, the
+No process writes state without authorship: no importer, no migration
+tool, and no indexer bypasses the principal model. When an LLM classifies a document into the graph, the
 classification arrives as a changeset, authored by an `agent` principal,
 with lineage that records `method: model-assisted` and names the model in
 `tool`. At L3 it also carries an attestation envelope.
 
-This rule, not any feature built on top of it, is the sovereign-memory
-claim: "my AI wrote this into my memory, under my rules, and I can prove
-it."
+This rule is what makes the sovereign-memory claim true: "my AI wrote
+this into my memory, under my rules, and I can prove it."
 
 ## 6.4 Binding profiles
 
@@ -63,7 +62,7 @@ principals to richer identity systems. Profiles are non-normative.
 ### 6.4.1 Plain-keypair profile (reference)
 
 Keys are generated and held locally. The root authority is a file. This
-is the MVP profile and the floor every implementation must support.
+is the MVP profile and the minimum every implementation must support.
 
 ### 6.4.2 Enclave-custodied profile (e.g. Turnkey-style systems)
 
@@ -87,4 +86,5 @@ A principal can also bind to an OIDC subject: issuer plus audience plus
 subject. Existing org identity (SSO) can then satisfy `reviewers`
 requirements. The OIDC binding is evidence about a principal, and the
 principal's Allod key still signs every changeset. Federated identity
-augments key-based authorship and never replaces it.
+adds evidence on top of key-based authorship, which remains the
+foundation.

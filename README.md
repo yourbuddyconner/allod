@@ -25,14 +25,19 @@ Allod defines a format for knowledge graphs with three properties:
 - **Governed.** Declared, machine-evaluable policy controls how the graph
   changes.
 
-The central design decision is that Allod is a changeset format, not a file
-format. A graph is the result of folding an append-only log of signed
-changesets against a versioned schema. Markdown bundles, Parquet tables, and
-wire messages are projections of that log, never the source of truth.
+Allod specifies how a graph records and admits changes. A graph is stored
+as an append-only log of signed changesets. To read the graph, an implementation replays the
+log and builds the current state, the same way git builds a working tree
+from commits. Each changeset is validated against a versioned schema as it
+is applied. Markdown bundles, Parquet tables, and wire messages are
+exports of that state, and an implementation can regenerate them at any
+time. The log is the only source of truth.
 
-Governance, provenance, and attestation are defined over an abstract
-changeset substrate, so they apply equally to Allod's native changesets and
-to git repositories. Git is treated as a second, already-deployed substrate.
+Because the rules live on the changes rather than on the content,
+governance, provenance, and attestation work on anything that has a log of
+the right shape. The spec defines a native log and also treats a git
+repository as one, so the same policy and audit machinery applies to a
+knowledge graph and to a codebase.
 
 ## Specification contents
 
@@ -68,8 +73,8 @@ Allod generalizes the git model:
 
 1. A graph is a content-addressed DAG of signed changes. The current state
    is a deterministic fold of history.
-2. The objects are typed knowledge (entities, relationships,
-   classifications), not files.
+2. Where git versions files, Allod versions typed knowledge: entities,
+   relationships, and classifications.
 3. The graph declares machine-evaluable rules about who may change what.
    The rules are versioned objects inside the graph.
 4. Classification and admission can run inside attested hardware. A third

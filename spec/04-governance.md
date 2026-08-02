@@ -9,8 +9,9 @@ applies to) and *requirements* (what admission demands).
 Selectors key on:
 
 - **Taxonomy region** (native substrate). The rule applies to operations
-  whose subject is classified under a term or its descendants. This is
-  the core mechanism: *classification implies change-policy*. Example:
+  whose subject is classified under a term or its descendants. This
+  selector is the core mechanism of the policy model: how a subject is
+  classified determines what the rules for changing it are. Example:
   anything under `sensitivity/private` requires owner sign-off.
 - **Entity or edge type.** Example: all mutations of `core/Policy`
   objects.
@@ -21,7 +22,7 @@ Selectors key on:
 
 Selectors compose with AND and OR. When multiple rules match, ALL of
 their requirements apply. Requirements are conjunctive, so adding a rule
-can only tighten policy, never loosen it.
+can only tighten policy.
 
 When no rule matches, the graph's declared **default posture** applies:
 `open` (any authenticated principal) or `restricted` (root authority
@@ -50,7 +51,7 @@ policy survives personnel change without edits.
 Admission is a four-step protocol: **propose, evaluate, decide, apply.**
 
 1. **Propose.** A principal publishes a changeset as a *proposal*, with
-   intent metadata. A proposal is not yet part of any admitted state.
+   intent metadata. A proposal becomes part of the graph only at step 4.
 2. **Evaluate.** An evaluator resolves the policy version in force. The
    normative choice is the policy at the proposal's parent revision. The
    evaluator computes the matching rules and produces a requirement
@@ -81,10 +82,11 @@ Admission is a four-step protocol: **propose, evaluate, decide, apply.**
 A **review artifact** is a document type for structured review. It holds
 prose sections anchored to changeset regions (hunks, objects, subgraphs),
 reviewer threads, and a verdict state. The verdict state feeds a decision
-record's `basis` field. The format defines the artifact, not a UI.
-Tooling that structures diffs for human review SHOULD serialize its
-packets as review artifacts. The review content itself, not just the
-verdict, then becomes portable and provenance-carrying.
+record's `basis` field. The spec defines the artifact's structure only.
+How tools display or edit it is out of scope. Tooling that structures
+diffs for human review SHOULD serialize its
+packets as review artifacts. Both the verdict and the full review
+content then become portable and provenance-carrying.
 
 ## 4.5 Enforcement strengths
 
@@ -96,13 +98,13 @@ L2 has two normatively distinct strengths:
   under the policy in force at its proposal? The log alone decides this
   question. L2-observed needs no write-path control, so it works over
   hosted git remotes today.
-- **L2-enforced.** Admission runs in the write path, and an unadmitted
-  changeset never becomes state. Native substrates get this structurally.
+- **L2-enforced.** Admission runs in the write path, and only admitted
+  changesets ever become state. Native substrates get this structurally.
   Git substrates get it only where the deployment controls the remote:
   a pre-receive hook, a merge queue, or a gate service. An **attested
   gate** is the gate service running at L3 (§5.5). With it, a third
-  party can verify that the write path was enforced, not merely
-  promised.
+  party can verify that the write path was enforced rather than take
+  the operator's word for it.
 
 An implementation MUST NOT claim L2-enforced for a deployment that only
 observes. Observation detects violations, while enforcement prevents
@@ -120,8 +122,9 @@ them. Conflating the two is the most likely way to oversell this spec.
 - Authority transfer and key rotation are policy changes like any other.
   The outgoing authority signs the changeset that installs the new keys.
   When root keys are lost and policy declares no recovery path, the graph
-  is unrecoverable. This is by design: sovereignty includes the
-  sovereign's ability to lose the keys. Graphs SHOULD declare recovery
+  is unrecoverable. This is deliberate. Full ownership includes the risk
+  of losing the keys, and no vendor can override or recover them. Graphs
+  SHOULD declare recovery
   rules in genesis policy, such as social recovery or escrowed shards.
 
 ## 4.7 Non-normative mappings
@@ -132,7 +135,8 @@ them. Conflating the two is the most likely way to oversell this spec.
   admissible only within the grant's scope. See §6.4.
 - **Policy-engine backends.** The requirement vocabulary is small enough
   to compile to existing engines: OPA/Rego, Cedar, or Ump-style
-  expression evaluators. The spec defines semantics, not an engine.
+  expression evaluators. The spec defines what the requirements mean and
+  leaves the evaluation engine to implementations.
 - **CODEOWNERS and branch protection.** These express `reviewers`
   requirements with path selectors, but their verdicts are host-locked
   and unsigned. The git binding provides the same rules with portable,

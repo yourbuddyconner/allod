@@ -30,21 +30,23 @@ before multiple implementations exist would be speculation.
 
 ## 9.4 Economic and incentive layers
 
-No tokens, no marketplaces, no payment rails for knowledge exchange.
-Decision records and attestations give a future layer the integrity
+This spec defines no tokens, marketplaces, or payment rails for
+knowledge exchange. Decision records and attestations give a future
+layer the integrity
 substrate it would need. Building that layer is future work for another
 spec.
 
 ## 9.5 Key management UX
 
 Custody, recovery flows, and hardware-wallet ergonomics for root
-authority keys belong to profiles and products (§6.4), not to the format.
+authority keys belong to profiles and products (§6.4).
 The spec declares only the rotation and recovery semantics (§4.6, §6.2).
 
 ## 9.6 Real-time collaboration
 
 CRDT-style concurrent editing is not a goal. Allod's merge model
-(§3.2.3) is deliberate and governed, not automatic and instant. A CRDT
+(§3.2.3) requires explicit, governed resolution, which rules out
+automatic instant convergence. A CRDT
 layer could emit changesets as its checkpoint mechanism. The converse,
 making the log itself a CRDT, would sacrifice the no-silent-merge
 property that governance requires.

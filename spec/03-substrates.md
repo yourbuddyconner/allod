@@ -27,7 +27,7 @@ when it satisfies the four properties.
 | `hash` | hash | SHA-256 of the canonical encoding, with the signature zeroed |
 | `parents` | list<hash> | At least one, except genesis. More than one is a merge |
 | `author` | principal-ref + key-id | Part 6 |
-| `timestamp` | rfc3339 | Author-asserted. The DAG, not the clock, is the ordering authority |
+| `timestamp` | rfc3339 | Author-asserted and informational. Ordering always comes from the DAG |
 | `intent` | string (optional) | Rationale for the change, readable by humans and agents. Analogous to a commit message |
 | `operations` | list<operation> | §3.2.2. Applied atomically |
 | `schema_context` | hash | State hash of the schema the author validated against |
@@ -44,7 +44,8 @@ at fold time is a conflict (§3.2.4).
 
 Schema mutations are ordinary operations that target schema objects
 (§2.5): `define-type`, `deprecate-term`, `set-policy`, and similar. They
-get no special transport, though they usually get stricter policy.
+travel like any other operation, though policy usually holds them to
+stricter review.
 
 `delete` writes a tombstone. The log is append-only and history is never
 rewritten. To remove genuinely toxic content, use the explicit, governed
@@ -59,8 +60,9 @@ A changeset with multiple parents merges branches. When two branches
 mutated disjoint objects, the merge is automatic. When they touched the
 same object:
 
-- There is **no last-writer-wins default.** The spec treats silent
-  overwrite of knowledge as data loss.
+- Conflicting revisions require explicit resolution. The spec treats
+  silent overwrite of knowledge as data loss and defines no
+  last-writer-wins default.
 - The merge changeset MUST include explicit `resolve` operations. Each
   `resolve` chooses or synthesizes the surviving revision.
 - At L2, `resolve` operations are policy-visible. A graph can require
@@ -73,9 +75,9 @@ The state at revision R is the topological fold of all changesets
 reachable from R. At fold time, implementations MUST reject three things:
 results that violate the schema, dangling references, and `update`
 operations whose prior-revision hash does not match. A merge with
-`resolve` operations clears the third case. A rejected changeset does not
-poison the log. It is not part of any valid state, and consumers skip it
-and flag it.
+`resolve` operations clears the third case. A rejected changeset affects
+only itself: consumers skip it, flag it, and fold the rest of the log
+normally.
 
 ### 3.2.5 Checkpoints
 
@@ -117,9 +119,10 @@ never had a portable L2 or L3. The binding exists to fill that gap.
 
 ### Known limitation
 
-A git remote will advance a ref without any decision record. A
-native-substrate graph at L2-enforced cannot contain unadmitted state, but
-a git substrate can. Git substrates therefore support L2-observed
+A git remote will advance a ref without any decision record, so a git
+substrate can hold state that never passed admission. A native substrate
+at L2-enforced holds only admitted state. Git substrates therefore
+support L2-observed
 everywhere, and L2-enforced only where the deployment controls the remote
 through a ref gate, a merge queue, or a pre-receive hook. §4.5 defines
 both strengths.
@@ -131,12 +134,12 @@ Example: a `document` whose locator is `git:<repo-url>#<commit-sha>:<path>`.
 A decision record in a native graph MAY govern a git changeset. Three
 rules apply:
 
-1. A cross-substrate reference MUST carry the target's content hash. The
-   hash is the identity, and the URL is only a retrieval hint.
-2. Reference integrity is eventual, not transactional. The native
-   substrate cannot stop a git remote from garbage-collecting a commit.
-   When a verifier cannot resolve a cross-reference, it reports the
-   result as degraded, not invalid: the claim stands, but its evidence is
-   offline.
+1. A cross-substrate reference MUST carry the target's content hash,
+   which identifies the target. The URL only says where a copy may be
+   found, and it can go stale.
+2. Reference integrity is eventual. The native substrate cannot stop a
+   git remote from garbage-collecting a commit. When a verifier cannot
+   resolve a cross-reference, it reports the result as degraded. The
+   claim stands, and only its evidence is offline.
 3. The derived-graph machinery (§8.3) generates cross-substrate
    references systematically and inherits these rules.

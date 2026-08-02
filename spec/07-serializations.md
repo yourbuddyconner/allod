@@ -1,8 +1,8 @@
 # Part 7: Serialization Bindings (Projections) *(L0)*
 
-All bindings in this Part are projections of the log (design principle 1).
-None of them is "the format." A projection either round-trips to an
-identical state hash or declares itself lossy.
+All bindings in this Part are projections of the log (design
+principle 1), and the log stays the only authoritative form. A projection
+either round-trips to an identical state hash or declares itself lossy.
 
 ## 7.1 Canonical wire form (normative)
 
@@ -24,9 +24,9 @@ identical state hash or declares itself lossy.
 ## 7.2 Markdown bundle binding (normative, declared-lossy)
 
 This is the human-facing projection: a directory of markdown files with
-YAML front matter. It exists because people do not adopt knowledge they
-cannot casually read and edit. It is also the projection that agent
-memory systems already speak.
+YAML front matter. It exists because adoption requires text that people
+can casually read and edit. It is also the projection that agent
+memory systems already use.
 
 Layout and conventions:
 
@@ -42,7 +42,7 @@ Layout and conventions:
 
 Declared losses: placement of non-primary classifications, edge
 attributes outside the annotated set, binary attributes, and history. A
-bundle projects state, not the log.
+bundle contains the current state only, without the log.
 
 Round-trip requirements: re-ingest of an unmodified bundle MUST reproduce
 the source state hash. A modified bundle ingests as a **proposal**
@@ -67,8 +67,9 @@ append-friendly: new changesets append rows, and state tables are
 rebuildable from the log tables.
 
 Declared losses: signatures verify against wire-form bytes, so Parquet
-alone cannot re-verify. The export ships with the state-hash manifest. It
-is an analytical view, not an authority.
+alone cannot re-verify. The export ships with the state-hash manifest,
+and it supports analysis while verification still requires the wire-form
+log.
 
 ## 7.4 Round-trip conformance
 

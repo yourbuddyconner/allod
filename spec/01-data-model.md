@@ -28,8 +28,8 @@ decision.
 
 A node MUST validate against its declared entity type. Validation uses the
 ontology version that was current when the creating or updating changeset
-was admitted, so validity is historical: a node that was valid under
-`core/Person@2` stays valid after version 3 ships. §2.4 governs migration.
+was admitted. A node that was valid under `core/Person@2` therefore stays
+valid after version 3 ships. §2.4 governs migration.
 
 ## 1.3 Attributes and the type system
 
@@ -45,9 +45,10 @@ Attribute values are typed. Implementations MUST support:
 | `ref` | Typed reference: `node-ref`, `edge-ref`, `document-ref`, or `external-ref` (URI plus optional content hash) |
 | `list<T>` / `map<string, T>` | Homogeneous collections |
 
-**Embeddings are not attribute values.** An embedding is model-dependent
-derived data, not knowledge. Store an embedding as an `external-ref` to a
-derived artifact, tagged with the identity of the model that produced it.
+Embeddings do not belong in attribute values. An embedding depends on the
+model that generated it, so it is derived data rather than stable
+knowledge. Store an embedding as an `external-ref` to a derived artifact,
+tagged with the model's identity.
 Graphs then stay meaningful across model generations. Implementations MAY
 keep embedding side-tables in projections such as Parquet (§7.3).
 
@@ -77,7 +78,7 @@ message, a meeting transcript, a commit, a web page.
 | `content_hash` | hash | REQUIRED. Hash of the exact bytes |
 | `media_type` | string | RFC 6838 |
 | `storage` | enum | `inline` \| `stored` \| `external` |
-| `locator` | uri (optional) | Where the bytes live when not inline. The locator is a retrieval hint. The hash is the identity |
+| `locator` | uri (optional) | Where the bytes can be fetched when not inline. Identity always comes from `content_hash`, so a stale locator does no harm |
 
 A graph MAY store document bytes or only reference them. Lineage
 verification (§5.3) degrades gracefully. With the stored bytes, a verifier
@@ -96,10 +97,10 @@ A classification assigns a subject to a taxonomy term:
 | `asserted_by` | principal-ref | Who or what made this classification |
 | `basis` | enum | `manual` \| `deterministic` \| `model-assisted` (§8.2) |
 
-Classifications are **data, not annotations**. Changesets create them, they
-carry provenance, and governance applies to them. This rule matters because
-Part 4 keys policy off classifications: the act of classifying is itself a
-governed mutation.
+Classifications are full objects with the same lifecycle as nodes and
+edges: changesets create them, they carry provenance, and governance
+applies to them. This matters because Part 4 keys policy off
+classifications, so the act of classifying is itself a governed mutation.
 
 ## 1.7 Identifiers and hashing
 
@@ -115,6 +116,7 @@ governed mutation.
   The state hash anchors round-trip conformance (§7.4) and replay
   verification (§5.3).
 
-The state hash makes "same graph" a decidable question. A projection that
+The state hash gives a definite test for whether two copies are the same
+graph. A projection that
 cannot re-ingest to an identical state hash is lossy by definition, and a
 lossy projection MUST declare its losses (§7.2).

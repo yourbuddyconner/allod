@@ -36,9 +36,9 @@ to operations over the diff log. This axiom drives design principle 1.
 These principles are normative. When a later section faces a design
 dispute, the resolution MUST agree with them, in priority order:
 
-1. **Projection, not format.** The changeset log is the sole source of
-   truth. Files, tables, and wire messages are projections of the log. A
-   projection MUST NOT carry state that the log cannot reproduce.
+1. **The log is the source of truth.** Files, tables, and wire messages
+   are projections of the changeset log. A projection MUST NOT carry
+   state that the log cannot reproduce.
 2. **Sovereignty.** No capability of this specification may require a
    specific host, vendor, network service, or hardware supplier. An owner
    with only local, open implementations MUST be able to exercise every
@@ -46,13 +46,13 @@ dispute, the resolution MUST agree with them, in priority order:
    to conformance level L3.
 3. **Verifiability before trust.** Every graph state MUST be
    reconstructible and checkable from signed history alone. A verifier
-   needs only the log and the public keys, never the cooperation of the
-   graph's host.
-4. **Minimality.** The core (L0 and L1) is small. Capability lives in
-   conformance levels and profiles, not in the core.
+   needs only the log and the public keys.
+4. **Minimality.** The core (L0 and L1) stays small. Additional
+   capability lives in higher conformance levels and profiles.
 5. **Substrate neutrality.** Governance and provenance are defined over an
    abstract changeset interface. They MUST NOT depend on what the diff is
-   a diff of. Knowledge changesets and git commits are peers.
+   a diff of. The same rules therefore apply to a knowledge changeset
+   and to a git commit.
 
 ## 0.4 Terminology
 
@@ -89,7 +89,8 @@ NOT, and MAY as described in RFC 2119 and RFC 8174.
 
 ## 0.5 Conformance levels
 
-Conformance is cumulative. It applies to an implementation, not to a graph.
+Conformance is cumulative. A conformance level describes the capabilities
+of an implementation.
 
 - **L0 (data model).** Implements Parts 1 and 2, and at least one
   serialization binding from Part 7. Sufficient for read/write tooling and
@@ -114,23 +115,25 @@ The RDF mapping is normative in Appendix D.
 - **RDF / OWL / SPARQL.** The most complete prior formalization of typed
   knowledge graphs. RDF has no changeset primitive. Named graphs and
   RDF-star do not provide signed, ordered history. RDF has no governance
-  model and no attestation story. Three decades of practice show that
+  model and no attestation mechanism. Three decades of practice show that
   agents and application developers route around its ergonomics. Allod
   accepts RDF's lesson that triples are too low-level an authoring
   surface. Appendix D preserves compatibility through a lossy export
   mapping.
-- **JSON-LD / schema.org.** Vocabulary and serialization without history,
-  authority, or governance. An Allod ontology MAY import schema.org type
-  vocabularies.
-- **Datomic / XTDB and other immutable-log databases.** Proof that
-  log-as-truth works in production. They are products, not interchange
-  formats. Their logs are not portable, signed, or governed.
-- **git.** Proof at planetary scale that a content-addressed DAG of signed
-  diffs with deterministic state is the right shape. Allod adopts git as a
-  substrate (§3.3) instead of reinventing it.
-- **LSIF / SCIP.** Code intelligence as data: definitions, references, and
-  hovers, precomputed. Allod adopts them as the preferred edge source for
-  the code ontology (§8.3) instead of reinventing them.
+- **JSON-LD / schema.org.** These provide vocabulary and serialization
+  but no history, authority, or governance. An Allod ontology MAY import
+  schema.org type vocabularies.
+- **Datomic / XTDB and other immutable-log databases.** These prove that
+  a log as the source of truth works in production, but they are products
+  with internal logs rather than interchange formats. Their logs are not
+  portable, signed, or governed.
+- **git.** git demonstrates at planetary scale that a content-addressed
+  DAG of signed diffs with deterministic state works. Allod adopts git as
+  a substrate (§3.3) instead of reinventing it.
+- **LSIF / SCIP.** These formats precompute code intelligence
+  (definitions, references, hovers) as data. Allod adopts them as the
+  preferred edge source for the code ontology (§8.3) instead of
+  reinventing them.
 - **W3C Verifiable Credentials / C2PA.** Prior art for attestation
   envelopes. Allod's envelope (§5.2) is shaped so a VC or C2PA manifest
   can carry it.

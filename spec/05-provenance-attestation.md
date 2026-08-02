@@ -19,8 +19,9 @@ list, from the log alone, every document a given claim rests on.
 ## 5.2 Attestation envelope
 
 An attestation envelope is a signed statement by an **attester** about an
-execution. Lineage says "the log says X did this." An envelope strengthens
-that to "an attested environment provably did this."
+execution. Lineage records that a principal claims to have done
+something. An envelope strengthens that claim into proof that the work
+ran inside a specific, measured environment.
 
 | Field | Description |
 |---|---|
@@ -34,11 +35,11 @@ Design constraints:
 
 - The envelope is agnostic to evidence format. A new TEE platform adds an
   `evidence_type` entry and does not require a spec revision.
-- The envelope is shaped so a W3C Verifiable Credential or a C2PA manifest
-  can carry it. Allod does not invent a rival outer wrapper.
-- An envelope with `evidence: none` is just a signature. It attests to key
-  possession, not execution integrity, and verification results MUST
-  distinguish the two.
+- The envelope is shaped so a W3C Verifiable Credential or a C2PA
+  manifest can carry it and serve as the outer wrapper.
+- An envelope with `evidence: none` is just a signature. It proves only
+  that the signer holds the key, without any guarantee about what code
+  ran, and verification results MUST distinguish the two.
 
 ## 5.3 Verification procedures
 
@@ -70,7 +71,8 @@ A holder can prove properties of a graph without revealing its contents.
 - **Attested predicates.** At L3, an attested environment can evaluate a
   predicate over a private graph and emit an envelope that attests the
   result. Example: "a node classified `kyc/verified` exists for subject
-  S." Only the fact is revealed, not the node. The predicate's code
+  S." The envelope reveals that fact without revealing the node
+  itself. The predicate's code
   identity is in the measurement, so the verifier knows exactly what
   question was answered.
 - **Redacted projections.** A redacted projection (Part 7) carries

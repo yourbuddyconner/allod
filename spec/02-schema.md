@@ -31,7 +31,7 @@ A taxonomy is a DAG of terms used to classify subjects.
 |---|---|---|
 | `name` | string | Namespaced, e.g. `sensitivity/private` |
 | `version` | int | |
-| `parents` | list<term-ref> | Multiple parents permitted. The structure is a DAG, not a tree |
+| `parents` | list<term-ref> | A term MAY have multiple parents, so the taxonomy forms a DAG |
 | `status` | enum | `active` \| `deprecated` |
 
 Classification semantics: when a subject is classified under a term, policy
@@ -48,10 +48,10 @@ and evolve it locally.
   example make an optional attribute required or tighten a range. It MUST
   NOT remove inherited attributes or widen inherited constraints. Every
   subtype instance therefore stays a valid instance of the base type.
-- A derived ontology imports a base ontology by content hash, not by name:
-  `imports: [{ ontology: "core", state_hash: "sha256:…" }]`. Name
-  resolution without a hash is a projection convenience, never an
-  identity.
+- A derived ontology imports a base ontology by content hash:
+  `imports: [{ ontology: "core", state_hash: "sha256:…" }]`. The hash
+  alone identifies the imported ontology. The name exists for
+  human-readable projections.
 - As a consequence, a consumer that understands only the base ontology can
   still consume a projection of data authored under the derived one, by
   dropping the unknown attributes. Sharing an evolved ontology never
@@ -75,14 +75,14 @@ and evolve it locally.
 
 ## 2.5 Schema-as-object
 
-The schema is not a sidecar file. Ontology types, taxonomy terms, and
-governance policies (Part 4) are objects in the graph. Changesets create
+The schema lives inside the graph rather than beside it. Ontology types,
+taxonomy terms, and governance policies (Part 4) are objects in the graph. Changesets create
 and mutate them like any other data, and governance applies to them like
 any other mutation.
 
 This design has three intended consequences:
 
-1. **Ontologies are shareable by construction.** To export an ontology,
+1. **An ontology can be shared on its own.** To export an ontology,
    export a subgraph (Part 7). An agent that evolved a domain ontology can
    hand that world-model to another agent without sharing any of the
    private data classified under it.

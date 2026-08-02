@@ -11,9 +11,9 @@ document(s) → [indexer] → classification + structure → changeset PROPOSAL 
 The contract has four rules:
 
 1. An indexer consumes documents (by content hash) and a schema version.
-   It emits **proposals**, never directly-admitted state. The indexer is
-   a principal (§6.3), and its proposals are subject to policy like
-   anyone else's (§4.3).
+   It emits **proposals** only, and nothing an indexer produces enters
+   the graph without admission. The indexer is a principal (§6.3), and
+   its proposals are subject to policy like anyone else's (§4.3).
 2. Every emitted object carries lineage: `derived_from` the input
    document hashes, `derived_by` the indexer principal, plus `method`
    and `tool` (§5.1).
@@ -40,8 +40,9 @@ Rules for model-assisted classification:
   than deterministic ones. Appendix C does this.
 - At L3, the attested-indexer envelope (§5.5) binds the input hashes, the
   indexer code identity, the model identity, and the output changeset
-  hash. Machine-written knowledge then becomes exactly as trustworthy as
-  the measured pipeline, and verifiably so.
+  hash. A consumer can then trust machine-written knowledge to the same
+  degree it trusts the measured pipeline, and can verify which pipeline
+  actually ran.
 
 ## 8.3 Derived graphs from external substrates (repo import)
 
@@ -62,8 +63,8 @@ Rules:
 
 - **No source text in the graph.** Nodes reference blobs and commits by
   SHA, as `git:` external refs (§3.4). Both sides are content-addressed,
-  so the linkage is exact. The graph is knowledge about the code, not a
-  copy of the code.
+  so the linkage is exact. The graph describes the code and references
+  it by hash.
 - **Commit-aligned derivation.** Each imported commit yields one derived
   changeset, so the knowledge graph's history mirrors the repo's history
   and the graph is materializable as of any commit.
@@ -73,7 +74,7 @@ Rules:
   diffability, and unification with non-code knowledge. It does not
   re-specify code intelligence. Tree-sitter-grade syntactic extraction
   is a conforming fallback: `deterministic`, at lower resolution.
-- **Toolchain honesty.** LSP and SCIP output depends on toolchain
+- **Toolchain dependence.** LSP and SCIP output depends on toolchain
   versions and configuration. This is why `tool` versioning is REQUIRED
   lineage, and why the attested indexer exists. When a code graph must
   be trusted, run the extraction at L3. Dependency review of enclave

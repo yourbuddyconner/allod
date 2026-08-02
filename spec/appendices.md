@@ -26,8 +26,8 @@ one machine, with the plain-keypair profile:
    proposal and its rejection stay auditable.
 6. **Projections.** Export a markdown bundle and Parquet. Re-ingest the
    unmodified bundle. The state hash matches (§7.4). Edit one file by
-   hand. Re-ingest. Confirm the edit arrives as a proposal, not as
-   silent state.
+   hand. Re-ingest. Confirm the edit arrives as a proposal that awaits
+   admission.
 7. **Replay.** Cold-start from the log on a second machine. The state
    hash matches. Repeat from a checkpoint. It matches.
 8. **L3, once.** Run the indexer or the admission gate in an attested
@@ -84,8 +84,9 @@ edge_types:
 
 Exporting `conner-workspace@7` shares the shape of months of learned
 structure (cadences, routing, escalation topology) without exporting any
-classified facts. The agent shares its world-model and keeps its world.
-That asymmetry is the payoff of §2.5.
+classified facts. The receiving agent gets the learned structure with
+none of the private data recorded under it. This separation is the
+payoff of storing the schema in the graph (§2.5).
 
 ## Appendix C: Worked example of a governance policy
 
@@ -142,8 +143,7 @@ the same vocabulary as the knowledge rules.
 
 The mapping is export-only. Round-tripping RDF into Allod is out of
 scope. The history, governance, and attestation layers have no
-RDF-native home, and that absence, visible in one table, is the argument
-for Allod's existence.
+RDF-native home, which is the gap Allod exists to fill.
 
 ## Appendix E: Threat model (summary)
 
@@ -154,11 +154,11 @@ for Allod's existence.
 | T3 | Malicious or compromised indexer | The indexer is a principal (§6.3): scoped, policy-gated, lineage-carrying. L3 measurement pins the code identity |
 | T4 | Model-assisted fabrication | `basis` is first-class. Policy routes model output through stricter admission (§8.2, Appendix C rule 4) |
 | T5 | Stolen agent credentials | The agent kind plus delegation scope bounds the blast radius (§6.1). Revocation is a governed changeset. Historical validity is preserved (§6.2) |
-| T6 | Projection tampering: an edited bundle passed off as state | A modified projection re-enters as a proposal, never as state (§7.2). The state-hash manifest detects divergence |
+| T6 | Projection tampering: an edited bundle passed off as state | A modified projection re-enters as a proposal that must pass admission (§7.2). The state-hash manifest detects divergence |
 | T7 | Replay or equivocation across copies | The state hash decides "same graph." Checkpoints are signed. An equivocating host produces detectably divergent hashes |
 | T8 | Erasure-law conflict with an append-only log | `redact-document` removes bytes and keeps hashes plus tombstoned lineage (§3.2.2, §8.4). Legal analysis is open. The spec flags it rather than hiding it |
 | T9 | Root key loss | Unrecoverable when policy declares no recovery path. This is by design. Genesis SHOULD declare recovery rules (§4.6) |
-| T10 | TEE compromise or attestation forgery | The envelope pins the evidence type and vendor chain. A failed L3 claim degrades to L2, never silently (§5.2 requires distinguishing `evidence: none`) |
+| T10 | TEE compromise or attestation forgery | The envelope pins the evidence type and vendor chain. A failed L3 claim degrades to L2, and verification reports the downgrade (§5.2 requires distinguishing `evidence: none`) |
 
 ## Appendix F: Worked example of a governed git code review, end to end
 
@@ -175,9 +175,9 @@ an agent reviewer, and an attested gate on `main`.
 3. **Evaluate.** Policy resolution matches Appendix C rule 6 plus a
    `security/spend-path` region rule. The checklist requires steward
    review, a CI attestation, and owner sign-off from the region rule.
-4. **Review.** The agent reviewer walks the graph, not just the patch:
-   inbound callers, and both versions of each function body through
-   `git:` refs. It writes a review artifact (§4.4). The artifact's
+4. **Review.** The agent reviewer walks the full graph: inbound
+   callers, and both versions of each function body through `git:`
+   refs. It writes a review artifact (§4.4). The artifact's
    sections anchor to the hunks and to the affected subgraph. Its
    verdict is approve-with-comments.
 5. **Decide.** The steward and the owner issue decision records that
