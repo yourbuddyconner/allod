@@ -1,0 +1,143 @@
+# corp — base company ontology, version 1 (projection form, §2.5)
+#
+# What a company graph starts from: people and structure, external
+# parties, commercial agreements, and work artifacts. Companies import
+# this by state hash and extend it (§2.3).
+
+ontology: corp
+version: 1
+imports:
+  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+
+entity_types:
+
+  # People and structure --------------------------------------------------
+
+  Employee:
+    extends: core/Person
+    attributes:
+      title:           { type: string, required: true }
+      employment_type: { type: string }            # full-time | part-time | contractor
+      hired_on:        { type: date, required: true }
+      terminated_on:   { type: date }
+      location:        { type: string }
+      cost_center:     { type: string }
+    constraints:
+      - "terminated_on >= hired_on"
+
+  OrgUnit:
+    attributes:
+      name:        { type: string, required: true }
+      unit_type:   { type: string, required: true } # team | department | division | subsidiary
+      charter:     { type: string }                 # long text; projects to the markdown body
+      cost_center: { type: string }
+
+  Contact:
+    extends: core/Person
+    attributes:
+      organization:      { type: node-ref, target: core/Company }
+      preferred_channel: { type: string }
+
+  # External parties ------------------------------------------------------
+
+  Customer:
+    extends: core/Company
+    attributes:
+      tier:       { type: string }
+      arr_usd:    { type: decimal }                 # decimal, because drift matters (§1.3)
+      renewal_on: { type: date }
+
+  Vendor:
+    extends: core/Company
+    attributes:
+      category:    { type: string }
+      criticality: { type: string }                 # low | medium | high
+      renewal_on:  { type: date }
+
+  Partner:
+    extends: core/Company
+    attributes:
+      partnership_type: { type: string }
+
+  # Commercial artifacts --------------------------------------------------
+
+  Contract:
+    attributes:
+      title:       { type: string, required: true }
+      effective:   { type: date, required: true }
+      expires:     { type: date }
+      value_usd:   { type: decimal }
+      auto_renews: { type: bool }
+      signed_copy: { type: document-ref, required: true }
+    constraints:
+      - "expires >= effective"
+
+  Deal:
+    attributes:
+      name:       { type: string, required: true }
+      stage:      { type: string }
+      amount_usd: { type: decimal }
+      close_on:   { type: date }
+
+  # Work artifacts --------------------------------------------------------
+
+  Project:
+    attributes:
+      name:      { type: string, required: true }
+      status:    { type: string }                   # proposed | active | done | dropped
+      starts_on: { type: date }
+      ends_on:   { type: date }
+      brief:     { type: string }                   # long text
+
+  Objective:
+    attributes:
+      statement: { type: string, required: true }
+      period:    { type: string }                   # e.g. 2026-Q3
+      status:    { type: string }
+
+  Meeting:
+    attributes:
+      title:      { type: string, required: true }
+      held_at:    { type: timestamp, required: true }
+      transcript: { type: document-ref }
+      notes:      { type: string }                  # long text
+
+  Decision:
+    attributes:
+      summary:    { type: string, required: true }
+      rationale:  { type: string }                  # long text
+      status:     { type: string }                  # proposed | approved | reversed
+      decided_on: { type: date }
+
+  Risk:
+    attributes:
+      description: { type: string, required: true }
+      severity:    { type: string }
+      likelihood:  { type: string }
+      mitigation:  { type: string }                 # long text
+      status:      { type: string }
+
+edge_types:
+  member_of:    { domain: Employee, range: OrgUnit, cardinality: many-to-many,
+                  attributes: { role: { type: string }, from: { type: date }, until: { type: date } } }
+  reports_to:   { domain: Employee, range: Employee, cardinality: many-to-one }
+  leads:        { domain: Employee, range: OrgUnit,  cardinality: many-to-many }
+  part_of:      { domain: OrgUnit,  range: OrgUnit,  cardinality: many-to-one }
+  owns_account: { domain: Employee, range: core/Company, cardinality: one-to-many }
+  party_to:     { domain: core/Company, range: Contract, cardinality: many-to-many,
+                  attributes: { role: { type: string } } }   # customer | vendor | partner
+  works_on:     { domain: Employee, range: Project, cardinality: many-to-many,
+                  attributes: { role: { type: string } } }
+  pursues:      { domain: [Deal, Project], range: Objective, cardinality: many-to-many }
+  attended:     { domain: core/Person, range: Meeting, cardinality: many-to-many }
+  decided_in:   { domain: Decision, range: Meeting, cardinality: many-to-one }
+  decided_by:   { domain: Decision, range: core/Person, cardinality: many-to-many }
+  supersedes:   { domain: Decision, range: Decision, cardinality: one-to-one }
+  affects:      { domain: Decision, range: [Project, Contract, OrgUnit, core/Company], cardinality: many-to-many }
+  threatens:    { domain: Risk, range: [Project, Contract, Objective], cardinality: many-to-many }
+
+validation_rules:
+  - name: contract-has-parties
+    rule: "a Contract node must gain at least one party_to edge within the same changeset"
+  - name: approved-decision-has-decider
+    rule: "a Decision with status approved must have at least one decided_by edge"

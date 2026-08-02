@@ -1,0 +1,43 @@
+# corp — base company taxonomy, version 1 (projection form, §2.5)
+#
+# The structure is a DAG: a term with several parents inherits policy
+# through every ancestor (§2.2, §4.1). Classification implies change
+# policy, so this file is where a company's control surface lives.
+
+taxonomy: corp
+version: 1
+terms:
+
+  # Organizational regions. Companies extend beneath org/ with their
+  # own units, e.g. org/sales or org/engineering.
+  - { name: org,                        parents: [] }
+
+  # Sensitivity ladder. Stricter terms nest under broader ones, so a
+  # rule keyed on an ancestor applies to everything beneath it, and
+  # requirements accumulate as sensitivity rises.
+  - { name: sensitivity,                parents: [] }
+  - { name: sensitivity/public,         parents: [sensitivity] }
+  - { name: sensitivity/internal,       parents: [sensitivity] }
+  - { name: sensitivity/confidential,   parents: [sensitivity/internal] }
+  - { name: sensitivity/restricted,     parents: [sensitivity/confidential] }
+
+  # Compliance regions. Multiple parents place a record in its
+  # compliance bucket and its sensitivity region with one
+  # classification.
+  - { name: compliance,                   parents: [] }
+  - { name: compliance/pii,               parents: [compliance, sensitivity/confidential] }
+  - { name: compliance/financial-record,  parents: [compliance, sensitivity/confidential] }
+  - { name: compliance/contract-record,   parents: [compliance, sensitivity/internal] }
+  - { name: compliance/export-controlled, parents: [compliance, sensitivity/restricted] }
+
+  # Lifecycle.
+  - { name: lifecycle,            parents: [] }
+  - { name: lifecycle/draft,      parents: [lifecycle] }
+  - { name: lifecycle/active,     parents: [lifecycle] }
+  - { name: lifecycle/superseded, parents: [lifecycle] }
+  - { name: lifecycle/archived,   parents: [lifecycle] }
+
+  # Scratch space for low-stakes agent notes. The reference policy
+  # carves this region out of review requirements.
+  - { name: workspace,         parents: [] }
+  - { name: workspace/scratch, parents: [workspace] }

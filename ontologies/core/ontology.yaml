@@ -1,0 +1,70 @@
+# core — base ontology, version 1 (projection form, §2.5)
+#
+# The minimal shared vocabulary. Principals (§6.1), peers (§9.3), and
+# grants (§9.4) are ordinary entity types here, which is what makes
+# identity and sharing governed, provenance-carrying history like
+# everything else in a graph.
+
+ontology: core
+version: 1
+
+entity_types:
+
+  Person:
+    attributes:
+      name:        { type: string, required: true }
+      emails:      { type: list<string> }
+      affiliation: { type: node-ref, target: Company }
+
+  Company:
+    attributes:
+      name:    { type: string, required: true }
+      domains: { type: list<string> }
+
+  # Principals (§6.1). The kind is the type, and policy selectors key
+  # on it. Key records follow §6.2: key_id, algorithm, valid_from,
+  # valid_until, status.
+
+  User:
+    attributes:
+      display_name: { type: string, required: true }
+      keys:         { type: list<map<string, string>>, required: true }
+      status:       { type: string }                  # active | suspended
+
+  Service:
+    attributes:
+      display_name: { type: string, required: true }
+      keys:         { type: list<map<string, string>>, required: true }
+      status:       { type: string }
+
+  Agent:
+    attributes:
+      display_name: { type: string, required: true }
+      keys:         { type: list<map<string, string>>, required: true }
+      status:       { type: string }
+      delegated_by: { type: node-ref, target: User, required: true }   # §6.1
+      scope:        { type: map<string, string> }     # delegation scope
+
+  # Federation objects (Part 9).
+
+  Peer:
+    attributes:
+      graph_id:    { type: string, required: true }   # genesis hash (§9.2)
+      root_keys:   { type: list<string>, required: true }
+      locators:    { type: list<string> }             # fetch hints, ordered
+      trust_basis: { type: string }                   # out-of-band | tofu | attested
+
+  Grant:
+    # The issuer signs the changeset that creates the grant, so
+    # issuance needs no separate signature field (§9.4).
+    attributes:
+      audience:    { type: string, required: true }   # principal ref, graph ID, or public
+      scope:       { type: map<string, string>, required: true }  # selector, §4.1 grammar
+      rights:      { type: list<string>, required: true }         # state | history | subscribe
+      valid_from:  { type: timestamp }
+      valid_until: { type: timestamp }
+
+edge_types:
+  employs: { domain: Company, range: Person, cardinality: one-to-many }
+  knows:   { domain: Person,  range: Person, cardinality: many-to-many,
+             attributes: { since: { type: date } } }

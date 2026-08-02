@@ -1,0 +1,71 @@
+# corp-baseline — reference governance policy for a company graph
+# (projection form, §2.5)
+#
+# Pairs with the corp taxonomy. Requirements only tighten (§4.1), so a
+# company adds rules for its own regions without editing these. Role
+# bindings are placeholders to fill at genesis.
+
+policy: corp-baseline
+version: 1
+default_posture: restricted
+roles:
+  owner:   [ "principal:…" ]
+  steward: [ "principal:…" ]
+  hr:      [ "principal:…" ]
+  legal:   [ "principal:…" ]
+  finance: [ "principal:…" ]
+rules:
+
+  - name: agent-writes-are-proposals
+    select:
+      all:
+        - { author_kind: agent }
+        - { not: { region: "workspace/scratch" } }  # scratch is the carve-out
+    require:
+      reviewers: { role: steward, quorum: 1 }
+
+  - name: deterministic-sync-writes
+    select: { author_kind: service, basis: deterministic }
+    require: { schema_valid: true }
+
+  - name: model-assisted-needs-attestation
+    select: { basis: model-assisted }
+    require:
+      attestation_required: { attester_class: attested-indexer }
+
+  # Region rules. Ancestor inheritance does the fan-out: tagging a
+  # record compliance/pii also places it under sensitivity/confidential,
+  # so both region rules apply with one classification.
+
+  - name: pii-guarded
+    select: { region: "compliance/pii" }
+    require:
+      reviewers: { role: hr, quorum: 1 }
+
+  - name: contract-records-reviewed
+    select: { region: "compliance/contract-record" }
+    require:
+      reviewers: { role: legal, quorum: 1 }
+
+  - name: financial-records-reviewed
+    select: { region: "compliance/financial-record" }
+    require:
+      reviewers: { role: finance, quorum: 1 }
+
+  - name: restricted-region-elevated
+    select: { region: "sensitivity/restricted" }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+      review_window: { max: "72h", on_expiry: reject }
+
+  - name: redaction-is-owner-business
+    select: { operation: [redact-document, redact-operation] }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+      review_window: { min: "24h" }               # forced cooling-off
+
+  - name: schema-changes-are-serious
+    select: { operation: [define-type, set-policy, deprecate-term] }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+      review_window: { min: "24h" }

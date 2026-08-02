@@ -76,6 +76,16 @@ reference MVP targets L2 locally, demonstrates L3 once with a single
 attested accept/reject cycle, and demonstrates one federated exchange
 between two local graphs.
 
+## Reference ontologies
+
+| Package | Path | Contents |
+|---|---|---|
+| `core` | [ontologies/core/](ontologies/core/) | Person, Company, principals, peers, grants |
+| `corp` | [ontologies/corp/](ontologies/corp/) | Base company ontology: org structure, external parties, contracts, work artifacts, plus a taxonomy and a reference policy |
+
+These packages are projections (§2.5). In a live graph, ontologies are
+versioned objects, and imports bind by state hash.
+
 ## The mental model
 
 Allod generalizes the git model:

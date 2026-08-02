@@ -1,0 +1,122 @@
+# A worked instance under the corp ontology: a customer, its contract,
+# and a governed renewal decision. Hashes and IDs are illustrative.
+# The org/sales region comes from an Acme extension of the base org
+# term; everything else is base corp.
+
+# The customer. The CRM sync daemon authored it, and lineage says so.
+---
+kind: node
+id: "b7e2a1d4-…"                     # UUIDv4, stable across revisions (§1.7)
+rev: "sha256:4c19…"
+type: corp/Customer@1
+attributes:
+  name: "Northwind Traders"
+  domains: ["northwind.example"]
+  tier: "enterprise"
+  arr_usd: 240000.00
+  renewal_on: 2027-03-31
+provenance:
+  derived_from: ["document:sha256:5d2e…"]   # the countersigned order form
+  derived_by: "principal:crm-sync"          # a Service principal (§6.1)
+  method: deterministic
+  tool: "acme-crm-sync@2.3.1"
+  changeset: "sha256:66d1…"
+
+# The signed PDF stays wherever it lives. The graph holds the hash.
+---
+kind: document
+id: "3f6c…"
+rev: "sha256:88ab…"
+content_hash: "sha256:5d2e…"         # the identity; the locator is a hint
+media_type: application/pdf
+storage: external
+locator: "https://contracts.acme.example/nwt-msa-2026.pdf"
+
+# The contract node, anchored to the exact bytes.
+---
+kind: node
+id: "9a1b…"
+rev: "sha256:c0de…"
+type: corp/Contract@1
+attributes:
+  title: "Northwind Master Services Agreement"
+  effective: 2026-04-01
+  expires: 2027-03-31
+  value_usd: 240000.00
+  auto_renews: false
+  signed_copy: { document: "3f6c…", content_hash: "sha256:5d2e…" }
+
+# The edge tying Northwind to its MSA. The contract-has-parties
+# validation rule required this edge in the creating changeset.
+---
+kind: edge
+id: "e88f…"
+rev: "sha256:0b3d…"
+type: corp/party_to@1
+from: "node:b7e2…"                   # Northwind
+to:   "node:9a1b…"                   # the MSA
+attributes: { role: "customer" }
+
+# Two classifications on the contract. The bases differ, and policy
+# treated them differently: the model-assisted one required an
+# attestation envelope at admission (§8.2, policy rule
+# model-assisted-needs-attestation).
+---
+kind: classification
+subject: "node:9a1b…"
+term: compliance/contract-record@1
+asserted_by: "principal:maria"       # a User principal
+basis: manual
+---
+kind: classification
+subject: "node:9a1b…"
+term: compliance/pii@1               # ancestor DAG also places it under sensitivity/confidential
+asserted_by: "principal:doc-indexer" # an Agent principal
+basis: model-assisted
+
+# The renewal decision arrives as one atomic changeset, proposed by an
+# agent delegated by Maria (§6.1).
+---
+kind: changeset
+hash: "sha256:71f0…"
+parents: ["sha256:66d1…"]
+author: { principal: "principal:jarvis", key: "key:ed25519:1a2b…" }
+timestamp: 2026-08-02T17:20:00-07:00
+intent: "Record Q3 renewal decision for Northwind from the account review"
+schema_context: "sha256:0aa3…"       # schema state at the parent revision (§3.2.1)
+operations:
+  - create:
+      kind: node
+      id: "5c77…"
+      type: corp/Decision@1
+      attributes:
+        summary: "Renew Northwind at flat ARR, drop the overage clause"
+        status: "approved"
+        decided_on: 2026-08-01
+  - create:
+      kind: edge
+      type: corp/decided_by@1
+      from: "node:5c77…"
+      to: "node:ma41…"               # Maria
+  - create:
+      kind: edge
+      type: corp/decided_in@1
+      from: "node:5c77…"
+      to: "node:0t3a…"               # the account review Meeting node
+  - create:
+      kind: classification
+      subject: "node:5c77…"
+      term: org/sales@1              # Acme's extension of the org region
+signature: "sig:ed25519:9e0c…"
+
+# The author kind is agent and the target sits outside workspace/scratch,
+# so the agent-writes-are-proposals rule fired. Maria's approval is a
+# signed, portable object (§4.3): it verifies with the log and her
+# public key alone, on any host.
+---
+kind: decision-record
+subject: "sha256:71f0…"              # the proposal above
+policy_context: "sha256:44e1…"       # the policy version it was evaluated under
+verdict: approve
+deciders: [ { principal: "principal:maria", signature: "sig:…" } ]
+timestamp: 2026-08-02T17:41:09-07:00

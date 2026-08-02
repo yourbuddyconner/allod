@@ -1,0 +1,62 @@
+# corp: the base company ontology
+
+What a company graph starts from. `corp` extends `core` with the
+entities most companies track: people and org structure, external
+parties, commercial agreements, and work artifacts. A company imports
+it by state hash and extends it with its own types and regions (§2.3).
+
+## Contents
+
+| File | Contents |
+|---|---|
+| [ontology.yaml](ontology.yaml) | Entity and edge types |
+| [taxonomy.yaml](taxonomy.yaml) | Classification regions: org, sensitivity, compliance, lifecycle, workspace |
+| [policy.yaml](policy.yaml) | A reference governance policy bound to those regions |
+| [examples/northwind.yaml](examples/northwind.yaml) | A worked instance: a customer, a contract, and a governed decision |
+| [examples/northwind-renewal.md](examples/northwind-renewal.md) | The decision's markdown projection (§7.2) |
+
+## How the pieces fit
+
+The taxonomy carries the control surface, because classification
+implies change policy (§4.1). The load-bearing structure is the DAG:
+`compliance/pii` lists `sensitivity/confidential` as a parent, so
+tagging one record as PII places it in the confidential region with a
+single classification, and every rule keyed on an ancestor applies
+automatically. Requirements only tighten, so the policy composes:
+mutating a PII record authored by an agent needs the steward review
+from the agent rule plus the HR review from the PII rule.
+
+The ontology leans on three conventions:
+
+- **Relationships are edges, and time lives on them.** Membership in a
+  team is a `member_of` edge with `from` and `until` attributes, so org
+  history accumulates in the log instead of being overwritten.
+- **Money is `decimal`.** Drift matters for `arr_usd` and `value_usd`
+  (§1.3).
+- **Source artifacts are documents.** A contract node requires a
+  `signed_copy` document ref, so the claim "this is the contract" is
+  always anchored to exact bytes by content hash (§1.5).
+
+## Extending it
+
+```yaml
+ontology: acme-corp
+version: 1
+imports:
+  - { ontology: corp, state_hash: "sha256:…" }
+entity_types:
+  Colleague:
+    extends: corp/Employee
+    attributes:
+      slack_id: { type: string }
+```
+
+A consumer that understands only `corp` still reads projections of
+`acme-corp` data and drops the unknown attributes (§2.3). The org
+region works the same way: Acme adds `org/sales` beneath `org` and
+writes rules for it without touching the base policy.
+
+## Status
+
+Draft, tracks spec v0.3. Import hashes are placeholders until the
+reference implementation generates real state hashes (Appendix H).
