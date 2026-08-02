@@ -24,7 +24,7 @@ when it satisfies the four properties.
 
 | Field | Type | Description |
 |---|---|---|
-| `hash` | hash | SHA-256 of the canonical encoding, with the signature zeroed |
+| `hash` | hash | SHA-256 of the canonical encoding, with the signature zeroed and the operations list represented by its Merkle root (§3.2.6) |
 | `parents` | list<hash> | At least one, except genesis. More than one is a merge |
 | `author` | principal-ref + key-id | Part 6 |
 | `timestamp` | rfc3339 | Author-asserted and informational. Ordering always comes from the DAG |
@@ -86,6 +86,26 @@ state projection. Checkpoints allow cold-start without full replay. A
 checkpoint is an optimization. Replay MUST be able to verify it, and a
 checkpoint that disagrees with replay is invalid.
 
+### 3.2.6 Operation Merkle tree and elision
+
+For hashing, the `operations` list is summarized as a Merkle tree: each
+leaf is the hash of one operation's canonical encoding, in list order,
+and leaf and interior hashes carry domain-separated prefixes. The
+changeset `hash` covers this root in place of the raw list, so the wire
+form can carry all operations, a subset, or none while the hash and
+signature stay verifiable.
+
+An **elided changeset** replaces undisclosed operations with their leaf
+hashes and tree positions. A verifier can confirm authorship,
+parentage, and the membership of every disclosed operation. A fold over
+elided history produces the disclosed subset of state. Share bundles
+(§9.5) pair elided history with subgraph proofs so a receiver can also
+check that the subset is consistent with the source's full state.
+
+Elision and redaction solve different problems. `redact-document`
+(§3.2.2) removes stored bytes from the graph itself. Elision keeps the
+source graph complete and controls what a disclosure reveals.
+
 ## 3.3 Git substrate binding
 
 Git already satisfies the §3.1 interface:
@@ -129,10 +149,11 @@ both strengths.
 
 ## 3.4 Cross-substrate references
 
-A node in a native graph MAY reference a revision in another substrate.
-Example: a `document` whose locator is `git:<repo-url>#<commit-sha>:<path>`.
-A decision record in a native graph MAY govern a git changeset. Three
-rules apply:
+A node in a native graph MAY reference a revision in another substrate
+or an object in another Allod graph (§9.2 defines the `allod:` reference
+form). Example: a `document` whose locator is
+`git:<repo-url>#<commit-sha>:<path>`. A decision record in a native
+graph MAY govern a git changeset. Three rules apply:
 
 1. A cross-substrate reference MUST carry the target's content hash,
    which identifies the target. The URL only says where a copy may be

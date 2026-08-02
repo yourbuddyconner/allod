@@ -83,9 +83,10 @@ any other mutation.
 This design has three intended consequences:
 
 1. **An ontology can be shared on its own.** To export an ontology,
-   export a subgraph (Part 7). An agent that evolved a domain ontology can
-   hand that world-model to another agent without sharing any of the
-   private data classified under it.
+   export a subgraph (Part 7), or publish it under a `public` grant
+   (§9.4). An agent that evolved a domain ontology can hand that
+   world-model to another agent without sharing any of the private data
+   classified under it.
 2. **Schema changes have provenance.** The graph records who added an
    entity type, when, and from what discussion it derives, using the same
    lineage machinery as any node.

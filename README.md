@@ -39,6 +39,11 @@ the right shape. The spec defines a native log and also treats a git
 repository as one, so the same policy and audit machinery applies to a
 knowledge graph and to a codebase.
 
+Provenance that survives transfer is what makes federation workable, and
+Part 9 builds on that property. Graphs identify each other by genesis
+hash, disclose scoped, verifiable slices of history under signed grants,
+and import each other's knowledge through their own admission flow.
+
 ## Specification contents
 
 | Part | File | Conformance |
@@ -52,8 +57,9 @@ knowledge graph and to a codebase.
 | 6: Principals and identity | [spec/06-principals.md](spec/06-principals.md) | L1 |
 | 7: Serialization bindings | [spec/07-serializations.md](spec/07-serializations.md) | L0 |
 | 8: Indexing contract | [spec/08-indexing.md](spec/08-indexing.md) | L0/L3 |
-| 9: Non-goals | [spec/09-non-goals.md](spec/09-non-goals.md) | |
-| Appendices A to F | [spec/appendices.md](spec/appendices.md) | |
+| 9: Federation | [spec/09-federation.md](spec/09-federation.md) | L1+F |
+| 10: Non-goals | [spec/10-non-goals.md](spec/10-non-goals.md) | |
+| Appendices A to G | [spec/appendices.md](spec/appendices.md) | |
 
 ## Conformance levels at a glance
 
@@ -63,9 +69,12 @@ knowledge graph and to a codebase.
 | **L1** | Verifiable history | Changesets, signatures, state hashing, replayable log |
 | **L2** | Governed | Policy evaluation on admission, signed decision records |
 | **L3** | Attested | Indexing and/or admission inside attested environments (TEE) |
+| **F** | Federated | Graph identity, grants, share bundles, sync, imports. Claimable at L1 or above |
 
-Levels are cumulative. The reference MVP targets L2 locally and demonstrates
-L3 once, with a single attested accept/reject cycle.
+Levels are cumulative, and F composes with any level from L1 up. The
+reference MVP targets L2 locally, demonstrates L3 once with a single
+attested accept/reject cycle, and demonstrates one federated exchange
+between two local graphs.
 
 ## The mental model
 
@@ -80,3 +89,7 @@ Allod generalizes the git model:
 4. Classification and admission can run inside attested hardware. A third
    party can then verify both what the graph says and that every change
    that produced it followed the declared rules.
+5. Graphs federate the way git repositories do: a graph pulls changesets
+   from a peer within a granted scope and admits them under its own
+   policy. Provenance survives the crossing, so a claim can be traced
+   through every graph it passed through.

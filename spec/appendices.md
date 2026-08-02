@@ -34,8 +34,17 @@ one machine, with the plain-keypair profile:
    environment. Emit one attestation envelope. Verify its evidence
    chain. A simulated-measurement mode is acceptable for local
    development, but the verification code path must be real.
+9. **Federated exchange.** On the second machine, create a second graph
+   with its own root authority. On the first, issue a grant scoped to
+   one taxonomy region to the second graph's ID and produce a share
+   bundle. Transfer it by file copy. On the second graph, verify the
+   bundle against the first graph's keys, import one object as a
+   proposal, and admit it under local policy. Confirm the imported
+   object's lineage traces to the first graph's changeset and document
+   hashes. Revoke the grant and confirm the next sync request is
+   refused.
 
-Pass means all eight steps succeed with no hosted services. The optional
+Pass means all nine steps succeed with no hosted services. The optional
 TEE for step 8 is the only exception.
 
 ## Appendix B: Worked example of a core ontology extract plus an agent's extension
@@ -159,6 +168,9 @@ RDF-native home, which is the gap Allod exists to fill.
 | T8 | Erasure-law conflict with an append-only log | `redact-document` removes bytes and keeps hashes plus tombstoned lineage (§3.2.2, §8.4). Legal analysis is open. The spec flags it rather than hiding it |
 | T9 | Root key loss | Unrecoverable when policy declares no recovery path. This is by design. Genesis SHOULD declare recovery rules (§4.6) |
 | T10 | TEE compromise or attestation forgery | The envelope pins the evidence type and vendor chain. A failed L3 claim degrades to L2, and verification reports the downgrade (§5.2 requires distinguishing `evidence: none`) |
+| T11 | Forged or tampered peer history | Graph IDs are self-certifying (§9.2). Every foreign changeset verifies against the peer's key history, replayed from its genesis (§4.6) |
+| T12 | Disclosure beyond the granted scope, or inference from share shape | Elision discloses only chosen operations, with membership proofs (§3.2.6). Merkle shape can leak operation counts, and producers MAY pad (§9.5). Grants are governed and audited (§9.4) |
+| T13 | A receiver retains or redistributes shared knowledge after revocation | Revocation ends future service (§9.4). Bytes already transferred stay transferred. The grant log proves what was authorized, when, and for how long |
 
 ## Appendix F: Worked example of a governed git code review, end to end
 
@@ -190,3 +202,18 @@ an agent reviewer, and an attested gate on `main`.
    vendor roots alone, that nothing on `main` ever landed outside
    policy, with no forge cooperation required. No code forge can make
    that guarantee today.
+
+## Appendix G: HTTP sync binding (non-normative)
+
+A minimal binding for §9.7 over HTTPS:
+
+- `GET /.well-known/allod` returns the graph ID and the sync endpoint.
+- `POST /allod/sync` with body `{ grant: <ref>, scope_heads: [<hash>…] }`
+  returns a share bundle in wire form (§7.1). The responder returns 403
+  when no valid grant covers the request and 410 when the grant is
+  revoked or expired.
+- Responses are cacheable by bundle hash. A static file server hosting
+  pre-built bundles for `public` grants is a conforming responder.
+
+The binding adds no state beyond the graph itself. Any transport that
+moves the same bytes conforms equally well.

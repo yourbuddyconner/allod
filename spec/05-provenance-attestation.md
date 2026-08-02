@@ -64,6 +64,8 @@ restates design principle 3 in operational form.
 ## 5.4 Selective disclosure
 
 A holder can prove properties of a graph without revealing its contents.
+These primitives are the disclosure layer that federation shares are
+built from (§9.5).
 
 - **Subgraph proofs.** The state hash is a Merkle root (§1.7). A holder
   can reveal a subgraph plus Merkle paths, which proves membership in a

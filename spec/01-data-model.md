@@ -111,10 +111,12 @@ classifications, so the act of classifying is itself a governed mutation.
   prefix, e.g. `sha256:`. An implementation that encounters an unknown
   algorithm MUST reject the hash rather than guess.
 - **The graph state hash** is the root of a Merkle tree over all live
-  object revision hashes, grouped by kind and sorted by logical ID. Two
-  implementations that fold the same log MUST produce the same state hash.
-  The state hash anchors round-trip conformance (§7.4) and replay
-  verification (§5.3).
+  object revision hashes and the tombstones of deleted objects, grouped
+  by kind and sorted by logical ID. Leaf and interior hashes carry
+  domain-separated prefixes. Two implementations that fold the same log
+  MUST produce the same state hash. The state hash anchors round-trip
+  conformance (§7.4), replay verification (§5.3), and the subgraph
+  proofs that federation shares are built on (§5.4, §9.5).
 
 The state hash gives a definite test for whether two copies are the same
 graph. A projection that

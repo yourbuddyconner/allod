@@ -24,7 +24,10 @@ Current systems lack three properties:
    database layer today and does not travel with the knowledge.
 
 Allod makes all three properties intrinsic to the format, independent of
-the host.
+the host. Each property is useful on its own. Together they are also
+what federation needs: knowledge that carries its provenance can move
+between parties and stay checkable on arrival. Part 9 builds that
+transfer layer on top of them.
 
 The founding axiom is a generalization from code review: **all governance
 is the administration of diffs.** When every change to a body of knowledge
@@ -53,6 +56,9 @@ dispute, the resolution MUST agree with them, in priority order:
    abstract changeset interface. They MUST NOT depend on what the diff is
    a diff of. The same rules therefore apply to a knowledge changeset
    and to a git commit.
+6. **Receiver-governed exchange.** Federation is pull-based. A graph
+   admits foreign knowledge only through its own admission flow, under
+   its own policy. Each graph keeps full authority over its own state.
 
 ## 0.4 Terminology
 
@@ -86,6 +92,17 @@ NOT, and MAY as described in RFC 2119 and RFC 8174.
 - **State hash.** The deterministic digest of a materialized graph (§1.7).
 - **Root authority.** The principal or principals that hold ultimate
   governance authority over a graph. Declared at genesis (§4.6).
+- **Graph ID.** The hash of the genesis changeset. The self-certifying
+  identity of a graph (§9.2).
+- **Peer.** Another graph known to this one, recorded as a peer record
+  with its graph ID, keys, and locator hints (§9.3).
+- **Grant.** A signed, governed object that authorizes disclosure of a
+  scope to an audience (§9.4).
+- **Share bundle.** The federation transfer artifact: a checkpoint
+  reference plus disclosed objects or elided changesets with proofs
+  (§9.5).
+- **Mirror / Import.** The two ways a graph holds foreign knowledge:
+  verbatim outside admitted state, or adopted through admission (§9.6).
 
 ## 0.5 Conformance levels
 
@@ -106,6 +123,11 @@ of an implementation.
   run inside an attested environment (TEE). The environment emits
   attestation envelopes that a third party can verify against hardware
   vendor roots.
+
+**F (federated)** is a capability marker orthogonal to the levels,
+claimable at L1 or above: graph identity, peer records, grants, share
+bundles, and sync (Part 9). At L2, imports run through admission. At
+L3, grants can require attestation.
 
 ## 0.6 Prior art and positioning
 
@@ -129,7 +151,8 @@ The RDF mapping is normative in Appendix D.
   portable, signed, or governed.
 - **git.** git demonstrates at planetary scale that a content-addressed
   DAG of signed diffs with deterministic state works. Allod adopts git as
-  a substrate (§3.3) instead of reinventing it.
+  a substrate (§3.3) instead of reinventing it, and git's remote-and-patch
+  exchange shapes the sync model of Part 9.
 - **LSIF / SCIP.** These formats precompute code intelligence
   (definitions, references, hovers) as data. Allod adopts them as the
   preferred edge source for the code ontology (§8.3) instead of
@@ -139,6 +162,10 @@ The RDF mapping is normative in Appendix D.
   can carry it.
 - **AT Protocol lexicons.** The best current example of schema evolution
   in a federated system. Informs the versioning semantics of §2.4.
+- **ActivityPub / Matrix.** Push-based social federation with
+  server-mediated trust. Allod's exchange is pull-based and
+  receiver-governed (Part 9), closer in shape to git remotes than to
+  social broadcast.
 - **"Open Knowledge Format" (Google) and Stanford KIF.** Name collisions
   only. Neither shares this design. Allod avoids both names.
 
