@@ -1,4 +1,4 @@
-# Part 4 — Governance *(L2)*
+# Part 4: Governance *(L2)*
 
 ## 4.1 Policy model
 
@@ -20,8 +20,8 @@ Selectors key on:
   mutation.
 
 Selectors compose with AND and OR. When multiple rules match, ALL of
-their requirements apply. Requirements are conjunctive. Adding a rule can
-only tighten policy. It can never loosen policy.
+their requirements apply. Requirements are conjunctive, so adding a rule
+can only tighten policy, never loosen it.
 
 When no rule matches, the graph's declared **default posture** applies:
 `open` (any authenticated principal) or `restricted` (root authority
@@ -42,8 +42,8 @@ Implementations MUST evaluate this requirement vocabulary:
 | `substrate_checks` | Substrate-specific predicates. Git examples: CI status attestations present, linear history, signed-off-by |
 
 Requirements reference principals by role, e.g. `role:owner` or
-`role:steward`. Roles resolve through the graph's principal objects.
-Policy then survives personnel change without edits.
+`role:steward`. Roles resolve through the graph's principal objects, so
+policy survives personnel change without edits.
 
 ## 4.3 Admission flow and decision records
 
@@ -54,7 +54,7 @@ Admission is a four-step protocol: **propose, evaluate, decide, apply.**
 2. **Evaluate.** An evaluator resolves the policy version in force. The
    normative choice is the policy at the proposal's parent revision. The
    evaluator computes the matching rules and produces a requirement
-   checklist. Evaluation is deterministic. The same proposal against the
+   checklist. Evaluation is deterministic: the same proposal against the
    same policy state yields the same checklist.
 3. **Decide.** Required reviewers issue **decision records**:
 
@@ -67,14 +67,14 @@ Admission is a four-step protocol: **propose, evaluate, decide, apply.**
    | `basis` | Optional reference to a review artifact (§4.4) |
    | `timestamp` | |
 
-   A decision record is a document in the graph. It is signed and
-   portable. Anyone can verify it without the host. Code-forge reviews
-   lack this property. That lack is the reason this Part exists.
+   A decision record is a signed, portable document in the graph, and
+   anyone can verify it without the host's cooperation. Code-forge
+   reviews lack this property, which is the reason this Part exists.
 4. **Apply.** When the checklist is satisfied, the changeset enters the
    log (native substrate), or the ref advances (git substrate, enforced
    deployments). The admitting event records the checklist and the
-   decision records that satisfied it. Every admitted changeset carries
-   its own justification.
+   decision records that satisfied it, so every admitted changeset
+   carries its own justification.
 
 ## 4.4 Review artifacts
 
@@ -83,20 +83,20 @@ prose sections anchored to changeset regions (hunks, objects, subgraphs),
 reviewer threads, and a verdict state. The verdict state feeds a decision
 record's `basis` field. The format defines the artifact, not a UI.
 Tooling that structures diffs for human review SHOULD serialize its
-packets as review artifacts. Review content then becomes portable and
-provenance-carrying, not just verdicts.
+packets as review artifacts. The review content itself, not just the
+verdict, then becomes portable and provenance-carrying.
 
 ## 4.5 Enforcement strengths
 
 L2 has two normatively distinct strengths:
 
-- **L2-observed.** Decision records are recorded. Anyone can audit any
-  state after the fact. The audit question is: does every changeset
+- **L2-observed.** Decision records are recorded, and anyone can audit
+  any state after the fact. The audit question is: does every changeset
   reachable from this revision have a satisfying decision-record set,
   under the policy in force at its proposal? The log alone decides this
-  question. L2-observed needs no write-path control. It works over hosted
-  git remotes today.
-- **L2-enforced.** Admission runs in the write path. An unadmitted
+  question. L2-observed needs no write-path control, so it works over
+  hosted git remotes today.
+- **L2-enforced.** Admission runs in the write path, and an unadmitted
   changeset never becomes state. Native substrates get this structurally.
   Git substrates get it only where the deployment controls the remote:
   a pre-receive hook, a merge queue, or a gate service. An **attested
@@ -105,8 +105,8 @@ L2 has two normatively distinct strengths:
   promised.
 
 An implementation MUST NOT claim L2-enforced for a deployment that only
-observes. Observation detects violations. Enforcement prevents them. To
-conflate the two is the most likely way to oversell this spec.
+observes. Observation detects violations, while enforcement prevents
+them. Conflating the two is the most likely way to oversell this spec.
 
 ## 4.6 Policy bootstrap and root authority
 
@@ -115,14 +115,14 @@ conflate the two is the most likely way to oversell this spec.
   is self-admitted by root signature. It is the one changeset exempt from
   policy, because it creates the policy.
 - A policy change is a changeset, evaluated under the **previous** policy
-  version. No change may authorize itself. The chain of authority from
-  genesis to any current rule is therefore fully verifiable.
+  version. No change may authorize itself, so the chain of authority from
+  genesis to any current rule is fully verifiable.
 - Authority transfer and key rotation are policy changes like any other.
   The outgoing authority signs the changeset that installs the new keys.
   When root keys are lost and policy declares no recovery path, the graph
-  is unrecoverable. This is by design. Sovereignty includes the
+  is unrecoverable. This is by design: sovereignty includes the
   sovereign's ability to lose the keys. Graphs SHOULD declare recovery
-  rules in genesis policy: social recovery, escrowed shards, or similar.
+  rules in genesis policy, such as social recovery or escrowed shards.
 
 ## 4.7 Non-normative mappings
 
@@ -134,6 +134,6 @@ conflate the two is the most likely way to oversell this spec.
   to compile to existing engines: OPA/Rego, Cedar, or Ump-style
   expression evaluators. The spec defines semantics, not an engine.
 - **CODEOWNERS and branch protection.** These express `reviewers`
-  requirements with path selectors. Their verdicts are host-locked and
-  unsigned. The git binding's value is exact: the same rules, with
-  portable signed outcomes.
+  requirements with path selectors, but their verdicts are host-locked
+  and unsigned. The git binding provides the same rules with portable,
+  signed outcomes.

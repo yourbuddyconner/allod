@@ -1,6 +1,6 @@
 # Appendices
 
-## Appendix A — MVP acceptance test (normative for the reference implementation)
+## Appendix A: MVP acceptance test (normative for the reference implementation)
 
 The reference implementation passes when this scenario runs end to end on
 one machine, with the plain-keypair profile:
@@ -33,12 +33,12 @@ one machine, with the plain-keypair profile:
 8. **L3, once.** Run the indexer or the admission gate in an attested
    environment. Emit one attestation envelope. Verify its evidence
    chain. A simulated-measurement mode is acceptable for local
-   development. The verification code path must be real.
+   development, but the verification code path must be real.
 
 Pass means all eight steps succeed with no hosted services. The optional
 TEE for step 8 is the only exception.
 
-## Appendix B — Worked example: core ontology extract plus an agent's extension
+## Appendix B: Worked example of a core ontology extract plus an agent's extension
 
 Base ontology, extract:
 
@@ -83,11 +83,11 @@ edge_types:
 ```
 
 Exporting `conner-workspace@7` shares the shape of months of learned
-structure: cadences, routing, escalation topology. It exports no
-classified facts. Share the world-model. Keep the world. That asymmetry
-is the §2.5 payoff.
+structure (cadences, routing, escalation topology) without exporting any
+classified facts. The agent shares its world-model and keeps its world.
+That asymmetry is the payoff of §2.5.
 
-## Appendix C — Worked example: governance policy
+## Appendix C: Worked example of a governance policy
 
 ```yaml
 policy: conner-workspace-policy
@@ -125,11 +125,11 @@ rules:
       substrate_checks: [ ci-attestation-present ]
 ```
 
-Two things to note. Rules 1 and 2 compose: requirements only tighten, and
-the more specific selector carves out the exception. Rule 6 governs a git
-substrate with the same vocabulary as the knowledge rules.
+Rules 1 and 2 compose: requirements only tighten, so the more specific
+selector carves out the exception. Rule 6 governs a git substrate with
+the same vocabulary as the knowledge rules.
 
-## Appendix D — RDF / JSON-LD mapping (export, lossy)
+## Appendix D: RDF / JSON-LD mapping (export, lossy)
 
 | Allod | RDF |
 |---|---|
@@ -140,11 +140,12 @@ substrate with the same vocabulary as the knowledge rules.
 | Ontology | OWL class and property declarations. Constraints OWL cannot express degrade to annotations |
 | Changeset / decision record / envelope | **No faithful mapping.** Exportable as named-graph annotations. Signatures and DAG order do not survive |
 
-Direction: export only. Round-tripping RDF into Allod is out of scope.
-The history, governance, and attestation layers have no RDF-native home.
-That absence, in one table, is the argument for Allod's existence.
+The mapping is export-only. Round-tripping RDF into Allod is out of
+scope. The history, governance, and attestation layers have no
+RDF-native home, and that absence, visible in one table, is the argument
+for Allod's existence.
 
-## Appendix E — Threat model (summary)
+## Appendix E: Threat model (summary)
 
 | # | Threat | Mitigation |
 |---|---|---|
@@ -159,7 +160,7 @@ That absence, in one table, is the argument for Allod's existence.
 | T9 | Root key loss | Unrecoverable when policy declares no recovery path. This is by design. Genesis SHOULD declare recovery rules (§4.6) |
 | T10 | TEE compromise or attestation forgery | The envelope pins the evidence type and vendor chain. A failed L3 claim degrades to L2, never silently (§5.2 requires distinguishing `evidence: none`) |
 
-## Appendix F — Worked example: a governed git code review, end to end
+## Appendix F: Worked example of a governed git code review, end to end
 
 Cast: the repo `github.com/me/hermes`, the steward role from Appendix C,
 an agent reviewer, and an attested gate on `main`.
@@ -187,5 +188,5 @@ an agent reviewer, and an attested gate on `main`.
    commit SHA, the policy version, and the decision set.
 7. **Audit, later.** A third party verifies, from the log, the keys, and
    vendor roots alone, that nothing on `main` ever landed outside
-   policy. No forge cooperation is required. No code forge can make that
-   guarantee today.
+   policy, with no forge cooperation required. No code forge can make
+   that guarantee today.

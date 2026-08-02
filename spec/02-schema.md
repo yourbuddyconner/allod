@@ -1,4 +1,4 @@
-# Part 2 — Schema: Ontology + Taxonomy *(L0)*
+# Part 2: Schema (Ontology and Taxonomy) *(L0)*
 
 ## 2.1 Ontology
 
@@ -37,26 +37,25 @@ A taxonomy is a DAG of terms used to classify subjects.
 Classification semantics: when a subject is classified under a term, policy
 treats it as classified under all ancestor terms (§4.1). Descendant terms
 are not implied. Deprecated terms stay valid for historical
-classifications. New classifications MUST NOT use them.
+classifications, but new classifications MUST NOT use them.
 
 ## 2.3 Extension and inheritance
 
-This is the adaptation path for agents: start from a base ontology, evolve
-locally.
+Extension is the adaptation path for agents: start from a base ontology
+and evolve it locally.
 
 - A derived entity type MAY add attributes. It MAY narrow constraints, for
   example make an optional attribute required or tighten a range. It MUST
-  NOT remove inherited attributes. It MUST NOT widen inherited
-  constraints. Every subtype instance stays a valid instance of the base
-  type.
+  NOT remove inherited attributes or widen inherited constraints. Every
+  subtype instance therefore stays a valid instance of the base type.
 - A derived ontology imports a base ontology by content hash, not by name:
   `imports: [{ ontology: "core", state_hash: "sha256:…" }]`. Name
-  resolution without a hash is a projection convenience. It is never an
+  resolution without a hash is a projection convenience, never an
   identity.
-- Consequence: a consumer that understands the base ontology can consume a
-  projection of data authored under the derived one. It drops unknown
-  attributes. Sharing an evolved ontology never requires sharing the data
-  classified under it.
+- As a consequence, a consumer that understands only the base ontology can
+  still consume a projection of data authored under the derived one, by
+  dropping the unknown attributes. Sharing an evolved ontology never
+  requires sharing the data classified under it.
 
 ## 2.4 Versioning and migration
 
@@ -67,29 +66,30 @@ locally.
 - A schema version bump MAY ship migration rules. These are deterministic
   rewrites: `rename attribute`, `split type`, `map term`. Implementations
   apply them to produce version-N+1 views of version-N objects. Migration
-  rules are advisory for reads. They are REQUIRED only when an object is
-  next mutated. You can read old data forever. You write at the current
+  rules are advisory for reads and REQUIRED only when an object is next
+  mutated. Old data stays readable forever. Writes happen at the current
   version.
-- AT Protocol lexicons inform this design. Additive change is cheap. A
-  breaking change is a new version. Consumers declare the versions they
-  accept.
+- AT Protocol lexicons inform this design: additive change is cheap, a
+  breaking change is a new version, and consumers declare the versions
+  they accept.
 
 ## 2.5 Schema-as-object
 
 The schema is not a sidecar file. Ontology types, taxonomy terms, and
 governance policies (Part 4) are objects in the graph. Changesets create
-and mutate them like any other data. Governance applies to them like any
-other mutation.
+and mutate them like any other data, and governance applies to them like
+any other mutation.
 
-Three consequences, all intended:
+This design has three intended consequences:
 
-1. **Shareable ontologies come free.** To export an ontology, export a
-   subgraph (Part 7). An agent that evolved a domain ontology can hand
-   that world-model to another agent without sharing any private data
-   classified under it.
-2. **Schema changes have provenance.** Who added this entity type, when,
-   and derived from what discussion. The lineage machinery is the same as
-   for any node.
+1. **Ontologies are shareable by construction.** To export an ontology,
+   export a subgraph (Part 7). An agent that evolved a domain ontology can
+   hand that world-model to another agent without sharing any of the
+   private data classified under it.
+2. **Schema changes have provenance.** The graph records who added an
+   entity type, when, and from what discussion it derives, using the same
+   lineage machinery as any node.
 3. **Schema changes are governed.** An ontology bump is a changeset,
    admitted under the current policy (§4.6). A graph can require elevated
-   review for schema mutations. The reference policy in Appendix C does.
+   review for schema mutations, and the reference policy in Appendix C
+   does.

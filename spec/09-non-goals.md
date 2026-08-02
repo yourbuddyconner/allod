@@ -1,18 +1,19 @@
-# Part 9 — Non-Goals for v1
+# Part 9: Non-Goals for v1
 
 These items are out of scope. Each one is deferrable because of a design
-decision already made. The note on each item names that decision.
+decision already made, and the note on each item names that decision.
 Declining to specify these is what keeps L0 through L2 implementable by
 one person in finite time.
 
 ## 9.1 Federation transport, discovery, and sync
 
 How graphs find each other, negotiate access, and synchronize is not
-specified. Why this can wait: sharing knowledge means shipping changesets,
-or a checkpoint plus changesets (Part 3). Verification never requires the
-host (§5.3). The unit of exchange is fully specified. The pipe is not.
-This is git's adoption path: object model first, forges later. A future
-federation spec composes on top without changes to the core.
+specified. This can wait because sharing knowledge means shipping
+changesets, or a checkpoint plus changesets (Part 3), and verification
+never requires the host (§5.3). The unit of exchange is fully specified,
+and only the transport is left open. Git followed the same adoption path:
+object model first, forges later. A future federation spec composes on
+top without changes to the core.
 
 ## 9.2 Sharing mechanics and access negotiation
 
@@ -31,7 +32,8 @@ before multiple implementations exist would be speculation.
 
 No tokens, no marketplaces, no payment rails for knowledge exchange.
 Decision records and attestations give a future layer the integrity
-substrate it would need. Building that layer is someone else's v-next.
+substrate it would need. Building that layer is future work for another
+spec.
 
 ## 9.5 Key management UX
 
@@ -50,5 +52,5 @@ property that governance requires.
 ## 9.7 Being a database
 
 Allod specifies interchange, history, and governance. Storage engines,
-indexes, caches, and query planners are implementation quality-of-life.
-Conformance does not see them.
+indexes, caches, and query planners are implementation concerns that
+conformance does not see.

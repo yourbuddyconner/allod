@@ -1,8 +1,8 @@
-# Part 7 — Serialization Bindings (Projections) *(L0)*
+# Part 7: Serialization Bindings (Projections) *(L0)*
 
-Design principle 1, restated: these are projections of the log. None of
-them is "the format." A projection either round-trips to an identical
-state hash, or it declares itself lossy.
+All bindings in this Part are projections of the log (design principle 1).
+None of them is "the format." A projection either round-trips to an
+identical state hash or declares itself lossy.
 
 ## 7.1 Canonical wire form (normative)
 
@@ -10,11 +10,11 @@ state hash, or it declares itself lossy.
   lengths, sorted map keys, shortest-form integers. All hashes and
   signatures are computed over this encoding.
 - **Textual twin.** JSON via JCS (RFC 8785), for debugging and for
-  environments hostile to binary. The CBOR form is authoritative. The
+  environments hostile to binary. The CBOR form is authoritative, and the
   JSON form MUST re-encode to byte-identical CBOR.
 - **Envelopes.** Every wire object is tagged:
   `{ allod: <spec-version>, kind: <object-kind>, body: … }`.
-  An implementation MUST reject an unknown top-level kind. It MUST
+  An implementation MUST reject an unknown top-level kind, and MUST
   preserve and re-emit unknown fields. This keeps minor spec versions
   forward-compatible.
 - Log segments, checkpoints, proposals, decision records, and attestation
@@ -30,8 +30,8 @@ memory systems already speak.
 
 Layout and conventions:
 
-- One file per node. The path derives from the taxonomy: primary term
-  maps to directory.
+- One file per node. The path derives from the taxonomy: the primary term
+  maps to the directory.
 - Front matter carries the envelope: `id`, `rev`, `type`,
   classifications, and key attributes. The prose body maps to designated
   long-text attributes.
@@ -63,8 +63,8 @@ This is the analytical projection, for columnar and tabular engines:
 | `lineage` | object rev, derived_from refs, method, tool |
 
 Partitioning by type and by changeset time is RECOMMENDED. The binding is
-append-friendly. New changesets append rows. State tables are rebuildable
-from the log tables.
+append-friendly: new changesets append rows, and state tables are
+rebuildable from the log tables.
 
 Declared losses: signatures verify against wire-form bytes, so Parquet
 alone cannot re-verify. The export ships with the state-hash manifest. It
@@ -75,8 +75,8 @@ is an analytical view, not an authority.
 An L0 implementation that claims a binding MUST pass these tests:
 
 1. **Faithful bindings** (wire form). Log to projection to log. The
-   changesets are byte-identical. The state hash is identical.
+   changesets are byte-identical and the state hash is identical.
 2. **Declared-lossy bindings** (markdown, Parquet). State to projection
    to state′. The hash of state′ equals the source state hash over the
-   binding's declared-preserved object set. Every loss is one the
+   binding's declared-preserved object set. Every loss must be one the
    binding declared. An undeclared loss is non-conformance.

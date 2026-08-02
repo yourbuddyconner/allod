@@ -1,4 +1,4 @@
-# Part 1 — Core Data Model *(L0)*
+# Part 1: Core Data Model *(L0)*
 
 ## 1.1 Overview
 
@@ -28,8 +28,8 @@ decision.
 
 A node MUST validate against its declared entity type. Validation uses the
 ontology version that was current when the creating or updating changeset
-was admitted. Validity is historical. A node valid under `core/Person@2`
-stays valid when version 3 ships. §2.4 governs migration.
+was admitted, so validity is historical: a node that was valid under
+`core/Person@2` stays valid after version 3 ships. §2.4 governs migration.
 
 ## 1.3 Attributes and the type system
 
@@ -47,14 +47,14 @@ Attribute values are typed. Implementations MUST support:
 
 **Embeddings are not attribute values.** An embedding is model-dependent
 derived data, not knowledge. Store an embedding as an `external-ref` to a
-derived artifact. Tag it with the identity of the model that produced it.
+derived artifact, tagged with the identity of the model that produced it.
 Graphs then stay meaningful across model generations. Implementations MAY
 keep embedding side-tables in projections such as Parquet (§7.3).
 
 ## 1.4 Edge
 
 Edges are first-class objects. Each edge has its own identity and
-provenance. An edge can be classified.
+provenance, and an edge can be classified.
 
 | Field | Type | Description |
 |---|---|---|
@@ -63,9 +63,9 @@ provenance. An edge can be classified.
 | `attributes` | map | Edge attributes, e.g. `since`, `confidence`. Schema-validated |
 
 An edge MUST satisfy the domain and range constraints of its type (§2.1) at
-admission time. Dangling references are a substrate concern. The native
-substrate rejects changesets that produce them (§3.2.4). Cross-substrate
-references follow §3.4.
+admission time. Dangling references are a substrate concern: the native
+substrate rejects changesets that produce them (§3.2.4), and
+cross-substrate references follow §3.4.
 
 ## 1.5 Document
 
@@ -77,12 +77,13 @@ message, a meeting transcript, a commit, a web page.
 | `content_hash` | hash | REQUIRED. Hash of the exact bytes |
 | `media_type` | string | RFC 6838 |
 | `storage` | enum | `inline` \| `stored` \| `external` |
-| `locator` | uri (optional) | Where the bytes live when not inline. A locator is a hint. The hash is the identity |
+| `locator` | uri (optional) | Where the bytes live when not inline. The locator is a retrieval hint. The hash is the identity |
 
 A graph MAY store document bytes or only reference them. Lineage
-verification (§5.3) degrades gracefully. With the bytes, you can re-derive
-the claim. With only the hash, you can still confirm that the bytes someone
-shows you are the bytes the claim was derived from.
+verification (§5.3) degrades gracefully. With the stored bytes, a verifier
+can re-derive the claim. With only the hash, a verifier can still confirm
+that a presented copy of the document matches the bytes the claim was
+derived from.
 
 ## 1.6 Classification
 
@@ -95,25 +96,25 @@ A classification assigns a subject to a taxonomy term:
 | `asserted_by` | principal-ref | Who or what made this classification |
 | `basis` | enum | `manual` \| `deterministic` \| `model-assisted` (§8.2) |
 
-Classifications are **data, not annotations**. Changesets create them. They
-carry provenance. Governance applies to them. This rule is load-bearing:
-Part 4 keys policy off classifications, so the act of classifying is itself
-a governed mutation.
+Classifications are **data, not annotations**. Changesets create them, they
+carry provenance, and governance applies to them. This rule matters because
+Part 4 keys policy off classifications: the act of classifying is itself a
+governed mutation.
 
 ## 1.7 Identifiers and hashing
 
 - **Logical IDs** are UUIDv7 values, minted by the creating principal. They
-  are stable across revisions. They MUST NOT encode meaning.
+  are stable across revisions and MUST NOT encode meaning.
 - **Revision hashes** are SHA-256 over the object's canonical wire encoding
   (§7.1) with the `rev` field zeroed. Every hash carries an algorithm
-  prefix, e.g. `sha256:`. When an implementation meets an unknown
-  algorithm, it MUST reject the hash. It MUST NOT guess.
+  prefix, e.g. `sha256:`. An implementation that encounters an unknown
+  algorithm MUST reject the hash rather than guess.
 - **The graph state hash** is the root of a Merkle tree over all live
-  object revision hashes. Objects are grouped by kind and sorted by
-  logical ID. Two implementations that fold the same log MUST produce the
-  same state hash. The state hash anchors round-trip conformance (§7.4)
-  and replay verification (§5.3).
+  object revision hashes, grouped by kind and sorted by logical ID. Two
+  implementations that fold the same log MUST produce the same state hash.
+  The state hash anchors round-trip conformance (§7.4) and replay
+  verification (§5.3).
 
 The state hash makes "same graph" a decidable question. A projection that
-cannot re-ingest to an identical state hash is lossy by definition. A lossy
-projection MUST declare its losses (§7.2).
+cannot re-ingest to an identical state hash is lossy by definition, and a
+lossy projection MUST declare its losses (§7.2).

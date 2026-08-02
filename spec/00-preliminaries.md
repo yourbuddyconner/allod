@@ -1,34 +1,34 @@
-# Part 0 — Preliminaries
+# Part 0: Preliminaries
 
 ## 0.1 Status of this document
 
 This is draft v0.3 of the Allod specification. Nothing here is
-implementation-stable. The spec is versioned. From v1.0 onward, the spec's
-own change history is intended to live in an Allod graph. This applies Part
-4 governance to the spec itself.
+implementation-stable. The specification is versioned. From v1.0 onward,
+the plan is to keep the spec's own change history in an Allod graph, which
+applies the Part 4 governance model to the spec itself.
 
 ## 0.2 Motivation
 
 Knowledge produced by and for AI agents is locked inside vendor silos.
-Three properties are missing everywhere:
+Current systems lack three properties:
 
 1. **Portability.** An agent's accumulated memory cannot move to another
    system in a form that system can faithfully consume. Markdown dumps lose
    structure. API exports lose history.
 2. **Verifiability.** No mainstream knowledge store can prove to a third
-   party how its contents came to be. Who wrote each claim, under what
-   authority, derived from what source: none of this is checkable.
-3. **Governance.** No format expresses rules about change. Who may assert
-   facts about which subjects? What review does a mutation need? Which
-   classifications demand elevated authority? Access control lives in the
-   database layer today. It does not travel with the knowledge.
+   party how its contents came to be. There is no way to check who wrote
+   each claim, under what authority, or from what source.
+3. **Governance.** No format expresses rules about change: who may assert
+   facts about which subjects, what review a mutation needs, or which
+   classifications require elevated authority. Access control lives in the
+   database layer today and does not travel with the knowledge.
 
-Allod makes all three properties intrinsic to the format. They do not
-depend on the host.
+Allod makes all three properties intrinsic to the format, independent of
+the host.
 
-The founding axiom comes from code review, generalized: **all governance is
-the administration of diffs.** When every change to a body of knowledge is
-a signed, well-formed diff, then governance, provenance, and audit reduce
+The founding axiom is a generalization from code review: **all governance
+is the administration of diffs.** When every change to a body of knowledge
+is a signed, well-formed diff, governance, provenance, and audit all reduce
 to operations over the diff log. This axiom drives design principle 1.
 
 ## 0.3 Design principles
@@ -46,7 +46,7 @@ dispute, the resolution MUST agree with them, in priority order:
    to conformance level L3.
 3. **Verifiability before trust.** Every graph state MUST be
    reconstructible and checkable from signed history alone. A verifier
-   needs keys and the log. A verifier never needs the cooperation of the
+   needs only the log and the public keys, never the cooperation of the
    graph's host.
 4. **Minimality.** The core (L0 and L1) is small. Capability lives in
    conformance levels and profiles, not in the core.
@@ -91,24 +91,24 @@ NOT, and MAY as described in RFC 2119 and RFC 8174.
 
 Conformance is cumulative. It applies to an implementation, not to a graph.
 
-- **L0 — Data model.** Implements Parts 1 and 2, and at least one
+- **L0 (data model).** Implements Parts 1 and 2, and at least one
   serialization binding from Part 7. Sufficient for read/write tooling and
   projections.
-- **L1 — Verifiable history.** Adds Part 3 with at least one substrate,
+- **L1 (verifiable history).** Adds Part 3 with at least one substrate,
   Part 6 signatures, and state hashing. Sufficient to author, exchange,
   and verify logs.
-- **L2 — Governed.** Adds Part 4: policy evaluation on changeset admission
+- **L2 (governed).** Adds Part 4: policy evaluation on changeset admission
   and signed decision records. L2 has two strengths, defined in §4.5:
   L2-observed (audit after the fact) and L2-enforced (admission in the
   write path).
-- **L3 — Attested.** Adds Part 5 attestation. Indexing and/or admission
+- **L3 (attested).** Adds Part 5 attestation. Indexing and/or admission
   run inside an attested environment (TEE). The environment emits
   attestation envelopes that a third party can verify against hardware
   vendor roots.
 
 ## 0.6 Prior art and positioning
 
-Reviewers will ask "why not X" for each entry below. Short answers here.
+This section gives a short answer to "why not X" for each entry below.
 The RDF mapping is normative in Appendix D.
 
 - **RDF / OWL / SPARQL.** The most complete prior formalization of typed
@@ -135,7 +135,7 @@ The RDF mapping is normative in Appendix D.
   envelopes. Allod's envelope (§5.2) is shaped so a VC or C2PA manifest
   can carry it.
 - **AT Protocol lexicons.** The best current example of schema evolution
-  in a federated system. Informs §2.4 versioning semantics.
+  in a federated system. Informs the versioning semantics of §2.4.
 - **"Open Knowledge Format" (Google) and Stanford KIF.** Name collisions
   only. Neither shares this design. Allod avoids both names.
 
