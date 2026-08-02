@@ -37,6 +37,8 @@ Layout and conventions:
   long-text attributes.
 - Edges project as typed wiki-links inline (`[[node-id|label]]` with an
   edge-type annotation) and/or as a `links:` block in front matter.
+- A redacted object (§1.8) projects as front matter only, marked
+  `redacted: true`.
 - A bundle-level `.allod/` directory carries the schema projection, the
   checkpoint reference, and the state-hash manifest.
 

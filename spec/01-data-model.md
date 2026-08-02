@@ -125,6 +125,35 @@ classifications, so the act of classifying is itself a governed mutation.
   proofs that federation shares are built on (§5.4, §9.5).
 
 The state hash gives a definite test for whether two copies are the same
-graph. A projection that
-cannot re-ingest to an identical state hash is lossy by definition, and a
-lossy projection MUST declare its losses (§7.2).
+graph. A projection that cannot re-ingest to an identical state hash is
+lossy by definition, and a lossy projection MUST declare its losses
+(§7.2).
+
+## 1.8 Object states
+
+At any revision, each object is in exactly one state:
+
+- **Live.** The current revision materializes in full. This is the
+  normal state.
+- **Deleted.** A `delete` tombstone ended the object (§3.2.2). Identity
+  and history remain, the tombstone appears in the state tree (§1.7),
+  and the object is absent from projections of current state.
+- **Redacted.** Redaction removed the content behind the object's
+  current revision (§3.2.2). The envelope survives: `id`, `rev`, `kind`,
+  and `provenance` remain, and attributes or document bytes are absent.
+  The object stays in the state tree under its recorded revision hash.
+
+Rules:
+
+- Redaction of a historical revision leaves the object live. Only the
+  recorded content of that revision is gone, and the current revision
+  still materializes.
+- References to a redacted or deleted object stay intact, because
+  identity and revision hashes persist. Redaction never creates a
+  dangling reference.
+- Classifications on a redacted subject persist, and lineage that cites
+  redacted content stays tombstone-marked (§8.4).
+- A recorded hash whose content was redacted can no longer be
+  recomputed. Integrity verification reports it as degraded rather than
+  verified (§5.3), which separates content removed under authority from
+  content that is merely missing.

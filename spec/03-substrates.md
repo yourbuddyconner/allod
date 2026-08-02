@@ -60,9 +60,9 @@ document's stored bytes and keeps its content hash. `redact-operation`
 removes the recorded content of a prior operation, or a changeset's
 intent text, and keeps the corresponding leaf or intent hash (§3.2.6).
 An object revision produced by a redacted operation keeps its identity,
-revision hash, and lineage, and loses its materialized content. The
-removal itself, who performed it, and under what authority all stay
-permanently verifiable. This design interacts with erasure law, and
+revision hash, and lineage, and loses its materialized content. §1.8
+defines the resulting object state. The removal itself, who performed
+it, and under what authority all stay permanently verifiable. This design interacts with erasure law, and
 redaction now reaches attributes and intent text as well as document
 bytes. See threat T8 in Appendix E.
 

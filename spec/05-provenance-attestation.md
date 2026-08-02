@@ -48,6 +48,9 @@ four levels, in increasing strength. Each level needs only the log and
 public keys, except level 4, which also needs hardware vendor roots.
 
 1. **Integrity.** Every revision hash and state hash recomputes.
+   Redacted content (§1.8) is the exception: its recorded hashes check
+   for consistency against the trees that contain them, and the result
+   for that content is degraded.
 2. **Authorship.** Every changeset signature verifies against its
    principal's registered keys (§6.2), as of that changeset's parent
    state.
