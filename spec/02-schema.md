@@ -25,7 +25,7 @@ without identity or lifecycle. A struct name is usable as an attribute
 type, including inside `list<>` and `map<>` (§1.3). Struct values
 validate structurally and hash as part of their containing object.
 Structs keep record-shaped values typed — the key records of §6.2 are
-the motivating case — without minting objects for them. Struct names
+the motivating case — without creating full objects for them. Struct names
 are global across a graph's installed ontologies, and a graph MUST NOT
 admit two structs with the same name.
 
@@ -83,13 +83,13 @@ already exists merges the declarations — the term's parent set becomes
 the union, and the merge MUST leave the taxonomy acyclic, or the
 admitting changeset is rejected. Union only adds ancestors, and
 requirements only accumulate (§4.1), so installing another package can
-only tighten the policy surface of a shared term, never loosen it.
+only add requirements to a shared term, never remove them.
 Packages that must not interact use disjoint roots.
 
 ## 2.3 Extension and inheritance
 
-Extension is the adaptation path for agents: start from a base ontology
-and evolve it locally.
+Extension is how an agent adapts to its domain: start from a base
+ontology and evolve it locally.
 
 - A derived entity type MAY add attributes. It MAY narrow constraints, for
   example make an optional attribute required or tighten a range. It MUST
@@ -131,9 +131,9 @@ This design has three intended consequences:
 
 1. **An ontology can be shared on its own.** To export an ontology,
    export a subgraph (Part 7), or publish it under a `public` grant
-   (§9.4). An agent that evolved a domain ontology can hand that
-   world-model to another agent without sharing any of the private data
-   classified under it.
+   (§9.4). An agent that evolved a domain ontology can share it with
+   another agent without sharing any of the private data classified
+   under it.
 2. **Schema changes have provenance.** The graph records who added an
    entity type, when, and from what discussion it derives, using the same
    lineage machinery as any node.

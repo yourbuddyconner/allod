@@ -27,7 +27,7 @@ The contract has four rules:
 
 ## 8.2 Deterministic vs. model-assisted classification
 
-| Basis | Definition | Trust lever |
+| Basis | Definition | Basis for trust |
 |---|---|---|
 | `deterministic` | Output is a pure function of inputs plus tool version. Examples: parsers, compilers, LSIF/SCIP emitters | Reproducibility. Anyone can re-run and compare |
 | `model-assisted` | An ML model participates. Output may vary across runs and versions | Provenance plus attestation. You cannot re-derive it, so you must be able to verify what produced it |
@@ -79,7 +79,7 @@ Rules:
   lineage, and why the attested indexer exists. When a code graph must
   be trusted, run the extraction at L3. Dependency review of enclave
   code is the motivating case.
-- **Region reach is file-granular and parent-state.** A region rule
+- **Region reach is file-granular, evaluated at the parent state.** A region rule
   (§4.1) reaches a substrate changeset when the commit's deterministic
   operation set (§3.3) touches a path from which an in-region derived
   object derives, in the derived graph as of the parent revision.
@@ -88,7 +88,7 @@ Rules:
   any part of a file that a classified function derives from is
   in-region; finer precision is a classification concern (classify
   the file, or split it), never a matching concern. The semantic
-  diff below is review payload, not the matching mechanism.
+  diff below is material for reviewers, not the matching mechanism.
 
 This machinery yields **semantic diff**. Compare the graph at commit A
 with the graph at commit B, and the result is a knowledge-level diff of

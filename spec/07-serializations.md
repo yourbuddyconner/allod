@@ -9,8 +9,8 @@ either round-trips to an identical state hash or declares itself lossy.
 - **Encoding.** CBOR, per RFC 8949 Core Deterministic Encoding: definite
   lengths, sorted map keys, shortest-form integers. All hashes and
   signatures are computed over this encoding.
-- **Textual twin.** JSON via JCS (RFC 8785), for debugging and for
-  environments hostile to binary. The CBOR form is authoritative, and the
+- **Textual form.** JSON via JCS (RFC 8785), for debugging and for
+  environments that cannot handle binary. The CBOR form is authoritative, and the
   JSON form MUST re-encode to byte-identical CBOR.
 - **Envelopes.** Every wire object is tagged:
   `{ allod: <spec-version>, kind: <object-kind>, body: … }`.

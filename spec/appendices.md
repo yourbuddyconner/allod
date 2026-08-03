@@ -5,8 +5,8 @@
 The reference implementation passes when this scenario runs end to end on
 one machine, with the plain-keypair profile. The scenario is
 executable: `crates/allod/tests/mvp.rs` runs every step through the
-CLI, and the `demo`, `demo-code`, and `demo-federation` commands walk
-the same ground interactively.
+CLI, and the `demo`, `demo-code`, and `demo-federation` commands run
+the same steps interactively.
 
 1. **Genesis.** Create graphs with 1-of-1 root authorities and the
    reference profiles: the memory profile (core + memory ontologies,
@@ -199,8 +199,8 @@ RDF-native home, which is the gap Allod exists to fill.
 
 ## Appendix F: Worked example of a governed git code review, end to end
 
-Cast: the repo `github.com/me/hermes`, the steward role from Appendix C,
-an agent reviewer, and an attested gate on `main`.
+The participants: the repo `github.com/me/hermes`, the steward role from
+Appendix C, an agent reviewer, and an attested gate on `main`.
 
 1. **Propose.** A developer pushes the branch `feat/spend-button`. The
    commit is a changeset (§3.3). It becomes a proposal targeting
@@ -221,14 +221,14 @@ an agent reviewer, and an attested gate on `main`.
    verdict is approve-with-comments.
 5. **Decide.** The steward and the owner issue decision records that
    reference the artifact. Both records are signed graph documents:
-   portable evidence, independent of the forge.
+   portable evidence, independent of the hosting platform.
 6. **Admit.** The attested gate (§5.5) checks the checklist, advances
    `main`, and emits an attestation envelope. The envelope binds the
    commit SHA, the policy version, and the decision set.
 7. **Audit, later.** A third party verifies, from the log, the keys, and
    vendor roots alone, that nothing on `main` ever landed outside
-   policy, with no forge cooperation required. No code forge can make
-   that guarantee today.
+   policy, with no cooperation from the host required. No code-hosting
+   platform can make that guarantee today.
 
 ## Appendix G: HTTP sync binding (non-normative)
 

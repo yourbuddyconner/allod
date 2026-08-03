@@ -73,9 +73,9 @@ infrastructure, delegation machinery, and policy-engine enforcement.
 - A graph's root authority maps to an isolated identity domain (a
   sub-organization). Its keys live in enclaves, outside any operator's
   reach, so the graph stays sovereign whether hosted or self-hosted.
-- `agent` principals map to scoped delegation credentials in the
-  session-profile style: named, time-boxed, bound to a key, scoped by a
-  policy expression. Delegation-scope enforcement composes with graph
+- `agent` principals map to scoped delegation credentials: named,
+  time-boxed, bound to a key, scoped by a policy expression.
+  Delegation-scope enforcement composes with graph
   policy (§4.2 `authors`) and MUST NOT replace it.
 - Decision-record and attestation signing can use the identity system's
   enclave-resident signers. The graph owner then gets L3-grade envelopes

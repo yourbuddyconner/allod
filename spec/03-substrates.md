@@ -62,9 +62,10 @@ intent text, and keeps the corresponding leaf or intent hash (§3.2.6).
 An object revision produced by a redacted operation keeps its identity,
 revision hash, and lineage, and loses its materialized content. §1.8
 defines the resulting object state. The removal itself, who performed
-it, and under what authority all stay permanently verifiable. This design interacts with erasure law, and
-redaction now reaches attributes and intent text as well as document
-bytes. See threat T8 in Appendix E.
+it, and under what authority all stay permanently verifiable. Because
+redaction reaches attributes and intent text as well as document bytes,
+it can serve legal erasure obligations. See threat T8 in Appendix E for
+the limits.
 
 ### 3.2.3 Ordering and merges
 
@@ -107,8 +108,8 @@ checkpoint that disagrees with replay is invalid.
 **Anchoring.** A graph SHOULD periodically publish signed checkpoint
 references to at least one external witness: a peer graph (§9.3), a git
 repository, a transparency log, or any host outside the owner's sole
-control. Anchors bound when a revision existed, and they turn
-equivocation into a provable event: two anchors that bind the same
+control. Anchors establish time bounds on when a revision existed, and
+they turn equivocation into a provable event: two anchors that bind the same
 revision to different state hashes convict the equivocator. Anchors
 also give governance audits an external time bracket (§4.2).
 

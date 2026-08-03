@@ -2,8 +2,9 @@
 
 ## 1.1 Overview
 
-A graph is the set `{nodes, edges, classifications, documents}` produced by
-folding a changeset log (Part 3) against a schema (Part 2). This part
+A graph is the set `{nodes, edges, classifications, documents}` produced
+by replaying a changeset log (Part 3) against a schema (Part 2). The
+spec calls this replay the **fold**. This part
 defines the objects. Part 3 defines how they change. Part 7 defines how
 they are encoded.
 
@@ -39,7 +40,7 @@ Attribute values are typed. Implementations MUST support:
 | Type | Notes |
 |---|---|
 | `string` | UTF-8. NFC-normalized for hashing |
-| `int` / `float` / `decimal` | `decimal` is exact. Use it where drift matters. A `float` MUST be finite, and encoders normalize negative zero to zero, so hashes stay stable across platforms |
+| `int` / `float` / `decimal` | `decimal` is exact. Use it where rounding error matters. A `float` MUST be finite, and encoders normalize negative zero to zero, so hashes stay stable across platforms |
 | `bool` | |
 | `timestamp` / `date` / `duration` | RFC 3339. Timestamps carry offsets |
 | `bytes` | Inline below an implementation-declared threshold. Above it, use a document reference |
@@ -163,7 +164,7 @@ Rules:
   they survive redaction. Redacting an edge removes its attributes
   only. The existence of the relationship stays visible, and where
   that existence is itself the sensitive fact, redaction cannot erase
-  it. Threat T8 carries this limit.
+  it. Threat T8 (Appendix E) records this limitation.
 - A recorded hash whose content was redacted can no longer be
   recomputed. Integrity verification reports it as degraded rather than
   verified (§5.3), which separates content removed under authority from

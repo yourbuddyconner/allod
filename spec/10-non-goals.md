@@ -25,7 +25,7 @@ before multiple implementations exist would be speculation.
 
 This spec defines no tokens, marketplaces, or payment rails for
 knowledge exchange. Decision records, grants, and attestations give a
-future layer the integrity substrate it would need. Building that layer
+future layer the integrity foundation it would need. Building that layer
 is future work for another spec.
 
 ## 10.4 Key management UX

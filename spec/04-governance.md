@@ -2,8 +2,8 @@
 
 ## 4.1 Policy model
 
-A **policy** is a schema-adjacent object, stored in-graph (§2.5). It
-contains ordered **rules**. Each rule has a *selector* (which changes it
+A **policy** is an object stored in the graph alongside the schema
+(§2.5). It contains ordered **rules**. Each rule has a *selector* (which changes it
 applies to) and *requirements* (what admission demands).
 
 Selectors key on:
@@ -110,8 +110,9 @@ Admission is a four-step protocol: **propose, evaluate, decide, apply.**
    | `timestamp` | |
 
    A decision record is a signed, portable document in the graph, and
-   anyone can verify it without the host's cooperation. Code-forge
-   reviews lack this property, which is the reason this Part exists.
+   anyone can verify it without the host's cooperation. Reviews on
+   code-hosting platforms lack this property, which is the reason this
+   Part exists.
 4. **Apply.** When the checklist is satisfied, the changeset enters the
    log (native substrate), or the ref advances (git substrate, enforced
    deployments). The admitting event records the checklist and the
@@ -125,9 +126,9 @@ prose sections anchored to changeset regions (hunks, objects, subgraphs),
 reviewer threads, and a verdict state. The verdict state feeds a decision
 record's `basis` field. The spec defines the artifact's structure only.
 How tools display or edit it is out of scope. Tooling that structures
-diffs for human review SHOULD serialize its
-packets as review artifacts. Both the verdict and the full review
-content then become portable and provenance-carrying.
+diffs for human review SHOULD serialize its output as review artifacts.
+Both the verdict and the full review content then become portable, and
+both carry their provenance.
 
 ## 4.5 Enforcement strengths
 
@@ -173,14 +174,14 @@ them. Conflating the two is the most likely way to oversell this spec.
 
 ## 4.7 Non-normative mappings
 
-- **Scoped delegation systems.** Session-profile-style grants are named,
-  time-boxed, policy-scoped, key-bound credentials. They map onto
-  `authors` requirements. A delegated principal's changesets are
+- **Scoped delegation systems.** A delegation grant is a named,
+  time-boxed, policy-scoped, key-bound credential. Grants map onto
+  `authors` requirements: a delegated principal's changesets are
   admissible only within the grant's scope. See §6.4.
 - **Policy-engine backends.** The requirement vocabulary is small enough
-  to compile to existing engines: OPA/Rego, Cedar, or Ump-style
-  expression evaluators. The spec defines what the requirements mean and
-  leaves the evaluation engine to implementations.
+  to compile to existing engines such as OPA/Rego or Cedar. The spec
+  defines what the requirements mean and leaves the evaluation engine to
+  implementations.
 - **CODEOWNERS and branch protection.** These express `reviewers`
   requirements with path selectors, but their verdicts are host-locked
   and unsigned. The git binding provides the same rules with portable,
@@ -211,10 +212,10 @@ the asserted inputs that were trusted. This is the same
 verified/degraded vocabulary that §3.4 and §4.2 use, applied to rule
 matching.
 
-The practical consequence is directional. An asserted input in a rule
-that only *tightens* is safe: lying about it dodges extra
-requirements at worst back down to what the other rules and the
-posture already demand. An asserted input in a rule that *relaxes*
+The practical consequence depends on which direction the rule moves
+policy. An asserted input in a rule that only *tightens* is safe: lying
+about it dodges extra requirements, but never below what the other
+rules and the posture already demand. An asserted input in a rule that *relaxes*
 (one whose match replaces a stricter posture, per §4.1) is a trust
 decision about whoever controls the assertion. Relaxing rules SHOULD
 therefore key on log-derived inputs — named principals, types,

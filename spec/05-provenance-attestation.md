@@ -33,8 +33,9 @@ ran inside a specific, measured environment.
 
 Design constraints:
 
-- The envelope is agnostic to evidence format. A new TEE platform adds an
-  `evidence_type` entry and does not require a spec revision.
+- The envelope does not depend on the evidence format. A new TEE
+  platform adds an `evidence_type` entry and does not require a spec
+  revision.
 - The envelope is shaped so a W3C Verifiable Credential or a C2PA
   manifest can carry it and serve as the outer wrapper.
 - An envelope with `evidence: none` is just a signature. It proves only
@@ -98,8 +99,8 @@ small:
    classification. The envelope binds the input document hashes, the
    indexer code identity, the model identity, and the output changeset
    hash. Consumers can then trust machine-written knowledge to exactly
-   the degree they trust the measured pipeline. One limit deserves
-   plain statement: when classification calls a hosted model API, the
+   the degree they trust the measured pipeline. One limitation must be
+   stated plainly: when classification calls a hosted model API, the
    measurement covers the pipeline around the call, and the model runs
    unmeasured on the provider's hardware. The envelope then proves
    exactly what was sent and received, while the model identity stays
@@ -113,6 +114,6 @@ small:
    review" changes from an organizational claim into a cryptographic
    one, which is the property compliance regimes need.
 
-L3 is an optional strengthening, and nothing outside this section
+L3 is optional, and nothing outside this section
 depends on it (design principle 2). The reference MVP demonstrates it
 once but does not require it throughout.

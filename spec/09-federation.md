@@ -167,7 +167,7 @@ binding.
 
 ## 9.8 Conformance
 
-**F** is a capability marker orthogonal to the levels. An
+**F** is a capability independent of the levels. An
 implementation claims it at L1 or above:
 
 - **L1+F.** Graph IDs, peer records, grants, bundles, sync, mirrors.
