@@ -8,4 +8,3 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 allod-core = { path = "../allod-core" }
 serde_yaml = "0.9"
-sha2 = "0.10"

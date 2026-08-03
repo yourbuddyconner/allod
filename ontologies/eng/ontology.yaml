@@ -9,8 +9,8 @@
 ontology: eng
 version: 1
 imports:
-  - { ontology: corp, state_hash: "sha256:67dd252ac8081f58ef91c02b0cc601369c9ac655963d75c7788a62b3bca850f0" }
-  - { ontology: code, state_hash: "sha256:6d109e4b4a2c3af70e3d8dc66d6b6cb6ec61490b9fa42cf4ce0ed6e3fa15aa7e" }
+  - { ontology: corp, state_hash: "sha256:cc73ad714efd9ca541d0d77009ca2109c10a2176e8407f0f5d6ad462fee4c6e4" }
+  - { ontology: code, state_hash: "sha256:0d711ff71a9e8015167d519ba827f5bde1527c1816bfcae0e59fc0c44ae2460b" }
 
 entity_types:
 

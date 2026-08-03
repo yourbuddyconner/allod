@@ -17,28 +17,18 @@
 //! Signature and governance-audit vectors land with Parts 6 and 4 of
 //! the reference implementation.
 
-use allod_core::hash::{merkle_root, package_hash, sha256_hex};
-use allod_core::{canonical_cbor, get_str};
+use allod_core::hash::{hex_string, package_hash, plain_sha256, sha256_hex};
+use allod_core::model::{
+    changeset_hash, changeset_hash_from_leaves, revision_hash, state_entry, state_root,
+};
+use allod_core::get_str;
 use serde_yaml::{Mapping, Value};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 fn yaml(s: &str) -> Value {
     serde_yaml::from_str(s).expect("vector template must parse")
-}
-
-fn hex_string(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Plain SHA-256 of exact bytes, for document content hashes (§1.5).
-/// No allod domain: content identity must match what anyone computes
-/// over the file.
-fn content_hash(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    format!("sha256:{}", hex_string(&digest))
 }
 
 // ---------------- package hashes ----------------
@@ -114,71 +104,6 @@ fn compute_package_hashes(
     Ok(hashes)
 }
 
-// ---------------- object and changeset hashing ----------------
-
-/// Revision hash (§1.7): canonical encoding with `rev` omitted.
-fn revision_hash(payload: &Value) -> Result<String, String> {
-    let mut payload = payload.clone();
-    if let Some(map) = payload.as_mapping_mut() {
-        map.remove("rev");
-    }
-    Ok(sha256_hex("object", &canonical_cbor(&payload)?))
-}
-
-fn op_leaf(op: &Value) -> Result<String, String> {
-    Ok(sha256_hex("op-leaf", &canonical_cbor(op)?))
-}
-
-/// Changeset hash (§3.2.1, §3.2.6): `hash` and `signature` omitted,
-/// `operations` replaced by the tree root, `intent` by its hash.
-/// Returns (hash, root, preimage bytes).
-fn changeset_hash_from_leaves(
-    cs: &Value,
-    leaves: &[String],
-) -> Result<(String, String, Vec<u8>), String> {
-    let root = merkle_root(leaves, "op-node").ok_or("changeset has no operations")?;
-    let mut preimage = cs.clone();
-    let map = preimage.as_mapping_mut().ok_or("changeset must be a map")?;
-    map.remove("hash");
-    map.remove("signature");
-    map.insert(
-        Value::String("operations".into()),
-        Value::String(root.clone()),
-    );
-    if let Some(intent) = map
-        .get(Value::String("intent".into()))
-        .and_then(Value::as_str)
-        .map(String::from)
-    {
-        map.insert(
-            Value::String("intent".into()),
-            Value::String(sha256_hex("intent", intent.as_bytes())),
-        );
-    } else if let Some(ih) = map
-        .get(Value::String("intent_hash".into()))
-        .and_then(Value::as_str)
-        .map(String::from)
-    {
-        // A redacted changeset (§3.2.2) stores the intent hash in
-        // place of the text; the preimage is identical either way.
-        map.remove("intent_hash");
-        map.insert(Value::String("intent".into()), Value::String(ih));
-    }
-    let bytes = canonical_cbor(&preimage)?;
-    Ok((sha256_hex("changeset", &bytes), root, bytes))
-}
-
-fn changeset_hash(cs: &Value) -> Result<(String, String, Vec<String>, Vec<u8>), String> {
-    let ops = cs
-        .get("operations")
-        .and_then(Value::as_sequence)
-        .ok_or("changeset needs an operations list")?;
-    let leaves: Result<Vec<String>, String> = ops.iter().map(op_leaf).collect();
-    let leaves = leaves?;
-    let (hash, root, bytes) = changeset_hash_from_leaves(cs, &leaves)?;
-    Ok((hash, root, leaves, bytes))
-}
-
 // ---------------- fold-lite and the state tree ----------------
 
 /// Enough of §3.2.4 to materialize the vector log: apply operations,
@@ -242,21 +167,12 @@ impl State {
     /// State hash (§1.7): Merkle root over per-object leaves, grouped
     /// by kind and sorted by logical ID (the BTreeMap order).
     fn state_hash(&self) -> Result<(String, Vec<Value>), String> {
-        let mut leaves = Vec::new();
-        let mut listing = Vec::new();
-        for ((kind, id), (rev, deleted)) in &self.objects {
-            let mut entry = Mapping::new();
-            entry.insert(Value::String("kind".into()), Value::String(kind.clone()));
-            entry.insert(Value::String("id".into()), Value::String(id.clone()));
-            entry.insert(Value::String("rev".into()), Value::String(rev.clone()));
-            if *deleted {
-                entry.insert(Value::String("deleted".into()), Value::Bool(true));
-            }
-            let entry = Value::Mapping(entry);
-            leaves.push(sha256_hex("state-leaf", &canonical_cbor(&entry)?));
-            listing.push(entry);
-        }
-        let root = merkle_root(&leaves, "state-node").ok_or("empty state")?;
+        let listing: Vec<Value> = self
+            .objects
+            .iter()
+            .map(|((kind, id), (rev, deleted))| state_entry(kind, id, rev, *deleted))
+            .collect();
+        let root = state_root(&listing)?;
         Ok((root, listing))
     }
 }
@@ -316,7 +232,7 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         .clone();
 
     let doc_bytes = b"hello, vectors\n";
-    let doc_hash = content_hash(doc_bytes);
+    let doc_hash = plain_sha256(doc_bytes);
     let mut state = State::default();
 
     // --- cs1: genesis ---

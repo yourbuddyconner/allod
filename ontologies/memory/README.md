@@ -42,6 +42,21 @@ and every preference in it can prove who approved it. Exporting the
 ontology alone (§2.5) shares the shape of a life without one private
 fact.
 
+## Run it
+
+The reference CLI executes this package's jarvis flow end to end:
+
+```
+cargo run -p allod -- demo /tmp/allod-demo
+```
+
+Scratch admits freely under `scratch-is-free`, the preference proposal
+is held by `agent-writes-are-proposals` and
+`preferences-are-owner-business`, the owner's signed decision record
+admits it, and `allod verify` replays the log through integrity,
+authorship, and governance checks — reporting the `evidence: none`
+envelope as degraded, exactly as §5.2 requires.
+
 ## Status
 
 Draft, tracks spec v0.3. Import hashes are real content hashes,

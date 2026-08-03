@@ -8,9 +8,14 @@
 //! are expected to as well.
 
 pub mod canon;
+pub mod fold;
 pub mod hash;
 pub mod loader;
+pub mod model;
+pub mod policy;
 pub mod registry;
+pub mod sign;
+pub mod store;
 pub mod typeexpr;
 pub mod vocab;
 

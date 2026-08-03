@@ -12,10 +12,12 @@ structs:
 
   # A principal's key record (§6.2). algorithm stays a string because
   # the algorithm set is registry-open; the required pair is ed25519
-  # and ecdsa-p256.
+  # and ecdsa-p256. public carries the key bytes themselves (hex):
+  # key_id alone is a hash and cannot verify a signature.
   KeyRecord:
     key_id:      { type: string, required: true }
     algorithm:   { type: string, required: true }
+    public:      { type: string, required: true }
     valid_from:  { type: timestamp }
     valid_until: { type: timestamp }
     status:      { type: "enum<active|rotated|revoked>", required: true }

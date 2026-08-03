@@ -9,7 +9,7 @@ author:
   key: key:ed25519:vec0
 timestamp: 2026-08-02T00:00:00Z
 intent: 'Genesis: two people, an edge, a document, a label'
-schema_context: sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649
+schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
 operations:
 - create:
     kind: node
@@ -45,17 +45,17 @@ operations:
     asserted_by: principal:vector-author
     basis: manual
 signature: sig:pending:part-6
-hash: sha256:d5200e8f3ac2c53ef82eb46cecc8d49ac01dd46a7118dfd014a254bc44e27abe
+hash: sha256:63752f88d991b293f318fcb4a113e6e3c5f87e5a7f129f824f3e7b58f230826b
 ---
 kind: changeset
 parents:
-- sha256:d5200e8f3ac2c53ef82eb46cecc8d49ac01dd46a7118dfd014a254bc44e27abe
+- sha256:63752f88d991b293f318fcb4a113e6e3c5f87e5a7f129f824f3e7b58f230826b
 author:
   principal: principal:vector-author
   key: key:ed25519:vec0
 timestamp: 2026-08-02T00:01:00Z
 intent: Rename Ada; retire Grace
-schema_context: sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649
+schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
 operations:
 - update:
     kind: node
@@ -69,17 +69,17 @@ operations:
     id: 00000000-0000-4000-8000-000000000002
     prior: sha256:c859b489e0a106a74e967e939f671e8418374541f44565d9285cb5e61bd9ff85
 signature: sig:pending:part-6
-hash: sha256:5c3d928e8d031c8d2801eed4d50ffbf37bf225761559d7a38ae103fd1213ed24
+hash: sha256:4f12515793edec9245426834174d79c69c69500536117ec4e3008b2d7589f432
 ---
 kind: changeset
 parents:
-- sha256:5c3d928e8d031c8d2801eed4d50ffbf37bf225761559d7a38ae103fd1213ed24
+- sha256:4f12515793edec9245426834174d79c69c69500536117ec4e3008b2d7589f432
 author:
   principal: principal:vector-author
   key: key:ed25519:vec0
 timestamp: 2026-08-02T00:02:00Z
 intent: A note about Ada, labeled
-schema_context: sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649
+schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
 operations:
 - create:
     kind: node
@@ -101,4 +101,4 @@ operations:
     asserted_by: principal:vector-author
     basis: manual
 signature: sig:pending:part-6
-hash: sha256:90bd823ba98c54d901342c24bd79ff070de8987c0d6a5b5c9ef74f7ac9281a1e
+hash: sha256:26c51f1ecdd4f633a671e948150ce2303b20f36bd04976ea1fcbc76676f0f3fb

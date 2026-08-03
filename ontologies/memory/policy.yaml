@@ -11,6 +11,19 @@ roles:
   owner: [ "principal:…" ]
 rules:
 
+  # Scratch must be positively authorized: under the restricted
+  # default, a matching rule is what admits non-root writes (§4.1),
+  # and the carve-outs below only exempt scratch from other rules'
+  # requirements. Without this rule, scratch notes fall to the
+  # default posture and only the owner can write them. Found by the
+  # reference implementation.
+  - name: scratch-is-free
+    select:
+      all:
+        - { author_kind: agent }
+        - { region: "workspace/scratch" }
+    require: { schema_valid: true }
+
   - name: agent-writes-are-proposals
     select:
       all:

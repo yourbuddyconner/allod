@@ -6,7 +6,7 @@
 ontology: memory
 version: 1
 imports:
-  - { ontology: core, state_hash: "sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649" }
+  - { ontology: core, state_hash: "sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087" }
 
 entity_types:
 
@@ -42,4 +42,9 @@ edge_types:
   about:      { domain: [Note, Preference, Commitment, Routine], range: [core/Person, core/Company, Interest], cardinality: many-to-many }
   owed_to:    { domain: Commitment, range: core/Person, cardinality: many-to-one }
   supersedes: { domain: Preference, range: Preference, cardinality: one-to-one }
-  relates_to: { domain: Note, range: Note, cardinality: many-to-many }
+  # Any memory item can point at the item it grew from — a promoted
+  # preference keeps a link to the scratch note that suggested it.
+  # Note-to-Note alone made that lineage inexpressible; found by the
+  # reference implementation's domain checks.
+  relates_to: { domain: [Note, Preference, Routine, Commitment],
+                range: [Note, Preference, Routine, Commitment], cardinality: many-to-many }

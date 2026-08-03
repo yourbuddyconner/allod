@@ -107,6 +107,12 @@ roles:
   owner:   [ "principal:conner" ]
   steward: [ "principal:conner", "principal:jarvis" ]
 rules:
+  - name: scratch-is-free                        # positive authorization (§4.1)
+    select:
+      all:
+        - { author_kind: agent }
+        - { region: "workspace/scratch" }
+    require: { schema_valid: true }
   - name: agent-writes-are-proposals
     select:
       all:
@@ -141,11 +147,15 @@ rules:
       substrate_checks: [ ci-attestation-present ]
 ```
 
-The scratch carve-out appears in rules 1 and 4 separately. Carve-outs
-do not compose across rules (§4.1): a `not` clause exempts a change
-from its own rule only, so each rule that must exempt a region carries
-its own clause. The final rule governs a git substrate with the same
-vocabulary as the knowledge rules.
+Scratch takes three rules to be truly free, and each does a different
+job. The first *authorizes* scratch writes: under the `restricted`
+posture a matching rule is what admits non-root writes (§4.1), so a
+carve-out alone would leave scratch writable by root only. The
+carve-outs in the following rules then *exempt* scratch from their
+requirements, repeated per rule because carve-outs do not compose
+across rules: a `not` clause exempts a change from its own rule only.
+The final rule governs a git substrate with the same vocabulary as
+the knowledge rules.
 
 ## Appendix D: RDF / JSON-LD mapping (export, lossy)
 

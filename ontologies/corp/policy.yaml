@@ -16,6 +16,17 @@ roles:
   finance: [ "principal:…" ]
 rules:
 
+  # Scratch must be positively authorized: under the restricted
+  # default a matching rule is what admits non-root writes (§4.1),
+  # and the carve-outs below only exempt scratch from other rules'
+  # requirements.
+  - name: scratch-is-free
+    select:
+      all:
+        - { author_kind: agent }
+        - { region: "workspace/scratch" }
+    require: { schema_valid: true }
+
   - name: agent-writes-are-proposals
     select:
       all:

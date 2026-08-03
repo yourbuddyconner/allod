@@ -14,7 +14,7 @@ rev: "sha256:aaaa…"
 type: core/Agent@1
 attributes:
   display_name: "Jarvis"
-  keys: [ { key_id: "sha256:k3y1…", algorithm: "ed25519", status: "active" } ]
+  keys: [ { key_id: "sha256:k3y1…", algorithm: "ed25519", public: "9d61b1…", status: "active" } ]
   status: "active"
   delegated_by: "node:usr1…"           # Conner's User node
   scope: { region: "workspace" }

@@ -10,6 +10,7 @@ pub struct Package {
     pub types: Value,
     pub edges: Value,
     pub structs: Value,
+    pub rules: Value,
     pub imports: Vec<String>,
 }
 
@@ -48,6 +49,7 @@ impl Registry {
                 types: doc.get("entity_types").cloned().unwrap_or(Value::Null),
                 edges: doc.get("edge_types").cloned().unwrap_or(Value::Null),
                 structs: doc.get("structs").cloned().unwrap_or(Value::Null),
+                rules: doc.get("validation_rules").cloned().unwrap_or(Value::Null),
                 imports,
             },
         );
@@ -107,6 +109,50 @@ impl Registry {
         let info = self.packages.get(pname)?;
         let def = info.edges.get(ename)?;
         Some((name.to_string(), def.clone()))
+    }
+
+    /// True when `actual` names `allowed` or a transitive subtype of
+    /// it (§2.3). Both may carry `@version` suffixes; `allowed` may
+    /// be package-qualified or bare relative to `pkg_ctx`.
+    pub fn type_satisfies(&self, actual: &str, allowed: &str, pkg_ctx: Option<&str>) -> bool {
+        let Some((apkg, aname, _)) = self.resolve_type(allowed, pkg_ctx) else {
+            return false;
+        };
+        let mut current = self.resolve_type(actual, pkg_ctx);
+        let mut hops = 0;
+        while let Some((cpkg, cname, cdef)) = current {
+            if cpkg == apkg && cname == aname {
+                return true;
+            }
+            hops += 1;
+            if hops > 32 {
+                return false;
+            }
+            current = crate::get_str(&cdef, "extends")
+                .and_then(|parent| self.resolve_type(parent, Some(&cpkg)));
+        }
+        false
+    }
+
+    /// Ancestor closure of a taxonomy term, unioned across every
+    /// loaded taxonomy (§2.2 term-union identity). Includes the term
+    /// itself.
+    pub fn term_closure(&self, term: &str) -> BTreeSet<String> {
+        let mut closure = BTreeSet::new();
+        let mut stack = vec![bare(term).to_string()];
+        while let Some(current) = stack.pop() {
+            if !closure.insert(current.clone()) {
+                continue;
+            }
+            for tax in self.taxonomies.values() {
+                if let Some(parents) = tax.terms.get(&current) {
+                    for parent in parents {
+                        stack.push(bare(parent).to_string());
+                    }
+                }
+            }
+        }
+        closure
     }
 
     /// Resolve a struct by its graph-global name (§2.1), returning

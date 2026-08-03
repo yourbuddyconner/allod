@@ -29,6 +29,7 @@ scope.
 |---|---|
 | `key_id` | Hash of the public key |
 | `algorithm` | REQUIRED support: Ed25519 and ECDSA P-256. Others by registry |
+| `public` | The public key bytes (hex). Verification needs the key itself; the ID alone cannot check a signature |
 | `valid_from` / `valid_until` | Key validity window. Evaluated against the DAG position (parent state) of the changeset under verification |
 | `status` | `active` \| `rotated` \| `revoked` |
 

@@ -27,6 +27,34 @@ use crate::canon::canonical_cbor;
 use serde_yaml::Value;
 use sha2::{Digest, Sha256};
 
+/// Lowercase hex of arbitrary bytes.
+pub fn hex_string(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Decode lowercase or uppercase hex.
+pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    s.as_bytes()
+        .chunks(2)
+        .map(|chunk| {
+            std::str::from_utf8(chunk)
+                .ok()
+                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+        })
+        .collect()
+}
+
+/// Plain SHA-256 of exact bytes, for content hashes (§1.5) and key
+/// IDs (§6.2). No allod domain: these identities must match what
+/// anyone computes over the raw bytes.
+pub fn plain_sha256(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    format!("sha256:{}", hex_string(&digest))
+}
+
 /// Domain-separated SHA-256, rendered as `sha256:<hex>`.
 pub fn sha256_hex(domain: &str, payload: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -35,12 +63,7 @@ pub fn sha256_hex(domain: &str, payload: &[u8]) -> String {
     hasher.update(b":");
     hasher.update(payload);
     let digest = hasher.finalize();
-    let mut out = String::with_capacity(7 + 64);
-    out.push_str("sha256:");
-    for byte in digest {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
+    format!("sha256:{}", hex_string(&digest))
 }
 
 /// Parse a `sha256:<hex>` string back to raw digest bytes.
