@@ -4,7 +4,7 @@
 ontology: spec
 version: 1
 imports:
-  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+  - { ontology: core, state_hash: "sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649" }
 
 entity_types:
 
@@ -21,20 +21,20 @@ entity_types:
 
   Requirement:
     attributes:
-      keyword:   { type: string, required: true }     # MUST | MUST NOT | SHOULD | MAY
+      keyword:   { type: "enum<MUST|MUST-NOT|SHOULD|SHOULD-NOT|MAY>", required: true }
       statement: { type: string, required: true }
-      level:     { type: string }                     # L0 | L1 | L2 | L3 | F
+      level:     { type: "enum<L0|L1|L2|L3|F>" }
 
   DesignDecision:
     attributes:
       summary:   { type: string, required: true }
       rationale: { type: string }                     # long text
-      status:    { type: string }                     # open | adopted | superseded
+      status:    { type: "enum<open|adopted|superseded>" }
 
   Issue:
     attributes:
       description: { type: string, required: true }
-      status:      { type: string }                   # open | resolved | rejected
+      status:      { type: "enum<open|resolved|rejected>" }
 
   TestVector:
     attributes:
@@ -52,4 +52,8 @@ edge_types:
 
 validation_rules:
   - name: adopted-decisions-touch-the-spec
-    rule: "a DesignDecision with status adopted must have at least one affects edge"
+    on:
+      type: DesignDecision
+      where: { attr: status, equals: adopted }
+    require:
+      edge: { type: affects, direction: out, min: 1 }

@@ -4,7 +4,7 @@
 ontology: grc
 version: 1
 imports:
-  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+  - { ontology: core, state_hash: "sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649" }
 
 entity_types:
 
@@ -17,8 +17,8 @@ entity_types:
     attributes:
       identifier: { type: string, required: true } # e.g. "CC6.1"
       statement:  { type: string, required: true }
-      frequency:  { type: string }                 # continuous | daily | quarterly | annual
-      status:     { type: string }                 # active | retired
+      frequency:  { type: "enum<continuous|daily|weekly|monthly|quarterly|annual>" }
+      status:     { type: "enum<active|retired>" }
 
   Evidence:
     attributes:
@@ -29,20 +29,20 @@ entity_types:
   Assessment:
     attributes:
       period: { type: string, required: true }     # e.g. "2026-H1"
-      status: { type: string }                     # planned | fieldwork | complete
+      status: { type: "enum<planned|fieldwork|complete>" }
       report: { type: document-ref }
 
   Finding:
     attributes:
       description: { type: string, required: true }
-      severity:    { type: string }                # low | medium | high
-      status:      { type: string }                # open | remediated | accepted
+      severity:    { type: "enum<low|medium|high>" }
+      status:      { type: "enum<open|remediated|accepted>" }
 
   Exception:
     attributes:
       justification: { type: string, required: true }
       expires_on:    { type: date, required: true }
-      status:        { type: string }              # active | expired | withdrawn
+      status:        { type: "enum<active|expired|withdrawn>" }
 
 edge_types:
   part_of:     { domain: Control, range: Framework, cardinality: many-to-many }
@@ -54,8 +54,12 @@ edge_types:
   against:     { domain: Finding, range: Control, cardinality: many-to-one }
   excepts:     { domain: Exception, range: Control, cardinality: many-to-one }
 
+# Structured per the §2.1 rule grammar. The old
+# evidence-anchors-to-bytes rule is gone: the attribute schema already
+# requires the artifact ref, and hash resolution is verification
+# territory (§5.3), not admission.
 validation_rules:
-  - name: evidence-anchors-to-bytes
-    rule: "an Evidence node must have an artifact document ref whose content hash resolves"
   - name: findings-name-their-control
-    rule: "a Finding must gain an against edge within the same changeset"
+    on: { type: Finding, operation: [create] }
+    require:
+      edge: { type: against, direction: out, min: 1, within: changeset }

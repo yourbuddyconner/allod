@@ -1,6 +1,9 @@
 # Federation across two sovereign graphs. Objects above the divider
 # live in the supplier's graph, objects below it in the manufacturer's.
-# Hashes and IDs are illustrative.
+# Hashes and IDs are illustrative. Envelope fields are elided for
+# legibility: edges and classifications drop id and rev, and
+# provenance appears only where it illustrates. A live graph carries
+# all of them (§1.1).
 
 # ======================= SUPPLIER'S GRAPH ==========================
 # Graph ID: sha256:5a9d… (its genesis hash, §9.2)
@@ -69,11 +72,11 @@ attributes:
   locators: [ "https://graph.supplier.example/allod/sync" ]
   trust_basis: "out-of-band"
 
-# The imported certification. The manufacturer's importer authored the
-# proposal, its policy admitted it, and lineage points at the
-# supplier's objects by allod: reference (§9.6). The provenance chain
-# crosses the boundary intact: local claim, foreign changeset, foreign
-# certificate bytes.
+# The imported certification. The allod: lineage below is what the
+# imports-need-quality-review rule keys on (§4.1 imported), so
+# quality review was required at admission. The provenance chain
+# crosses the boundary intact: local claim, foreign changeset,
+# foreign certificate bytes (§9.6).
 ---
 kind: node
 id: "ic50…"

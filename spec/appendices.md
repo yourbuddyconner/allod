@@ -123,7 +123,10 @@ rules:
       reviewers: { role: owner, quorum: 1 }
       review_window: { max: "72h", on_expiry: reject }
   - name: model-assisted-needs-attestation
-    select: { basis: model-assisted }
+    select:
+      all:
+        - { basis: model-assisted }
+        - { not: { region: "workspace/scratch" } }  # carve-outs repeat per rule (§4.1)
     require:
       attestation_required: { attester_class: attested-indexer }
   - name: schema-changes-are-serious
@@ -138,10 +141,11 @@ rules:
       substrate_checks: [ ci-attestation-present ]
 ```
 
-The carve-out in the first rule lives inside the selector as a `not`
-clause (§4.1): requirements only tighten, so an exception must narrow a
-selector instead of overriding another rule. The final rule governs a
-git substrate with the same vocabulary as the knowledge rules.
+The scratch carve-out appears in rules 1 and 4 separately. Carve-outs
+do not compose across rules (§4.1): a `not` clause exempts a change
+from its own rule only, so each rule that must exempt a region carries
+its own clause. The final rule governs a git substrate with the same
+vocabulary as the knowledge rules.
 
 ## Appendix D: RDF / JSON-LD mapping (export, lossy)
 
@@ -169,12 +173,13 @@ RDF-native home, which is the gap Allod exists to fill.
 | T5 | Stolen agent credentials | The agent kind plus delegation scope bounds the blast radius (§6.1). Revocation is a governed changeset. Historical validity is preserved (§6.2) |
 | T6 | Projection tampering: an edited bundle passed off as state | A modified projection re-enters as a proposal that must pass admission (§7.2). The state-hash manifest detects divergence |
 | T7 | Replay or equivocation across copies | The state hash decides "same graph." Checkpoints are signed, and anchors make equivocation provable from two witnesses (§3.2.5) |
-| T8 | Erasure-law conflict with an append-only log | Redaction reaches document bytes, operation content, and intent text while every hash still verifies (§3.2.2, §3.2.6, §8.4). Legal analysis is open. The spec flags it rather than hiding it |
+| T8 | Erasure-law conflict with an append-only log | Redaction reaches document bytes, operation content, and intent text while every hash still verifies (§3.2.2, §3.2.6, §8.4). Structural facts survive it: edge endpoints and types are envelope (§1.8), so the existence of a relationship cannot be redacted. Legal analysis is open. The spec flags it rather than hiding it |
 | T9 | Root key loss | Unrecoverable when policy declares no recovery path. This is by design. Genesis SHOULD declare recovery rules (§4.6) |
 | T10 | TEE compromise or attestation forgery | The envelope pins the evidence type and vendor chain. A failed L3 claim degrades to L2, and verification reports the downgrade (§5.2 requires distinguishing `evidence: none`) |
 | T11 | Forged or tampered peer history | Graph IDs are self-certifying (§9.2). Every foreign changeset verifies against the peer's key history, replayed from its genesis (§4.6) |
 | T12 | Disclosure beyond the granted scope, or inference from share shape | Elision discloses only chosen operations, with membership proofs (§3.2.6). Merkle shape can leak operation counts, and producers MAY pad (§9.5). Grants are governed and audited (§9.4) |
 | T13 | A receiver retains or redistributes shared knowledge after revocation | Revocation ends future service (§9.4). Bytes already transferred stay transferred. The grant log proves what was authorized, when, and for how long |
+| T14 | Insider selector evasion: an authorized principal asserts fields (`basis`, lineage, omitted classifications) that route its changes to weaker rules | §4.8 trust classes: audits report rule matches on asserted inputs as degraded. Relaxing rules SHOULD key on log-derived inputs only. `classification_required` (§4.2) closes the unclassified gap. Attestation upgrades asserted inputs (L3) |
 
 ## Appendix F: Worked example of a governed git code review, end to end
 
@@ -189,7 +194,9 @@ an agent reviewer, and an attested gate on `main`.
    changed, 7 inbound call sites, and one touched function classified
    `security/spend-path`.
 3. **Evaluate.** Policy resolution matches Appendix C rule 6 plus a
-   `security/spend-path` region rule. The checklist requires steward
+   `security/spend-path` region rule — the commit touches the file
+   `authorize_spend` derives from, which is the deterministic,
+   file-granular reach rule of §8.3. The checklist requires steward
    review, a CI attestation, and owner sign-off from the region rule.
 4. **Review.** The agent reviewer walks the full graph: inbound
    callers, and both versions of each function body through `git:`
@@ -222,13 +229,20 @@ A minimal binding for §9.7 over HTTPS:
 The binding adds no state beyond the graph itself. Any transport that
 moves the same bytes conforms equally well.
 
-## Appendix H: Test vectors (normative, forthcoming)
+## Appendix H: Test vectors (normative)
 
 v1.0 MUST ship canonical test vectors: a small log in wire form, the
 hash of every changeset, the state hash at every revision, one elided
-changeset with its membership proofs, one redaction, and one passing
-plus one failing governance audit. Two implementations agree when they
-reproduce these bytes and hashes exactly. The reference implementation
-generates the vectors, and they land in this repository with its first
-release. Draft v0.3 defines the obligation so that no implementation
-ships against guesswork.
+changeset with its membership proofs, one redaction, signature
+vectors, and one passing plus one failing governance audit. Two
+implementations agree when they reproduce these bytes and hashes
+exactly.
+
+The hashing layer's vectors live in [vectors/](vectors/), generated
+by `allod-vectors` and held reproducible by CI: canonical preimages,
+changeset and revision hashes, operation Merkle roots, state hashes
+with a tombstone, the elision proof, the intent redaction, and the
+package content hashes that every import declaration binds to
+(verified by `allod-lint`). Signature vectors land with Part 6 of the
+reference implementation, and the governance audit pair lands with
+Part 4.

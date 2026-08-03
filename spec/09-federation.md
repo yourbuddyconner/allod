@@ -96,6 +96,11 @@ A share bundle is the transfer artifact. It contains:
 5. The ontology subgraph the disclosed objects were authored under,
    referenced by state hash (§2.3). The bundle includes it in full on
    first transfer and by reference afterward.
+6. The principal records and key history (§6.2) of every author
+   appearing in the disclosed changesets, as of the checkpoint
+   revision. Signature verification needs key state as of each
+   changeset's parent, and key rotations are not otherwise guaranteed
+   to fall inside the granted scope.
 
 A receiver verifies a bundle with the peer's keys and the checkpoint:
 authorship signatures, elision proofs, and subgraph membership.
@@ -131,7 +136,11 @@ Import rules:
   (§2.4).
 - Policy SHOULD route imports through admission requirements at least
   as strict as local model-assisted writes, because a foreign graph's
-  admission standards are its own.
+  admission standards are its own. The `imported` selector key (§4.1)
+  matches on the `allod:` lineage that this section requires, so
+  import rules need no side channel. Lineage is author-asserted below
+  L3 (§4.8), and an import rule is a tightening rule, which is the
+  safe direction for an asserted input.
 - Re-syncing a subscribed scope updates mirrors directly and MAY
   generate follow-up import proposals for adopted objects. The
   explicit-resolution rule (§3.2.3) applies to adopted objects with

@@ -1,25 +1,49 @@
-//! The attribute type grammar of §1.3: base types, `list<T>`, and
-//! `map<string, T>`.
+//! The attribute type grammar of §1.3: base types, `enum<…>`,
+//! `list<T>`, `map<string, T>`, and named structs (§2.1).
 
 use crate::vocab::BASE_TYPES;
+use std::collections::BTreeSet;
 
 /// Validate a type expression, returning every violation found.
-/// An empty result means the expression conforms.
-pub fn type_expr_errors(expr: &str) -> Vec<String> {
+/// `structs` holds the graph-global names of declared structs (§2.1),
+/// which are valid wherever a base type is. An empty result means the
+/// expression conforms.
+pub fn type_expr_errors(expr: &str, structs: &BTreeSet<String>) -> Vec<String> {
     let mut errors = Vec::new();
-    check(expr.trim(), &mut errors);
+    check(expr.trim(), structs, &mut errors);
     errors
 }
 
-fn check(expr: &str, errors: &mut Vec<String>) {
-    if BASE_TYPES.contains(&expr) {
+fn check(expr: &str, structs: &BTreeSet<String>, errors: &mut Vec<String>) {
+    if BASE_TYPES.contains(&expr) || structs.contains(expr) {
+        return;
+    }
+    if let Some(inner) = expr
+        .strip_prefix("enum<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
+        let symbols: Vec<&str> = inner.split('|').map(str::trim).collect();
+        if symbols.len() < 2 {
+            errors.push(format!("enum needs at least two symbols: {expr}"));
+        }
+        for sym in symbols {
+            let ok = !sym.is_empty()
+                && sym.chars().all(|c| {
+                    c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')
+                });
+            if !ok {
+                errors.push(format!(
+                    "enum symbol {sym:?} must be nonempty [A-Za-z0-9._-] (§1.3)"
+                ));
+            }
+        }
         return;
     }
     if let Some(inner) = expr
         .strip_prefix("list<")
         .and_then(|rest| rest.strip_suffix('>'))
     {
-        check(inner.trim(), errors);
+        check(inner.trim(), structs, errors);
         return;
     }
     if let Some(inner) = expr
@@ -47,7 +71,7 @@ fn check(expr: &str, errors: &mut Vec<String>) {
         if key != "string" {
             errors.push(format!("map keys must be string, got {key}"));
         }
-        check(inner[split + 1..].trim(), errors);
+        check(inner[split + 1..].trim(), structs, errors);
         return;
     }
     errors.push(format!("unknown attribute type {expr:?}"));
@@ -57,19 +81,40 @@ fn check(expr: &str, errors: &mut Vec<String>) {
 mod tests {
     use super::*;
 
+    fn no_structs() -> BTreeSet<String> {
+        BTreeSet::new()
+    }
+
     #[test]
     fn accepts_valid_expressions() {
-        assert!(type_expr_errors("string").is_empty());
-        assert!(type_expr_errors("list<string>").is_empty());
-        assert!(type_expr_errors("list<map<string, string>>").is_empty());
-        assert!(type_expr_errors("map<string, list<int>>").is_empty());
+        let s = no_structs();
+        assert!(type_expr_errors("string", &s).is_empty());
+        assert!(type_expr_errors("selector", &s).is_empty());
+        assert!(type_expr_errors("list<string>", &s).is_empty());
+        assert!(type_expr_errors("list<map<string, string>>", &s).is_empty());
+        assert!(type_expr_errors("map<string, list<int>>", &s).is_empty());
+        assert!(type_expr_errors("enum<open|done|dropped>", &s).is_empty());
+        assert!(type_expr_errors("list<enum<state|history|subscribe>>", &s).is_empty());
+    }
+
+    #[test]
+    fn accepts_declared_structs() {
+        let mut s = no_structs();
+        s.insert("KeyRecord".into());
+        assert!(type_expr_errors("KeyRecord", &s).is_empty());
+        assert!(type_expr_errors("list<KeyRecord>", &s).is_empty());
+        assert_eq!(type_expr_errors("Ghost", &s).len(), 1);
     }
 
     #[test]
     fn rejects_invalid_expressions() {
-        assert_eq!(type_expr_errors("money").len(), 1);
-        assert_eq!(type_expr_errors("map<int, money>").len(), 2);
-        assert_eq!(type_expr_errors("map<string>").len(), 1);
-        assert_eq!(type_expr_errors("list<map<string").len(), 1);
+        let s = no_structs();
+        assert_eq!(type_expr_errors("money", &s).len(), 1);
+        assert_eq!(type_expr_errors("map<int, money>", &s).len(), 2);
+        assert_eq!(type_expr_errors("map<string>", &s).len(), 1);
+        assert_eq!(type_expr_errors("list<map<string", &s).len(), 1);
+        assert_eq!(type_expr_errors("enum<only>", &s).len(), 1);
+        assert_eq!(type_expr_errors("enum<a||b>", &s).len(), 1);
+        assert_eq!(type_expr_errors("enum<a|b c>", &s).len(), 1);
     }
 }

@@ -79,6 +79,16 @@ Rules:
   lineage, and why the attested indexer exists. When a code graph must
   be trusted, run the extraction at L3. Dependency review of enclave
   code is the motivating case.
+- **Region reach is file-granular and parent-state.** A region rule
+  (§4.1) reaches a substrate changeset when the commit's deterministic
+  operation set (§3.3) touches a path from which an in-region derived
+  object derives, in the derived graph as of the parent revision.
+  Rule matching MUST NOT depend on symbol or span identity across
+  commits — the same ban §3.3 places on rename heuristics. Touching
+  any part of a file that a classified function derives from is
+  in-region; finer precision is a classification concern (classify
+  the file, or split it), never a matching concern. The semantic
+  diff below is review payload, not the matching mechanism.
 
 This machinery yields **semantic diff**. Compare the graph at commit A
 with the graph at commit B, and the result is a knowledge-level diff of

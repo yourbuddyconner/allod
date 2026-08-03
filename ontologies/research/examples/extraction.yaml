@@ -1,5 +1,7 @@
 # A model-assisted extraction with its full evidence chain. Hashes and
-# IDs are illustrative.
+# IDs are illustrative. Envelope fields are elided for legibility:
+# edges and classifications drop id and rev, and provenance appears
+# only where it illustrates. A live graph carries all of them (§1.1).
 
 # The source: a paper, anchored to exact bytes.
 ---

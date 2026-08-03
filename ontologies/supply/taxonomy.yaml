@@ -11,7 +11,11 @@ terms:
   - { name: disclosure/customer, parents: [disclosure] }
   - { name: disclosure/auditor,  parents: [disclosure] }
 
-  # Compliance regions.
+  # Compliance regions. Term names are graph-global and same-named
+  # terms merge by parent union (§2.2): in a graph that also installs
+  # corp, compliance/export-controlled gains corp's
+  # sensitivity/restricted parent, and the owner-review rule that
+  # rides on it. Union only tightens.
   - { name: compliance,                   parents: [] }
   - { name: compliance/conflict-minerals, parents: [compliance] }
   - { name: compliance/export-controlled, parents: [compliance] }

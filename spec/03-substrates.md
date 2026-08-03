@@ -24,7 +24,7 @@ when it satisfies the four properties.
 
 | Field | Type | Description |
 |---|---|---|
-| `hash` | hash | SHA-256 of the canonical encoding, with the signature zeroed and the operations list represented by its Merkle root (§3.2.6) |
+| `hash` | hash | SHA-256 of the canonical encoding, with the `hash` and `signature` fields omitted and the operations list represented by its Merkle root (§3.2.6). Appendix H fixes the preimage |
 | `parents` | list<hash> | At least one, except genesis. More than one is a merge |
 | `author` | principal-ref + key-id | Part 6 |
 | `timestamp` | rfc3339 | Author-asserted and informational. Ordering always comes from the DAG |
@@ -91,8 +91,11 @@ operations whose prior-revision hash does not match. A merge with
 first revision at which they appear: a merge whose combined result
 violates the schema or dangles a reference is itself the rejected
 changeset, and the merge author must add operations that repair the
-result. A rejected changeset affects only itself: consumers skip it,
-flag it, and fold the rest of the log normally.
+result. A rejected changeset is skipped and flagged, and the log folds
+past it. Rejection propagates through dependence, not proximity: a
+later changeset whose operations target revisions or reference objects
+the rejected changeset produced fails the same checks in turn, while
+independent changesets fold normally.
 
 ### 3.2.5 Checkpoints
 

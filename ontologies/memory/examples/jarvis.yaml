@@ -1,5 +1,7 @@
 # A personal memory graph in operation. Hashes and IDs are
-# illustrative. The cast: Conner (owner, User principal) and Jarvis
+# illustrative. Envelope fields are elided for legibility: edges and
+# classifications drop id and rev, and provenance appears only where
+# it illustrates. A live graph carries all of them (§1.1). The cast: Conner (owner, User principal) and Jarvis
 # (Agent principal, delegated by Conner).
 
 # The agent principal is a graph object (§6.1). The delegation chain is

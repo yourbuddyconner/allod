@@ -9,8 +9,8 @@
 ontology: eng
 version: 1
 imports:
-  - { ontology: corp, state_hash: "sha256:…" }   # placeholders until Appendix H vectors land
-  - { ontology: code, state_hash: "sha256:…" }
+  - { ontology: corp, state_hash: "sha256:67dd252ac8081f58ef91c02b0cc601369c9ac655963d75c7788a62b3bca850f0" }
+  - { ontology: code, state_hash: "sha256:6d109e4b4a2c3af70e3d8dc66d6b6cb6ec61490b9fa42cf4ce0ed6e3fa15aa7e" }
 
 entity_types:
 
@@ -20,13 +20,13 @@ entity_types:
     attributes:
       name:        { type: string, required: true }
       description: { type: string }                # long text; projects to the markdown body
-      tier:        { type: string }                # 0 | 1 | 2, criticality
-      status:      { type: string }                # active | deprecated | retired
+      tier:        { type: "enum<0|1|2>" }         # criticality
+      status:      { type: "enum<active|deprecated|retired>" }
       runbook:     { type: document-ref }
 
   Environment:
     attributes:
-      name:   { type: string, required: true }     # production | staging | dev
+      name:   { type: string, required: true }     # e.g. production | staging | dev
       region: { type: string }
 
   Release:
@@ -39,7 +39,7 @@ entity_types:
   Deployment:
     attributes:
       deployed_at: { type: timestamp, required: true }
-      status:      { type: string }                # in-progress | healthy | rolled-back
+      status:      { type: "enum<in-progress|healthy|rolled-back>" }
 
   # Change management -----------------------------------------------------
 
@@ -47,8 +47,8 @@ entity_types:
     attributes:
       title:         { type: string, required: true }
       summary:       { type: string }              # long text
-      risk:          { type: string, required: true }  # standard | high | emergency
-      status:        { type: string }              # draft | proposed | approved | applied | rolled-back | rejected
+      risk:          { type: "enum<standard|high|emergency>", required: true }
+      status:        { type: "enum<draft|proposed|approved|applied|rolled-back|rejected>" }
       window_start:  { type: timestamp }
       window_end:    { type: timestamp }
       rollback_plan: { type: string }              # long text
@@ -58,7 +58,7 @@ entity_types:
   DesignDoc:
     attributes:
       title:  { type: string, required: true }
-      status: { type: string }                     # draft | review | accepted | superseded
+      status: { type: "enum<draft|review|accepted|superseded>" }
       doc:    { type: document-ref, required: true }
 
   # Incidents and learning ------------------------------------------------
@@ -66,8 +66,8 @@ entity_types:
   Incident:
     attributes:
       title:       { type: string, required: true }
-      severity:    { type: string, required: true }    # sev1 | sev2 | sev3 | sev4
-      status:      { type: string }                    # open | mitigated | resolved
+      severity:    { type: "enum<sev1|sev2|sev3|sev4>", required: true }
+      status:      { type: "enum<open|mitigated|resolved>" }
       opened_at:   { type: timestamp, required: true }
       resolved_at: { type: timestamp }
       timeline:    { type: string }                    # long text
@@ -77,13 +77,13 @@ entity_types:
   Postmortem:
     attributes:
       doc:    { type: document-ref, required: true }
-      status: { type: string }                     # draft | reviewed
+      status: { type: "enum<draft|reviewed>" }
 
   ActionItem:
     attributes:
       description: { type: string, required: true }
       due_on:      { type: date }
-      status:      { type: string }                # open | done | dropped
+      status:      { type: "enum<open|done|dropped>" }
 
   Slo:
     attributes:
@@ -100,7 +100,7 @@ edge_types:
   # Systems.
   built_from:  { domain: Service, range: code/Repository, cardinality: many-to-many }
   depends_on:  { domain: Service, range: Service, cardinality: many-to-many,
-                 attributes: { nature: { type: string } } }   # sync | async | data
+                 attributes: { nature: { type: "enum<sync|async|data>" } } }
   of_service:  { domain: Release, range: Service, cardinality: many-to-one }
   deploys:     { domain: Deployment, range: Release, cardinality: many-to-one }
   runs_in:     { domain: Deployment, range: Environment, cardinality: many-to-one }
@@ -118,10 +118,26 @@ edge_types:
   yields:      { domain: Postmortem, range: ActionItem, cardinality: one-to-many }
   assigned_to: { domain: ActionItem, range: corp/Employee, cardinality: many-to-one }
 
+# Structured per the §2.1 rule grammar. target_where conditions
+# evaluate against the far node of the edge.
 validation_rules:
   - name: high-risk-has-rollback-plan
-    rule: "a ChangeRequest with risk high or emergency must have a rollback_plan"
+    on:
+      type: ChangeRequest
+      where: { attr: risk, in: [high, emergency] }
+    require: { attr: rollback_plan, present: true }
   - name: production-deploys-fulfill-changes
-    rule: "a Deployment with a runs_in edge to an Environment named production must gain a fulfills edge to a ChangeRequest with status approved within the same changeset"
+    on:
+      type: Deployment
+      operation: [create]
+      where:
+        edge: { type: runs_in, direction: out,
+                target_where: { attr: name, equals: production } }
+    require:
+      edge: { type: fulfills, direction: out, min: 1, within: changeset,
+              target_where: { attr: status, equals: approved } }
   - name: resolved-incidents-have-timestamps
-    rule: "an Incident with status resolved must have resolved_at"
+    on:
+      type: Incident
+      where: { attr: status, equals: resolved }
+    require: { attr: resolved_at, present: true }

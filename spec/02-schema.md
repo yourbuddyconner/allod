@@ -20,9 +20,46 @@ cardinality (`one-to-one` | `one-to-many` | `many-to-one` |
 `many-to-many`), and attribute schemas. Direction is semantic (§1.4), so
 `one-to-many` and `many-to-one` are distinct declarations.
 
-**Validation rules.** An ontology MAY declare validation predicates beyond
-per-object schema validity. Example: "a `Company` node must gain at least
-one `registered-in` edge within the same changeset."
+**Structs.** An ontology MAY declare named structs: attribute schemas
+without identity or lifecycle. A struct name is usable as an attribute
+type, including inside `list<>` and `map<>` (§1.3). Struct values
+validate structurally and hash as part of their containing object.
+Structs keep record-shaped values typed — the key records of §6.2 are
+the motivating case — without minting objects for them. Struct names
+are global across a graph's installed ontologies, and a graph MUST NOT
+admit two structs with the same name.
+
+**Validation rules.** An ontology MAY declare validation rules beyond
+per-object schema validity. Rules are structured, not prose, because
+fold-time rejection (§3.2.4) depends on them and two implementations
+MUST agree on their meaning:
+
+```
+rule       := { name, on, require }
+on         := { type: entity-type-ref,
+                operation?: [create | update],   # default: both
+                where?: condition }
+condition  := attr-cond | edge-cond
+            | { all: [condition…] } | { any: [condition…] }
+            | { not: condition }
+attr-cond  := { attr: name, equals?: value, in?: [value…],
+                present?: bool }
+edge-cond  := { edge: { type: edge-type-ref,
+                        direction: in | out,
+                        min?: int,                # default 1
+                        within?: changeset | state,  # default state
+                        target_where?: condition } }
+require    := condition
+```
+
+A rule triggers when a changeset applies a matching operation to an
+object of `on.type` or a subtype and `on.where` holds. `where` and
+`within: state` conditions evaluate against the state after the
+changeset applies. `within: changeset` requires the satisfying edges
+to be created by the same changeset. A triggered rule whose `require`
+does not hold is a schema violation, and the fold rejects the
+changeset (§3.2.4). The same attribute-condition grammar serves policy
+selectors as the `where` key (§4.1).
 
 ## 2.2 Taxonomy
 
@@ -39,6 +76,15 @@ Classification semantics: when a subject is classified under a term, policy
 treats it as classified under all ancestor terms (§4.1). Descendant terms
 are not implied. Deprecated terms stay valid for historical
 classifications, but new classifications MUST NOT use them.
+
+**Term identity.** Term names are graph-global: a term's identity is
+its name, not the package that declared it. Admitting a term that
+already exists merges the declarations — the term's parent set becomes
+the union, and the merge MUST leave the taxonomy acyclic, or the
+admitting changeset is rejected. Union only adds ancestors, and
+requirements only accumulate (§4.1), so installing another package can
+only tighten the policy surface of a shared term, never loosen it.
+Packages that must not interact use disjoint roots.
 
 ## 2.3 Extension and inheritance
 

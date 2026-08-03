@@ -45,6 +45,9 @@ Attribute values are typed. Implementations MUST support:
 | `bytes` | Inline below an implementation-declared threshold. Above it, use a document reference |
 | `ref` | Typed reference: `node-ref`, `edge-ref`, `document-ref`, or `external-ref` (URI plus optional content hash) |
 | `list<T>` / `map<string, T>` | Homogeneous collections |
+| `enum<a\|b\|…>` | A closed set of string symbols, declared in the type expression. Symbols use `[A-Za-z0-9._-]`. A value hashes as its string |
+| `selector` | A policy-selector expression (§4.1 grammar). Grants and delegation scopes (§6.1, §9.4) use it, so the objects that scope authority carry the same machine-checkable form that policy rules do |
+| struct name | A record type declared by an ontology (§2.1). A struct value is validated structurally and has no identity of its own |
 
 Embeddings do not belong in attribute values. An embedding depends on the
 model that generated it, so it is derived data rather than stable
@@ -111,9 +114,11 @@ classifications, so the act of classifying is itself a governed mutation.
   UUIDv7 leaks creation time through every reference and survives
   redaction.
 - **Revision hashes** are SHA-256 over the object's canonical wire encoding
-  (§7.1) with the `rev` field zeroed. Every hash carries an algorithm
+  (§7.1) with the `rev` field omitted, under a domain-separated
+  prefix. Every hash carries an algorithm
   prefix, e.g. `sha256:`. An implementation that encounters an unknown
-  algorithm MUST reject the hash rather than guess.
+  algorithm MUST reject the hash rather than guess. The Appendix H
+  vectors fix the exact preimages.
 - **The graph state hash** is the root of a Merkle tree over all live
   object revision hashes and the tombstones of deleted objects, grouped
   by kind and sorted by logical ID. The tree is binary, built over the
@@ -153,6 +158,12 @@ Rules:
   dangling reference.
 - Classifications on a redacted subject persist, and lineage that cites
   redacted content stays tombstone-marked (§8.4).
+- For an edge, `type`, `from`, and `to` are envelope rather than
+  content: the state tree and reference integrity depend on them, so
+  they survive redaction. Redacting an edge removes its attributes
+  only. The existence of the relationship stays visible, and where
+  that existence is itself the sensitive fact, redaction cannot erase
+  it. Threat T8 carries this limit.
 - A recorded hash whose content was redacted can no longer be
   recomputed. Integrity verification reports it as degraded rather than
   verified (§5.3), which separates content removed under authority from

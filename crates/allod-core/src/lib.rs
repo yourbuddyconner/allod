@@ -7,11 +7,15 @@
 //! allod-lint builds on it, and reference implementation components
 //! are expected to as well.
 
+pub mod canon;
+pub mod hash;
 pub mod loader;
 pub mod registry;
 pub mod typeexpr;
 pub mod vocab;
 
+pub use canon::canonical_cbor;
+pub use hash::{hash_value, merkle_root, package_hash, sha256_hex};
 pub use loader::{load_dir, LoadIssue, Loaded};
 pub use registry::{Package, Registry, Taxonomy};
 pub use typeexpr::type_expr_errors;

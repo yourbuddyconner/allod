@@ -8,7 +8,7 @@
 ontology: code
 version: 1
 imports:
-  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+  - { ontology: core, state_hash: "sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649" }
 
 entity_types:
 
@@ -38,7 +38,7 @@ entity_types:
   Type:
     attributes:
       name: { type: string, required: true }
-      kind: { type: string }                       # struct | class | enum | interface | alias
+      kind: { type: "enum<struct|class|enum|interface|alias>" }
 
 edge_types:
   in_repo:    { domain: SourceFile, range: Repository, cardinality: many-to-one }

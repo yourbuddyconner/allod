@@ -24,12 +24,22 @@ rules:
     require:
       reviewers: { role: steward, quorum: 1 }
 
+  # A matching rule replaces the restricted default (§4.1), so this
+  # rule is a broad authorization: any service asserting deterministic
+  # basis writes without review, and basis is author-asserted below
+  # L3 (§4.8). Narrow the selector to the sync principals a deployment
+  # actually runs.
   - name: deterministic-sync-writes
     select: { author_kind: service, basis: deterministic }
     require: { schema_valid: true }
 
+  # Scratch is exempt here too: carve-outs do not compose across rules
+  # (§4.1), so the clause from agent-writes-are-proposals repeats.
   - name: model-assisted-needs-attestation
-    select: { basis: model-assisted }
+    select:
+      all:
+        - { basis: model-assisted }
+        - { not: { region: "workspace/scratch" } }
     require:
       attestation_required: { attester_class: attested-indexer }
 

@@ -7,7 +7,7 @@
 ontology: corp
 version: 1
 imports:
-  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+  - { ontology: core, state_hash: "sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649" }
 
 entity_types:
 
@@ -17,7 +17,7 @@ entity_types:
     extends: core/Person
     attributes:
       title:           { type: string, required: true }
-      employment_type: { type: string }            # full-time | part-time | contractor
+      employment_type: { type: "enum<full-time|part-time|contractor>" }
       hired_on:        { type: date, required: true }
       terminated_on:   { type: date }
       location:        { type: string }
@@ -28,7 +28,7 @@ entity_types:
   OrgUnit:
     attributes:
       name:        { type: string, required: true }
-      unit_type:   { type: string, required: true } # team | department | division | subsidiary
+      unit_type:   { type: "enum<team|department|division|subsidiary>", required: true }
       charter:     { type: string }                 # long text; projects to the markdown body
       cost_center: { type: string }
 
@@ -51,7 +51,7 @@ entity_types:
     extends: core/Company
     attributes:
       category:    { type: string }
-      criticality: { type: string }                 # low | medium | high
+      criticality: { type: "enum<low|medium|high>" }
       renewal_on:  { type: date }
 
   Partner:
@@ -84,7 +84,7 @@ entity_types:
   Project:
     attributes:
       name:      { type: string, required: true }
-      status:    { type: string }                   # proposed | active | done | dropped
+      status:    { type: "enum<proposed|active|done|dropped>" }
       starts_on: { type: date }
       ends_on:   { type: date }
       brief:     { type: string }                   # long text
@@ -106,7 +106,7 @@ entity_types:
     attributes:
       summary:    { type: string, required: true }
       rationale:  { type: string }                  # long text
-      status:     { type: string }                  # proposed | approved | reversed
+      status:     { type: "enum<proposed|approved|reversed>" }
       decided_on: { type: date }
 
   Risk:
@@ -136,8 +136,16 @@ edge_types:
   affects:      { domain: Decision, range: [Project, Contract, OrgUnit, core/Company], cardinality: many-to-many }
   threatens:    { domain: Risk, range: [Project, Contract, Objective], cardinality: many-to-many }
 
+# Structured per the §2.1 rule grammar, so two implementations agree
+# at fold time. party_to points at the Contract, hence direction: in.
 validation_rules:
   - name: contract-has-parties
-    rule: "a Contract node must gain at least one party_to edge within the same changeset"
+    on: { type: Contract, operation: [create] }
+    require:
+      edge: { type: party_to, direction: in, min: 1, within: changeset }
   - name: approved-decision-has-decider
-    rule: "a Decision with status approved must have at least one decided_by edge"
+    on:
+      type: Decision
+      where: { attr: status, equals: approved }
+    require:
+      edge: { type: decided_by, direction: out, min: 1 }

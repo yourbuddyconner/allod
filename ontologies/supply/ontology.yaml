@@ -6,7 +6,7 @@
 ontology: supply
 version: 1
 imports:
-  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+  - { ontology: core, state_hash: "sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649" }
 
 entity_types:
 
@@ -46,7 +46,7 @@ entity_types:
   Inspection:
     attributes:
       performed_on: { type: date, required: true }
-      result:       { type: string }               # pass | fail
+      result:       { type: "enum<pass|fail>" }
       report:       { type: document-ref }
 
 edge_types:
@@ -62,8 +62,12 @@ edge_types:
   issued_by:     { domain: Certification, range: core/Company, cardinality: many-to-one }
   inspected:     { domain: Inspection, range: [Batch, Facility], cardinality: many-to-many }
 
+# Structured per the §2.1 rule grammar. The old
+# certifications-anchor-to-bytes rule is gone: the attribute schema
+# already requires the certificate ref, and whether its hash resolves
+# is verification territory (§5.3 degraded results), not admission.
 validation_rules:
-  - name: certifications-anchor-to-bytes
-    rule: "a Certification must have a certificate document ref whose content hash resolves"
   - name: shipments-have-contents
-    rule: "a Shipment must gain at least one contains edge within the same changeset"
+    on: { type: Shipment, operation: [create] }
+    require:
+      edge: { type: contains, direction: out, min: 1, within: changeset }

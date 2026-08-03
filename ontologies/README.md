@@ -28,9 +28,12 @@ imports:
   - { ontology: corp, state_hash: "sha256:…" }
 ```
 
-The hashes in these files are placeholders. The reference
-implementation generates the real state hashes, and they land with the
-Appendix H test vectors.
+The hashes in these files are real: each is the imported package's
+content hash under the canonical encoding (§7.1, Appendix H),
+computed by `allod-vectors hashes` and verified by `allod-lint` on
+every run. Until schema-as-object materialization ships, this content
+hash is what imports bind to; the migration to true in-graph state
+hashes is a pre-v1 breaking change already anticipated.
 
 ## Extension is the intended use
 

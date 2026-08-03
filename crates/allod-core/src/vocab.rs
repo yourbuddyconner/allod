@@ -1,11 +1,12 @@
 //! The specification's controlled vocabulary, kept sorted for stable
 //! diagnostic output.
 
-/// Attribute base types (§1.3).
+/// Attribute base types (§1.3). `enum<…>` and struct names are
+/// handled by the type grammar rather than listed here.
 pub const BASE_TYPES: &[&str] = &[
     "string", "int", "float", "decimal", "bool", "timestamp", "date",
     "duration", "bytes", "node-ref", "edge-ref", "document-ref",
-    "external-ref",
+    "external-ref", "selector",
 ];
 
 /// Edge cardinalities (§2.1).
@@ -17,8 +18,8 @@ pub const POSTURES: &[&str] = &["open", "restricted"];
 
 /// Leaf selector keys (§4.1).
 pub const SELECTOR_KEYS: &[&str] = &[
-    "author_kind", "basis", "operation", "region", "repo", "substrate",
-    "target_ref", "type",
+    "author_kind", "basis", "imported", "operation", "region", "repo",
+    "substrate", "target_ref", "type", "where",
 ];
 
 /// Principal kinds (§6.1).

@@ -19,17 +19,46 @@ Selectors key on:
   ref.
 - **Operation kind.** Example: any redaction (§3.2.2), any schema
   mutation.
+- **Import lineage.** `imported: true` matches operations whose object
+  lineage records `derived_from` an `allod:` reference to another
+  graph (§9.6). A graph ID as the value narrows the match to imports
+  from that graph. Lineage is author-asserted below L3 (§4.8).
+- **Attribute predicate.** `where: <attr-cond>`, with the
+  attribute-condition grammar of §2.1, evaluated against the
+  operation's resulting object. Conjoin it with `type` so the named
+  attribute has a declared home.
 
-Selectors compose with `all`, `any`, and `not`. When multiple rules
-match, ALL of their requirements apply. Requirements are conjunctive, so
-adding a rule can only tighten policy for the changes its selector
-matches. Exceptions therefore live inside selectors: a carve-out is a
-`not` clause in the broad rule. Evaluation stays order-independent, and
-no rule overrides another.
+Selectors compose with `all`, `any`, and `not`. A selector map that
+lists several keys is shorthand for an `all` over them. When multiple
+rules match, ALL of their requirements apply. Requirements are
+conjunctive, so adding a rule can only tighten policy relative to the
+other rules. Exceptions therefore live inside selectors: a carve-out is
+a `not` clause in the broad rule. Evaluation stays order-independent,
+and no rule overrides another.
+
+Carve-outs do not compose across rules. A `not` clause exempts a change
+from its own rule only, and every other matching rule still applies in
+full. A region meant to be exempt from several requirements needs the
+carve-out repeated in each rule that imposes one.
 
 When no rule matches, the graph's declared **default posture** applies:
 `open` (any authenticated principal) or `restricted` (root authority
-only). A graph MUST declare its default posture at genesis.
+only). A graph MUST declare its default posture at genesis. A matching
+rule replaces the posture rather than conjoining with it. Under
+`restricted`, rules are therefore also how a graph authorizes non-root
+writes, and a broad rule with weak requirements loosens what the
+posture alone would have demanded. This is the one way adding a rule
+relaxes policy, and it is why §4.6 and the reference policies hold
+`set-policy` to elevated review.
+
+**Classification state for region selectors.** A region selector
+evaluates a subject's classifications as of the proposal's parent
+revision, plus the classifications the proposal itself creates. A
+subject classified within the changeset that creates it is in-region
+for that changeset's own evaluation, which is what lets a carve-out
+region admit an object together with its classification. An operation
+that removes a classification matches the rules of the region being
+departed.
 
 ## 4.2 Rule requirements
 
@@ -156,3 +185,38 @@ them. Conflating the two is the most likely way to oversell this spec.
   requirements with path selectors, but their verdicts are host-locked
   and unsigned. The git binding provides the same rules with portable,
   signed outcomes.
+
+## 4.8 Selector input trust classes
+
+Policy evaluation is deterministic over the log, but not every input a
+selector keys on is *verifiable* from the log. Every selector input
+falls into one of three classes:
+
+- **Log-derived.** Recomputable from the log alone: author identity
+  and kind (principal objects, §6.1), operation kind, entity and edge
+  type, region (classification state, per the timing rule of §4.1),
+  attribute predicates (`where`), and substrate path and ref patterns
+  (§3.3).
+- **Author-asserted.** Recorded in the log but only as the author's
+  claim: `basis`, lineage (`derived_from`, `tool`, and therefore
+  `imported`), and timestamps (§4.2 already handles these).
+- **Attested.** An author-asserted input covered by an attestation
+  envelope that binds it (§5.2) is upgraded: the verifier trusts it to
+  the degree it trusts the measured environment.
+
+A governance audit (§5.3 level 3) reports a changeset's admission as
+**verified** when every matched rule's selector keys rest on
+log-derived or attested inputs, and as **degraded** otherwise, naming
+the asserted inputs that were trusted. This is the same
+verified/degraded vocabulary that §3.4 and §4.2 use, applied to rule
+matching.
+
+The practical consequence is directional. An asserted input in a rule
+that only *tightens* is safe: lying about it dodges extra
+requirements at worst back down to what the other rules and the
+posture already demand. An asserted input in a rule that *relaxes*
+(one whose match replaces a stricter posture, per §4.1) is a trust
+decision about whoever controls the assertion. Relaxing rules SHOULD
+therefore key on log-derived inputs — named principals, types,
+regions — and treat asserted keys such as `basis` as advisory
+narrowing, not as the authorization itself. See threat T14.

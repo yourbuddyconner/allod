@@ -1,6 +1,8 @@
 # A worked high-risk change under the eng ontology: rotating the
 # signing keys on the payments spend path. Hashes and IDs are
-# illustrative. The flow: classify the code, propose the change,
+# illustrative. Envelope fields are elided for legibility: edges and
+# classifications drop id and rev, and provenance appears only where
+# it illustrates. A live graph carries all of them (§1.1). The flow: classify the code, propose the change,
 # collect both required reviews, deploy, and close the loop when the
 # deploy causes an incident.
 

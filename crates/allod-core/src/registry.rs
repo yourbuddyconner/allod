@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 pub struct Package {
     pub types: Value,
     pub edges: Value,
+    pub structs: Value,
     pub imports: Vec<String>,
 }
 
@@ -46,6 +47,7 @@ impl Registry {
             Package {
                 types: doc.get("entity_types").cloned().unwrap_or(Value::Null),
                 edges: doc.get("edge_types").cloned().unwrap_or(Value::Null),
+                structs: doc.get("structs").cloned().unwrap_or(Value::Null),
                 imports,
             },
         );
@@ -105,6 +107,29 @@ impl Registry {
         let info = self.packages.get(pname)?;
         let def = info.edges.get(ename)?;
         Some((name.to_string(), def.clone()))
+    }
+
+    /// Resolve a struct by its graph-global name (§2.1), returning
+    /// (declaring package, definition). Names are unique across
+    /// packages; the linter reports collisions.
+    pub fn resolve_struct(&self, name: &str) -> Option<(String, Value)> {
+        for (pname, package) in &self.packages {
+            if let Some(def) = package.structs.get(name) {
+                return Some((pname.clone(), def.clone()));
+            }
+        }
+        None
+    }
+
+    /// Every declared struct name across loaded packages.
+    pub fn struct_names(&self) -> BTreeSet<String> {
+        self.packages
+            .values()
+            .filter_map(|p| p.structs.as_mapping())
+            .flat_map(|map| {
+                map.keys().filter_map(Value::as_str).map(String::from)
+            })
+            .collect()
     }
 
     /// True when any loaded taxonomy defines the term.

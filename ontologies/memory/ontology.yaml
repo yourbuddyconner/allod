@@ -6,7 +6,7 @@
 ontology: memory
 version: 1
 imports:
-  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+  - { ontology: core, state_hash: "sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649" }
 
 entity_types:
 
@@ -18,7 +18,7 @@ entity_types:
   Preference:
     attributes:
       statement: { type: string, required: true } # e.g. "no meetings before 09:00"
-      strength:  { type: string }                 # hard | soft
+      strength:  { type: "enum<hard|soft>" }
       context:   { type: string }                 # when it applies
 
   Routine:
@@ -31,12 +31,12 @@ entity_types:
     attributes:
       description: { type: string, required: true }
       due_at:      { type: timestamp }
-      status:      { type: string }               # open | done | dropped
+      status:      { type: "enum<open|done|dropped>" }
 
   Interest:
     attributes:
       topic:    { type: string, required: true }
-      affinity: { type: string }                  # growing | steady | fading
+      affinity: { type: "enum<growing|steady|fading>" }
 
 edge_types:
   about:      { domain: [Note, Preference, Commitment, Routine], range: [core/Person, core/Company, Interest], cardinality: many-to-many }

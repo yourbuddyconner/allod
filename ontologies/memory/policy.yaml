@@ -30,7 +30,15 @@ rules:
     require:
       reviewers: { role: owner, quorum: 1 }
 
+  # Scratch is exempt here too. Carve-outs do not compose across rules
+  # (§4.1), so the clause from agent-writes-are-proposals repeats.
+  # Without it, every scratch note with model-assisted lineage would
+  # need an attestation envelope, and the agent could not think at
+  # full speed there.
   - name: model-assisted-needs-attestation
-    select: { basis: model-assisted }
+    select:
+      all:
+        - { basis: model-assisted }
+        - { not: { region: "workspace/scratch" } }
     require:
       attestation_required: { attester_class: attested-indexer }

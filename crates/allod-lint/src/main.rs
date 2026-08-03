@@ -36,6 +36,8 @@ struct Linter {
     errors: Vec<String>,
     warnings: Vec<String>,
     registry: Registry,
+    structs: BTreeSet<String>,
+    ontology_docs: HashMap<String, Value>,
 }
 
 impl Linter {
@@ -56,7 +58,8 @@ impl Linter {
                 &format!("attribute type must be a string, got {expr:?}"),
             ),
             Some(expr) => {
-                for msg in type_expr_errors(expr) {
+                let msgs = type_expr_errors(expr, &self.structs);
+                for msg in msgs {
                     self.error(path, where_, &msg);
                 }
             }
@@ -94,6 +97,32 @@ impl Linter {
                              prefix (§1.7)"
                         ),
                     );
+                    continue;
+                }
+                // Verify the declared hash against the imported
+                // package's computed content hash (§2.5). Recursion
+                // grounds out because every package's own imports are
+                // verified the same way.
+                let expected = self
+                    .ontology_docs
+                    .get(target)
+                    .map(allod_core::package_hash);
+                match expected {
+                    Some(Ok(expected)) if expected != hash => self.error(
+                        path,
+                        &where_,
+                        &format!(
+                            "import {target:?} state_hash {hash} does not match \
+                             the package's content hash {expected} \
+                             (run: allod-vectors hashes)"
+                        ),
+                    ),
+                    Some(Err(err)) => self.error(
+                        path,
+                        &where_,
+                        &format!("import {target:?} cannot be hashed: {err}"),
+                    ),
+                    _ => {}
                 }
             }
         }
@@ -109,6 +138,49 @@ impl Linter {
                 None => true,
             }
         };
+
+        if let Some(smap) = doc.get("structs").and_then(Value::as_mapping) {
+            for (sname, sdef) in smap {
+                let Some(sname) = sname.as_str() else { continue };
+                let swhere = format!("structs.{sname}");
+                let other_owners: Vec<String> = self
+                    .registry
+                    .packages
+                    .iter()
+                    .filter(|(opkg, op)| {
+                        *opkg != &pkg && op.structs.get(sname).is_some()
+                    })
+                    .map(|(opkg, _)| opkg.clone())
+                    .collect();
+                for owner in other_owners {
+                    self.error(
+                        path,
+                        &swhere,
+                        &format!(
+                            "struct name also declared by package {owner:?}; \
+                             struct names are graph-global (§2.1)"
+                        ),
+                    );
+                }
+                let Some(fields) = sdef.as_mapping() else {
+                    self.error(path, &swhere, "struct must be a map of fields");
+                    continue;
+                };
+                for (fname, fdef) in fields {
+                    let Some(fname) = fname.as_str() else { continue };
+                    let fwhere = format!("{swhere}.{fname}");
+                    match fdef.get("type") {
+                        Some(ftype) => self.check_type_expr(path, &fwhere, ftype),
+                        None => self.error(path, &fwhere, "field needs a type"),
+                    }
+                    if let Some(req) = fdef.get("required") {
+                        if !req.is_bool() {
+                            self.error(path, &fwhere, "required must be a bool");
+                        }
+                    }
+                }
+            }
+        }
 
         let entity_types = doc.get("entity_types").cloned().unwrap_or(Value::Null);
         if let Some(map) = entity_types.as_mapping() {
@@ -256,14 +328,247 @@ impl Linter {
 
         if let Some(rules) = doc.get("validation_rules").and_then(Value::as_sequence) {
             for rule in rules {
-                if get_str(rule, "name").is_none() || get_str(rule, "rule").is_none() {
+                self.check_validation_rule(path, &pkg, rule);
+            }
+        }
+    }
+
+    // ---------------- validation-rule checks (§2.1) ----------------
+
+    fn check_validation_rule(&mut self, path: &Path, pkg: &str, rule: &Value) {
+        let rname = get_str(rule, "name").unwrap_or("<unnamed>").to_string();
+        let rwhere = format!("validation_rules.{rname}");
+        if get_str(rule, "name").is_none() {
+            self.error(path, &rwhere, "rules need a name (§2.1)");
+        }
+        let (Some(on), Some(require)) = (rule.get("on"), rule.get("require")) else {
+            self.error(path, &rwhere, "rules need on and require (§2.1)");
+            return;
+        };
+        if let Some(map) = on.as_mapping() {
+            for key in map.keys().filter_map(Value::as_str) {
+                if !matches!(key, "type" | "operation" | "where") {
                     self.error(
                         path,
-                        "validation_rules",
-                        &format!("rules need name and rule: {rule:?}"),
+                        &rwhere,
+                        &format!("unknown on key {key:?} (§2.1)"),
                     );
                 }
             }
+        }
+        let mut on_attrs = None;
+        match get_str(on, "type") {
+            None => self.error(path, &rwhere, "on needs a type (§2.1)"),
+            Some(t) => match self.registry.resolve_type(t, Some(pkg)) {
+                None => self.error(
+                    path,
+                    &rwhere,
+                    &format!("on type {t:?} does not resolve"),
+                ),
+                Some((tpkg, tname, _)) => {
+                    on_attrs = Some(self.registry.collected_attrs(&tpkg, &tname));
+                }
+            },
+        }
+        if let Some(ops) = on.get("operation") {
+            let ops: Vec<&str> = match ops {
+                Value::Sequence(seq) => seq.iter().filter_map(Value::as_str).collect(),
+                other => other.as_str().into_iter().collect(),
+            };
+            for op in ops {
+                if !matches!(op, "create" | "update") {
+                    self.error(
+                        path,
+                        &rwhere,
+                        &format!("on.operation {op:?} must be create or update (§2.1)"),
+                    );
+                }
+            }
+        }
+        if let Some(cond) = on.get("where") {
+            self.check_condition(
+                path,
+                &format!("{rwhere}.on.where"),
+                pkg,
+                on_attrs.as_ref(),
+                cond,
+            );
+        }
+        self.check_condition(
+            path,
+            &format!("{rwhere}.require"),
+            pkg,
+            on_attrs.as_ref(),
+            require,
+        );
+    }
+
+    fn check_condition(
+        &mut self,
+        path: &Path,
+        where_: &str,
+        pkg: &str,
+        attrs: Option<&std::collections::BTreeMap<String, Value>>,
+        cond: &Value,
+    ) {
+        let Some(map) = cond.as_mapping() else {
+            self.error(
+                path,
+                where_,
+                &format!("condition must be a map, got {cond:?}"),
+            );
+            return;
+        };
+        for combinator in ["all", "any"] {
+            if let Some(subs) = cond.get(combinator) {
+                if map.len() > 1 {
+                    self.error(
+                        path,
+                        where_,
+                        &format!("{combinator} does not mix with other keys"),
+                    );
+                }
+                match subs.as_sequence() {
+                    Some(seq) => {
+                        for (i, sub) in seq.iter().enumerate() {
+                            self.check_condition(
+                                path,
+                                &format!("{where_}.{combinator}[{i}]"),
+                                pkg,
+                                attrs,
+                                sub,
+                            );
+                        }
+                    }
+                    None => self.error(
+                        path,
+                        where_,
+                        &format!("{combinator} takes a list of conditions"),
+                    ),
+                }
+                return;
+            }
+        }
+        if let Some(sub) = cond.get("not") {
+            if map.len() > 1 {
+                self.error(path, where_, "not does not mix with other keys");
+            }
+            self.check_condition(path, &format!("{where_}.not"), pkg, attrs, sub);
+            return;
+        }
+        if let Some(edge) = cond.get("edge") {
+            if map.len() > 1 {
+                self.error(path, where_, "edge does not mix with other keys");
+            }
+            self.check_edge_cond(path, where_, pkg, edge);
+            return;
+        }
+        if cond.get("attr").is_some() {
+            self.check_attr_cond(path, where_, cond);
+            if let (Some(attrs), Some(name)) = (attrs, get_str(cond, "attr")) {
+                if !attrs.contains_key(name) {
+                    self.error(
+                        path,
+                        where_,
+                        &format!("attr {name:?} is not declared on the rule's type"),
+                    );
+                }
+            }
+            return;
+        }
+        self.error(
+            path,
+            where_,
+            "condition needs one of attr, edge, all, any, not (§2.1)",
+        );
+    }
+
+    fn check_attr_cond(&mut self, path: &Path, where_: &str, cond: &Value) {
+        if let Some(map) = cond.as_mapping() {
+            for key in map.keys().filter_map(Value::as_str) {
+                if !matches!(key, "attr" | "equals" | "in" | "present") {
+                    self.error(
+                        path,
+                        where_,
+                        &format!("unknown attribute-condition key {key:?} (§2.1)"),
+                    );
+                }
+            }
+        }
+        if get_str(cond, "attr").is_none() {
+            self.error(path, where_, "attribute condition needs attr (§2.1)");
+        }
+        if let Some(present) = cond.get("present") {
+            if !present.is_bool() {
+                self.error(path, where_, "present must be a bool");
+            }
+        }
+        if let Some(values) = cond.get("in") {
+            if !values.is_sequence() {
+                self.error(path, where_, "in takes a list of values");
+            }
+        }
+    }
+
+    fn check_edge_cond(&mut self, path: &Path, where_: &str, pkg: &str, edge: &Value) {
+        let Some(map) = edge.as_mapping() else {
+            self.error(path, where_, "edge condition must be a map (§2.1)");
+            return;
+        };
+        for key in map.keys().filter_map(Value::as_str) {
+            if !matches!(key, "type" | "direction" | "min" | "within" | "target_where")
+            {
+                self.error(
+                    path,
+                    where_,
+                    &format!("unknown edge-condition key {key:?} (§2.1)"),
+                );
+            }
+        }
+        match get_str(edge, "type") {
+            None => self.error(path, where_, "edge condition needs a type"),
+            Some(t) => {
+                let resolved = if bare(t).contains('/') {
+                    self.registry.resolve_edge_type(t).is_some()
+                } else {
+                    self.registry
+                        .packages
+                        .get(pkg)
+                        .is_some_and(|p| p.edges.get(bare(t)).is_some())
+                };
+                if !resolved {
+                    self.error(
+                        path,
+                        where_,
+                        &format!("edge type {t:?} does not resolve"),
+                    );
+                }
+            }
+        }
+        match get_str(edge, "direction") {
+            Some("in" | "out") => {}
+            other => self.error(
+                path,
+                where_,
+                &format!("direction {other:?} must be in or out (§2.1)"),
+            ),
+        }
+        if let Some(min) = edge.get("min") {
+            if min.as_i64().is_none_or(|m| m < 1) {
+                self.error(path, where_, "min must be an integer >= 1");
+            }
+        }
+        if let Some(within) = get_str(edge, "within") {
+            if !matches!(within, "changeset" | "state") {
+                self.error(
+                    path,
+                    where_,
+                    &format!("within {within:?} must be changeset or state (§2.1)"),
+                );
+            }
+        }
+        if let Some(tw) = edge.get("target_where") {
+            self.check_condition(path, &format!("{where_}.target_where"), pkg, None, tw);
         }
     }
 
@@ -448,6 +753,20 @@ impl Linter {
                     self.error(path, where_, &format!("unknown operation {op:?}"));
                 }
             }
+        }
+        if let Some(imported) = sel.get("imported") {
+            let ok = matches!(imported, Value::Bool(true))
+                || imported.as_str().is_some_and(has_algo_prefix);
+            if !ok {
+                self.error(
+                    path,
+                    where_,
+                    "imported must be true or a graph ID hash (§4.1)",
+                );
+            }
+        }
+        if let Some(cond) = sel.get("where") {
+            self.check_attr_cond(path, &format!("{where_}.where"), cond);
         }
     }
 
@@ -640,6 +959,101 @@ impl Linter {
                 );
             }
         }
+        if let Some(given_map) = doc.get("attributes").and_then(Value::as_mapping) {
+            for (aname, aval) in given_map {
+                let Some(aname) = aname.as_str() else { continue };
+                let Some(texpr) = attrs
+                    .get(aname)
+                    .and_then(|adef| adef.get("type"))
+                    .and_then(Value::as_str)
+                    .map(String::from)
+                else {
+                    continue;
+                };
+                self.check_value(path, &format!("{where_}.{aname}"), &texpr, aval);
+            }
+        }
+    }
+
+    /// Check an instance value against the declared type where the
+    /// type constrains values: enum membership, selector grammar, and
+    /// struct shape. Other base types are not value-checked here.
+    fn check_value(&mut self, path: &Path, where_: &str, texpr: &str, val: &Value) {
+        let texpr = texpr.trim();
+        if let Some(inner) = texpr
+            .strip_prefix("list<")
+            .and_then(|rest| rest.strip_suffix('>'))
+        {
+            if let Some(seq) = val.as_sequence() {
+                for (i, item) in seq.iter().enumerate() {
+                    self.check_value(path, &format!("{where_}[{i}]"), inner, item);
+                }
+            }
+            return;
+        }
+        if let Some(inner) = texpr
+            .strip_prefix("enum<")
+            .and_then(|rest| rest.strip_suffix('>'))
+        {
+            let symbols: Vec<&str> = inner.split('|').map(str::trim).collect();
+            match val.as_str() {
+                Some(s) if symbols.contains(&s) => {}
+                Some(s) => self.error(
+                    path,
+                    where_,
+                    &format!("value {s:?} not in enum<{inner}> (§1.3)"),
+                ),
+                None => self.error(path, where_, "enum value must be a string"),
+            }
+            return;
+        }
+        if texpr == "selector" {
+            self.check_selector(path, where_, val);
+            return;
+        }
+        if let Some((_, sdef)) = self.registry.resolve_struct(texpr) {
+            self.check_struct_value(path, where_, &sdef, val);
+        }
+    }
+
+    fn check_struct_value(
+        &mut self,
+        path: &Path,
+        where_: &str,
+        sdef: &Value,
+        val: &Value,
+    ) {
+        let Some(vmap) = val.as_mapping() else {
+            self.error(path, where_, "struct value must be a map (§2.1)");
+            return;
+        };
+        let Some(fields) = sdef.as_mapping() else { return };
+        for (fname, fdef) in fields {
+            let Some(fname) = fname.as_str() else { continue };
+            let required = fdef.get("required").and_then(Value::as_bool) == Some(true);
+            if required && val.get(fname).is_none() {
+                self.error(
+                    path,
+                    where_,
+                    &format!("missing required struct field {fname:?}"),
+                );
+            }
+            if let (Some(fval), Some(ftype)) = (
+                val.get(fname),
+                fdef.get("type").and_then(Value::as_str).map(String::from),
+            ) {
+                self.check_value(path, &format!("{where_}.{fname}"), &ftype, fval);
+            }
+        }
+        for key in vmap.keys().filter_map(Value::as_str) {
+            if sdef.get(key).is_none() {
+                self.error(
+                    path,
+                    where_,
+                    &format!("struct field {key:?} is not declared"),
+                );
+            }
+        }
     }
 
     fn check_edge_payload(&mut self, path: &Path, where_: &str, doc: &Value) {
@@ -675,7 +1089,8 @@ impl Linter {
             })
             .unwrap_or_default();
         if let Some(given) = doc.get("attributes").and_then(Value::as_mapping) {
-            for aname in given.keys().filter_map(Value::as_str) {
+            for (aname, aval) in given {
+                let Some(aname) = aname.as_str() else { continue };
                 if !declared.contains(aname) {
                     self.error(
                         path,
@@ -685,7 +1100,18 @@ impl Linter {
                              {reference}"
                         ),
                     );
+                    continue;
                 }
+                let Some(texpr) = edef
+                    .get("attributes")
+                    .and_then(|attrs| attrs.get(aname))
+                    .and_then(|adef| adef.get("type"))
+                    .and_then(Value::as_str)
+                    .map(String::from)
+                else {
+                    continue;
+                };
+                self.check_value(path, &format!("{where_}.{aname}"), &texpr, aval);
             }
         }
     }
@@ -878,6 +1304,12 @@ impl Linter {
     fn run(&mut self, root: &Path) -> u8 {
         let loaded = allod_core::load_dir(root);
         self.registry = loaded.registry;
+        self.structs = self.registry.struct_names();
+        for (_, doc) in &loaded.docs {
+            if let Some(name) = get_str(doc, "ontology") {
+                self.ontology_docs.insert(name.to_string(), doc.clone());
+            }
+        }
         for issue in &loaded.issues {
             self.errors.push(format!(
                 "{}: {}: {}",

@@ -56,7 +56,9 @@ public keys, except level 4, which also needs hardware vendor roots.
    state.
 3. **Governance** (L2). Every changeset's decision-record set satisfies
    the policy in force at its proposal. This is the audit question of
-   §4.5.
+   §4.5. Where a matched rule keyed on author-asserted inputs, the
+   result for that changeset is degraded rather than verified, per the
+   trust classes of §4.8.
 4. **Attestation** (L3). Every envelope's evidence chain verifies to a
    trusted measurement root, and the measured code identity is one the
    verifier accepts.

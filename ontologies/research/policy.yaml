@@ -32,9 +32,13 @@ rules:
     require:
       reviewers: { role: owner, quorum: 1 }
 
-  # Retraction is an update to a claim others may build on. Slow it
-  # down and put the owner in the loop.
+  # Retraction is an update to a claim others may build on. The
+  # attribute predicate (§4.1 where) narrows the rule to updates that
+  # actually retract; ordinary edits stay with the reviewer rules.
   - name: retractions-are-deliberate
-    select: { type: research/Claim, operation: [update] }
+    select:
+      all:
+        - { type: research/Claim, operation: [update] }
+        - { where: { attr: status, equals: retracted } }
     require:
       reviewers: { role: owner, quorum: 1 }

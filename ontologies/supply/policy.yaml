@@ -14,11 +14,17 @@ rules:
     require:
       reviewers: { role: quality, quorum: 1 }
 
-  # Imported knowledge from peers routes through admission with the
-  # same discipline as model-assisted writes (§9.6): a foreign graph's
-  # standards are its own.
-  - name: agent-and-import-proposals
+  - name: agent-writes-are-proposals
     select: { author_kind: agent }
+    require:
+      reviewers: { role: quality, quorum: 1 }
+
+  # Imported knowledge routes through admission under its own key
+  # (§4.1 imported, §9.6): a foreign graph's standards are its own.
+  # Lineage is author-asserted below L3, and this is a tightening
+  # rule, which is the safe direction for an asserted input (§4.8).
+  - name: imports-need-quality-review
+    select: { imported: true }
     require:
       reviewers: { role: quality, quorum: 1 }
 

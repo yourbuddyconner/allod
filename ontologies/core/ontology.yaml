@@ -8,6 +8,18 @@
 ontology: core
 version: 1
 
+structs:
+
+  # A principal's key record (§6.2). algorithm stays a string because
+  # the algorithm set is registry-open; the required pair is ed25519
+  # and ecdsa-p256.
+  KeyRecord:
+    key_id:      { type: string, required: true }
+    algorithm:   { type: string, required: true }
+    valid_from:  { type: timestamp }
+    valid_until: { type: timestamp }
+    status:      { type: "enum<active|rotated|revoked>", required: true }
+
 entity_types:
 
   Person:
@@ -22,28 +34,27 @@ entity_types:
       domains: { type: list<string> }
 
   # Principals (§6.1). The kind is the type, and policy selectors key
-  # on it. Key records follow §6.2: key_id, algorithm, valid_from,
-  # valid_until, status.
+  # on it. Key records are the KeyRecord struct (§6.2).
 
   User:
     attributes:
       display_name: { type: string, required: true }
-      keys:         { type: "list<map<string, string>>", required: true }
-      status:       { type: string }                  # active | suspended
+      keys:         { type: list<KeyRecord>, required: true }
+      status:       { type: "enum<active|suspended>" }
 
   Service:
     attributes:
       display_name: { type: string, required: true }
-      keys:         { type: "list<map<string, string>>", required: true }
-      status:       { type: string }
+      keys:         { type: list<KeyRecord>, required: true }
+      status:       { type: "enum<active|suspended>" }
 
   Agent:
     attributes:
       display_name: { type: string, required: true }
-      keys:         { type: "list<map<string, string>>", required: true }
-      status:       { type: string }
+      keys:         { type: list<KeyRecord>, required: true }
+      status:       { type: "enum<active|suspended>" }
       delegated_by: { type: node-ref, target: User, required: true }   # §6.1
-      scope:        { type: "map<string, string>" }     # delegation scope
+      scope:        { type: selector }                # delegation scope, §4.1 grammar
 
   # Federation objects (Part 9).
 
@@ -52,15 +63,15 @@ entity_types:
       graph_id:    { type: string, required: true }   # genesis hash (§9.2)
       root_keys:   { type: list<string>, required: true }
       locators:    { type: list<string> }             # fetch hints, ordered
-      trust_basis: { type: string }                   # out-of-band | tofu | attested
+      trust_basis: { type: "enum<out-of-band|tofu|attested>" }   # §9.3
 
   Grant:
     # The issuer signs the changeset that creates the grant, so
     # issuance needs no separate signature field (§9.4).
     attributes:
       audience:    { type: string, required: true }   # principal ref, graph ID, or public
-      scope:       { type: "map<string, string>", required: true }  # selector, §4.1 grammar
-      rights:      { type: list<string>, required: true }         # state | history | subscribe
+      scope:       { type: selector, required: true } # §4.1 grammar, machine-checked
+      rights:      { type: "list<enum<state|history|subscribe>>", required: true }  # §9.4
       valid_from:  { type: timestamp }
       valid_until: { type: timestamp }
 

@@ -7,25 +7,25 @@
 ontology: research
 version: 1
 imports:
-  - { ontology: core, state_hash: "sha256:…" }   # placeholder until Appendix H vectors land
+  - { ontology: core, state_hash: "sha256:0104f218ef5562f9c628f1fd394dee82e157b31ac8a6332f613630f68c396649" }
 
 entity_types:
 
   Question:
     attributes:
       statement: { type: string, required: true }
-      status:    { type: string }                 # open | answered
+      status:    { type: "enum<open|answered>" }
 
   Claim:
     attributes:
       statement:  { type: string, required: true }
       confidence: { type: decimal }               # 0 to 1
-      status:     { type: string }                # asserted | contested | retracted
+      status:     { type: "enum<asserted|contested|retracted>" }
 
   Source:
     attributes:
       title:        { type: string, required: true }
-      kind:         { type: string }              # paper | article | dataset | webpage | transcript
+      kind:         { type: "enum<paper|article|dataset|webpage|transcript>" }
       published_on: { type: date }
       content:      { type: document-ref, required: true }   # the exact bytes
 
@@ -49,8 +49,18 @@ edge_types:
   supersedes:  { domain: Claim, range: Claim, cardinality: one-to-one }
   authored_by: { domain: Source, range: core/Person, cardinality: many-to-many }
 
+# Structured per the §2.1 rule grammar. A synthesis claim rests on
+# inbound supports edges from other claims, hence the any.
 validation_rules:
   - name: claims-cite-evidence
-    rule: "a Claim must gain at least one cites edge within the same changeset"
+    on: { type: Claim, operation: [create] }
+    require:
+      any:
+        - { edge: { type: cites, direction: out, min: 1, within: changeset } }
+        - { edge: { type: supports, direction: in, min: 1, within: changeset } }
   - name: contested-claims-show-the-conflict
-    rule: "a Claim with status contested must have at least one inbound contradicts edge"
+    on:
+      type: Claim
+      where: { attr: status, equals: contested }
+    require:
+      edge: { type: contradicts, direction: in, min: 1 }
