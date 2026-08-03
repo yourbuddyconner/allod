@@ -1,0 +1,765 @@
+//! The allod CLI: a governed knowledge graph on one machine, at
+//! L2-enforced with the plain-keypair profile (§6.4.1).
+//!
+//! Commands:
+//!   init <dir> --owner <name> [--schema <ontologies-dir>]
+//!   agent-add <dir> <name> --by <owner>
+//!   note <dir> --as <agent> <content…>
+//!   propose-preference <dir> --as <agent> --statement <s>
+//!       [--strength hard|soft] [--from-note <id>]
+//!   proposals <dir>
+//!   approve <dir> <proposal-hash> --as <principal>
+//!   log <dir> | show <dir> | verify <dir>
+//!   demo [dir] [--schema <ontologies-dir>]
+//!
+//! The demo runs the whole jarvis flow from the memory package: a
+//! free scratch note, a governed preference promotion, and a full
+//! verification pass.
+
+use allod_core::fold::State;
+use allod_core::get_str;
+use allod_core::model::{changeset_hash, schema_context};
+use allod_core::policy::{self, Checklist};
+use allod_core::sign::Keypair;
+use allod_core::store::Graph;
+use serde_yaml::{Mapping, Value};
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+fn yaml(s: &str) -> Value {
+    serde_yaml::from_str(s).expect("internal template must parse")
+}
+
+fn s(v: &str) -> Value {
+    Value::String(v.to_string())
+}
+
+fn uuid4() -> String {
+    let mut bytes: [u8; 16] = rand::random();
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let h = allod_core::hash::hex_string(&bytes);
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
+}
+
+/// UTC now as RFC 3339, from the civil-from-days algorithm — no
+/// clock dependencies beyond the system time.
+fn now_iso() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (days, rem) = (secs / 86400, secs % 86400);
+    let z = days as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe as i64 + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
+}
+
+fn short(hash: &str) -> String {
+    let h = hash.strip_prefix("sha256:").unwrap_or(hash);
+    h.chars().take(12).collect()
+}
+
+// ---------------- changeset construction ----------------
+
+fn build_changeset(
+    graph: &Graph,
+    author: &Keypair,
+    intent: &str,
+    ops: Vec<Value>,
+) -> Result<(Value, String), String> {
+    let parents: Vec<Value> = graph.head()?.into_iter().map(Value::String).collect();
+    let sctx = schema_context(&graph.schema_docs()?)?;
+    let mut cs = Mapping::new();
+    cs.insert(s("kind"), s("changeset"));
+    cs.insert(s("parents"), Value::Sequence(parents));
+    let mut author_map = Mapping::new();
+    author_map.insert(s("principal"), s(&format!("principal:{}", author.name)));
+    author_map.insert(s("key"), s(&author.key_id()));
+    cs.insert(s("author"), Value::Mapping(author_map));
+    cs.insert(s("timestamp"), s(&now_iso()));
+    cs.insert(s("intent"), s(intent));
+    cs.insert(s("schema_context"), s(&sctx));
+    cs.insert(s("operations"), Value::Sequence(ops));
+    let mut cs = Value::Mapping(cs);
+    let (hash, _, _, _) = changeset_hash(&cs)?;
+    if let Some(map) = cs.as_mapping_mut() {
+        map.insert(s("hash"), s(&hash));
+        map.insert(s("signature"), s(&author.sign(&hash)));
+    }
+    Ok((cs, hash))
+}
+
+fn key_record(kp: &Keypair) -> Value {
+    let mut record = Mapping::new();
+    record.insert(s("key_id"), s(&kp.key_id()));
+    record.insert(s("algorithm"), s("ed25519"));
+    record.insert(s("public"), s(&kp.public_hex()));
+    record.insert(s("status"), s("active"));
+    Value::Mapping(record)
+}
+
+fn evidence_doc(decisions: &[Value], envelopes: &[Value]) -> Value {
+    let mut map = Mapping::new();
+    map.insert(s("decisions"), Value::Sequence(decisions.to_vec()));
+    map.insert(s("envelopes"), Value::Sequence(envelopes.to_vec()));
+    Value::Mapping(map)
+}
+
+fn print_checklist(checklist: &Checklist) {
+    println!(
+        "      matched rules: {}",
+        checklist
+            .matched_rules
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    for (role, quorum) in &checklist.reviewers {
+        println!("      requires: reviewers role {role} (quorum {quorum})");
+    }
+    for class in &checklist.attestations {
+        println!("      requires: attestation from class {class}");
+    }
+    if checklist.root_required {
+        println!("      requires: root authority (default posture)");
+    }
+}
+
+/// Evaluate, then admit or hold. Returns true when admitted.
+fn admit_or_hold(
+    graph: &Graph,
+    author_name: &str,
+    cs: &Value,
+    hash: &str,
+    envelopes: Vec<Value>,
+    quiet: bool,
+) -> Result<bool, String> {
+    let reg = graph.registry()?;
+    let policy = graph.policy()?;
+    let state = graph.fold()?;
+    let author_ref = format!("principal:{author_name}");
+    let author_kind = state
+        .find_principal(&author_ref)
+        .map(|(kind, _)| kind.to_string())
+        .ok_or_else(|| format!("unknown principal {author_ref}"))?;
+    let checklist = policy::evaluate(&reg, &policy, &state, cs, &author_kind)?;
+    let roots = graph.roots()?;
+    let sat = policy::check_satisfied(
+        &state, &policy, &roots, cs, &author_ref, &checklist, &[], &envelopes,
+    )?;
+    if sat.unmet.is_empty() {
+        let mut state = state;
+        state.apply_changeset(&reg, cs)?;
+        let evidence = evidence_doc(&[], &envelopes);
+        graph.append_changeset(cs, hash, Some(&evidence))?;
+        if !quiet {
+            let basis = if checklist.matched_rules.is_empty() {
+                "root authority, default posture".to_string()
+            } else {
+                format!(
+                    "rules: {}",
+                    checklist.matched_rules.iter().cloned().collect::<Vec<_>>().join(", ")
+                )
+            };
+            println!("  ✓ admitted {} ({basis})", short(hash));
+        }
+        Ok(true)
+    } else {
+        graph.write_proposal(cs, hash)?;
+        graph.write_proposal_evidence(hash, &evidence_doc(&[], &envelopes))?;
+        if !quiet {
+            println!("  ⧗ held as proposal {}", short(hash));
+            print_checklist(&checklist);
+        }
+        Ok(false)
+    }
+}
+
+// ---------------- commands ----------------
+
+fn cmd_init(dir: &Path, owner: &str, schema_dir: &Path) -> Result<(), String> {
+    let graph = Graph::create(dir)?;
+    let kp = Keypair::generate(owner);
+    graph.save_key(&kp)?;
+
+    // Install the schema projection: core, memory, and the local demo
+    // policy with the owner bound into the roles.
+    let read = |p: PathBuf| -> Result<Value, String> {
+        let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        serde_yaml::from_str(&text).map_err(|e| e.to_string())
+    };
+    graph.install_schema("core", &read(schema_dir.join("core/ontology.yaml"))?)?;
+    graph.install_schema("memory", &read(schema_dir.join("memory/ontology.yaml"))?)?;
+    graph.install_schema(
+        "memory-taxonomy",
+        &read(schema_dir.join("memory/taxonomy.yaml"))?,
+    )?;
+    let mut policy = read(schema_dir.join("memory/policy-local.yaml"))?;
+    if let Some(roles) = policy.get_mut("roles").and_then(Value::as_mapping_mut) {
+        roles.insert(
+            s("owner"),
+            Value::Sequence(vec![s(&format!("principal:{owner}"))]),
+        );
+    }
+    graph.install_schema("policy", &policy)?;
+
+    // Genesis (§4.6): self-admitted by root signature, creating the
+    // owner principal whose key signed it.
+    let owner_node = uuid4();
+    let mut attrs = Mapping::new();
+    attrs.insert(s("display_name"), s(owner));
+    attrs.insert(s("keys"), Value::Sequence(vec![key_record(&kp)]));
+    attrs.insert(s("status"), s("active"));
+    let mut node = Mapping::new();
+    node.insert(s("kind"), s("node"));
+    node.insert(s("id"), s(&owner_node));
+    node.insert(s("type"), s("core/User@1"));
+    node.insert(s("attributes"), Value::Mapping(attrs));
+    let mut op = Mapping::new();
+    op.insert(s("create"), Value::Mapping(node));
+
+    let (cs, hash) = build_changeset(
+        &graph,
+        &kp,
+        &format!("Genesis: root authority {owner}, core + memory schema, memory-local policy"),
+        vec![Value::Mapping(op)],
+    )?;
+    let reg = graph.registry()?;
+    let mut state = State::default();
+    state.apply_changeset(&reg, &cs)?;
+    graph.append_changeset(&cs, &hash, None)?;
+    graph.write_meta(&hash, &[format!("principal:{owner}")])?;
+    println!("  ✓ graph {} (owner {owner})", short(&hash));
+    Ok(())
+}
+
+fn cmd_agent_add(dir: &Path, name: &str, by: &str) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    let owner_kp = graph.load_key(by)?;
+    let agent_kp = Keypair::generate(name);
+    graph.save_key(&agent_kp)?;
+    let state = graph.fold()?;
+    let (_, owner_obj) = state
+        .find_principal(&format!("principal:{by}"))
+        .ok_or_else(|| format!("unknown principal {by}"))?;
+    let owner_node = get_str(&owner_obj.content, "id").unwrap_or("").to_string();
+
+    let mut attrs = Mapping::new();
+    attrs.insert(s("display_name"), s(name));
+    attrs.insert(s("keys"), Value::Sequence(vec![key_record(&agent_kp)]));
+    attrs.insert(s("status"), s("active"));
+    attrs.insert(s("delegated_by"), s(&format!("node:{owner_node}")));
+    attrs.insert(s("scope"), yaml("{ region: workspace }"));
+    let mut node = Mapping::new();
+    node.insert(s("kind"), s("node"));
+    node.insert(s("id"), s(&uuid4()));
+    node.insert(s("type"), s("core/Agent@1"));
+    node.insert(s("attributes"), Value::Mapping(attrs));
+    let mut op = Mapping::new();
+    op.insert(s("create"), Value::Mapping(node));
+
+    let (cs, hash) = build_changeset(
+        &graph,
+        &owner_kp,
+        &format!("Register agent {name}, delegated by {by}"),
+        vec![Value::Mapping(op)],
+    )?;
+    admit_or_hold(&graph, by, &cs, &hash, vec![], false)?;
+    Ok(())
+}
+
+fn provenance(agent: &str, tool: &str) -> Value {
+    let mut prov = Mapping::new();
+    prov.insert(s("derived_by"), s(&format!("principal:{agent}")));
+    prov.insert(s("method"), s("model-assisted"));
+    prov.insert(s("tool"), s(tool));
+    Value::Mapping(prov)
+}
+
+fn classification_op(subject: &str, term: &str, agent: &str) -> Value {
+    let mut cls = Mapping::new();
+    cls.insert(s("kind"), s("classification"));
+    cls.insert(s("id"), s(&uuid4()));
+    cls.insert(s("subject"), s(subject));
+    cls.insert(s("term"), s(term));
+    cls.insert(s("asserted_by"), s(&format!("principal:{agent}")));
+    cls.insert(s("basis"), s("model-assisted"));
+    let mut op = Mapping::new();
+    op.insert(s("create"), Value::Mapping(cls));
+    Value::Mapping(op)
+}
+
+fn cmd_note(dir: &Path, agent: &str, content: &str) -> Result<(String, bool), String> {
+    let graph = Graph::open(dir)?;
+    let kp = graph.load_key(agent)?;
+    let note_id = uuid4();
+    let mut attrs = Mapping::new();
+    attrs.insert(s("content"), s(content));
+    let mut node = Mapping::new();
+    node.insert(s("kind"), s("node"));
+    node.insert(s("id"), s(&note_id));
+    node.insert(s("type"), s("memory/Note@1"));
+    node.insert(s("attributes"), Value::Mapping(attrs));
+    node.insert(s("provenance"), provenance(agent, "allod-demo-agent@0.1"));
+    let mut op = Mapping::new();
+    op.insert(s("create"), Value::Mapping(node));
+
+    let ops = vec![
+        Value::Mapping(op),
+        classification_op(&format!("node:{note_id}"), "workspace/scratch@1", agent),
+    ];
+    let (cs, hash) = build_changeset(&graph, &kp, "Scratch note", ops)?;
+    let admitted = admit_or_hold(&graph, agent, &cs, &hash, vec![], false)?;
+    Ok((note_id, admitted))
+}
+
+fn cmd_propose_preference(
+    dir: &Path,
+    agent: &str,
+    statement: &str,
+    strength: &str,
+    from_note: Option<&str>,
+) -> Result<String, String> {
+    let graph = Graph::open(dir)?;
+    let kp = graph.load_key(agent)?;
+    let pref_id = uuid4();
+    let mut attrs = Mapping::new();
+    attrs.insert(s("statement"), s(statement));
+    attrs.insert(s("strength"), s(strength));
+    let mut node = Mapping::new();
+    node.insert(s("kind"), s("node"));
+    node.insert(s("id"), s(&pref_id));
+    node.insert(s("type"), s("memory/Preference@1"));
+    node.insert(s("attributes"), Value::Mapping(attrs));
+    node.insert(s("provenance"), provenance(agent, "allod-demo-agent@0.1"));
+    let mut op = Mapping::new();
+    op.insert(s("create"), Value::Mapping(node));
+    let mut ops = vec![
+        Value::Mapping(op),
+        classification_op(&format!("node:{pref_id}"), "work@1", agent),
+    ];
+    if let Some(note_id) = from_note {
+        let mut edge = Mapping::new();
+        edge.insert(s("kind"), s("edge"));
+        edge.insert(s("id"), s(&uuid4()));
+        edge.insert(s("type"), s("memory/relates_to@1"));
+        edge.insert(s("from"), s(&format!("node:{pref_id}")));
+        edge.insert(s("to"), s(&format!("node:{note_id}")));
+        let mut op = Mapping::new();
+        op.insert(s("create"), Value::Mapping(edge));
+        ops.push(Value::Mapping(op));
+    }
+    let (cs, hash) = build_changeset(
+        &graph,
+        &kp,
+        &format!("Propose preference: {statement}"),
+        ops,
+    )?;
+
+    // The signed envelope (§5.2, evidence: none): the agent attests
+    // its own pipeline. It proves who signed, not what code ran.
+    let mut statement_map = Mapping::new();
+    statement_map.insert(s("changeset_hash"), s(&hash));
+    let mut envelope = Mapping::new();
+    envelope.insert(s("kind"), s("attestation-envelope"));
+    envelope.insert(s("statement"), Value::Mapping(statement_map));
+    envelope.insert(s("attester"), s(&format!("principal:{agent}")));
+    envelope.insert(s("evidence"), s("none"));
+    envelope.insert(s("evidence_type"), s("none"));
+    let mut envelope = Value::Mapping(envelope);
+    let payload = policy::envelope_payload(&envelope)?;
+    if let Some(map) = envelope.as_mapping_mut() {
+        map.insert(s("signature"), s(&kp.sign(&payload)));
+    }
+
+    admit_or_hold(&graph, agent, &cs, &hash, vec![envelope], false)?;
+    Ok(hash)
+}
+
+fn cmd_approve(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    let kp = graph.load_key(by)?;
+    let cs = graph.read_proposal(hash)?;
+    let evidence = graph.read_proposal_evidence(hash)?;
+    let mut decisions: Vec<Value> = evidence
+        .get("decisions")
+        .and_then(Value::as_sequence)
+        .cloned()
+        .unwrap_or_default();
+    let envelopes: Vec<Value> = evidence
+        .get("envelopes")
+        .and_then(Value::as_sequence)
+        .cloned()
+        .unwrap_or_default();
+
+    let policy_doc = graph.policy()?;
+    let mut record = Mapping::new();
+    record.insert(s("kind"), s("decision-record"));
+    record.insert(s("subject"), s(hash));
+    record.insert(s("policy_context"), s(&policy::policy_context(&policy_doc)?));
+    record.insert(s("verdict"), s("approve"));
+    record.insert(s("timestamp"), s(&now_iso()));
+    let mut record = Value::Mapping(record);
+    let payload = policy::decision_payload(&record)?;
+    let mut decider = Mapping::new();
+    decider.insert(s("principal"), s(&format!("principal:{by}")));
+    decider.insert(s("signature"), s(&kp.sign(&payload)));
+    if let Some(map) = record.as_mapping_mut() {
+        map.insert(s("deciders"), Value::Sequence(vec![Value::Mapping(decider)]));
+    }
+    decisions.push(record);
+
+    let reg = graph.registry()?;
+    let state = graph.fold()?;
+    let author_ref = get_str(cs.get("author").ok_or("proposal has no author")?, "principal")
+        .ok_or("author has no principal")?
+        .to_string();
+    let author_kind = state
+        .find_principal(&author_ref)
+        .map(|(kind, _)| kind.to_string())
+        .ok_or_else(|| format!("unknown author {author_ref}"))?;
+    let checklist = policy::evaluate(&reg, &policy_doc, &state, &cs, &author_kind)?;
+    let roots = graph.roots()?;
+    let sat = policy::check_satisfied(
+        &state, &policy_doc, &roots, &cs, &author_ref, &checklist, &decisions, &envelopes,
+    )?;
+    if !sat.unmet.is_empty() {
+        graph.write_proposal_evidence(hash, &evidence_doc(&decisions, &envelopes))?;
+        println!("  ⧗ decision recorded; still unmet:");
+        for item in &sat.unmet {
+            println!("      - {item}");
+        }
+        return Ok(());
+    }
+    let mut state = state;
+    state.apply_changeset(&reg, &cs)?;
+    graph.append_changeset(&cs, hash, Some(&evidence_doc(&decisions, &envelopes)))?;
+    graph.remove_proposal(hash)?;
+    println!("  ✓ approved and admitted {}", short(hash));
+    for note in &sat.degraded {
+        println!("      degraded: {note}");
+    }
+    Ok(())
+}
+
+fn cmd_proposals(dir: &Path) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    let proposals = graph.list_proposals()?;
+    if proposals.is_empty() {
+        println!("  no pending proposals");
+    }
+    for hash in proposals {
+        let cs = graph.read_proposal(&hash)?;
+        println!(
+            "  {}  {}  by {}",
+            short(&hash),
+            get_str(&cs, "intent").unwrap_or(""),
+            get_str(cs.get("author").unwrap_or(&Value::Null), "principal").unwrap_or("?")
+        );
+    }
+    Ok(())
+}
+
+fn cmd_log(dir: &Path) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    for cs in graph.chain()? {
+        let hash = get_str(&cs, "hash").unwrap_or("?");
+        let author = get_str(cs.get("author").unwrap_or(&Value::Null), "principal").unwrap_or("?");
+        let ops = cs
+            .get("operations")
+            .and_then(Value::as_sequence)
+            .map(|o| o.len())
+            .unwrap_or(0);
+        println!(
+            "  {}  {}  [{ops} op{}]  {}",
+            short(hash),
+            author,
+            if ops == 1 { "" } else { "s" },
+            get_str(&cs, "intent").unwrap_or("")
+        );
+    }
+    Ok(())
+}
+
+fn cmd_show(dir: &Path) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    let state = graph.fold()?;
+    println!("  state hash {}", short(&state.state_hash()?));
+    for ((kind, _), obj) in &state.objects {
+        if kind != "node" || obj.deleted {
+            continue;
+        }
+        let tref = get_str(&obj.content, "type").unwrap_or("?");
+        let attrs = obj.content.get("attributes");
+        let label = attrs
+            .and_then(|a| {
+                get_str(a, "display_name")
+                    .or_else(|| get_str(a, "statement"))
+                    .or_else(|| get_str(a, "content"))
+                    .or_else(|| get_str(a, "name"))
+            })
+            .unwrap_or("");
+        let by = obj
+            .content
+            .get("provenance")
+            .and_then(|p| get_str(p, "derived_by"))
+            .map(|p| format!("  (by {p})"))
+            .unwrap_or_default();
+        println!("  {tref}  {label}{by}");
+    }
+    Ok(())
+}
+
+fn cmd_verify(dir: &Path) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    let reg = graph.registry()?;
+    let policy_doc = graph.policy()?;
+    let roots = graph.roots()?;
+    let chain = graph.chain()?;
+    let mut state = State::default();
+    let mut degraded: Vec<String> = Vec::new();
+    for (i, cs) in chain.iter().enumerate() {
+        let hash = get_str(cs, "hash").unwrap_or("?").to_string();
+        let author = cs.get("author").cloned().unwrap_or(Value::Null);
+        let author_ref = get_str(&author, "principal").unwrap_or("?").to_string();
+        let key_id = get_str(&author, "key").unwrap_or("").to_string();
+        let signature = get_str(cs, "signature").unwrap_or("").to_string();
+
+        // Level 3 (§5.3): governance against the parent state, before
+        // this changeset applies.
+        let genesis = i == 0;
+        let mut admitted_by = String::from("genesis (self-admitted, §4.6)");
+        if !genesis {
+            let author_kind = state
+                .find_principal(&author_ref)
+                .map(|(kind, _)| kind.to_string())
+                .ok_or_else(|| format!("{hash}: unknown author {author_ref}"))?;
+            let checklist = policy::evaluate(&reg, &policy_doc, &state, cs, &author_kind)?;
+            let evidence = graph.read_evidence(&hash)?.unwrap_or(Value::Null);
+            let decisions: Vec<Value> = evidence
+                .get("decisions")
+                .and_then(Value::as_sequence)
+                .cloned()
+                .unwrap_or_default();
+            let envelopes: Vec<Value> = evidence
+                .get("envelopes")
+                .and_then(Value::as_sequence)
+                .cloned()
+                .unwrap_or_default();
+            let sat = policy::check_satisfied(
+                &state, &policy_doc, &roots, cs, &author_ref, &checklist, &decisions,
+                &envelopes,
+            )?;
+            if !sat.unmet.is_empty() {
+                return Err(format!(
+                    "governance FAILS for {}: {}",
+                    short(&hash),
+                    sat.unmet.join("; ")
+                ));
+            }
+            degraded.extend(sat.degraded);
+            admitted_by = if checklist.is_trivial() {
+                format!(
+                    "rules {}",
+                    checklist.matched_rules.iter().cloned().collect::<Vec<_>>().join(", ")
+                )
+            } else if !decisions.is_empty() {
+                format!("{} decision record(s)", decisions.len())
+            } else {
+                "root authority".to_string()
+            };
+        }
+
+        // Level 1: the fold recomputes and checks every hash.
+        state.apply_changeset(&reg, cs).map_err(|e| format!("{hash}: {e}"))?;
+
+        // Level 2 (§5.3): authorship. Genesis verifies against the key
+        // it installs; later changesets against the parent-state key,
+        // which for a linear log the post-apply lookup preserves
+        // (rotation replay is the next milestone).
+        let public = state
+            .public_key_of(&author_ref, &key_id)
+            .ok_or_else(|| format!("{hash}: no active key {key_id} for {author_ref}"))?;
+        allod_core::sign::verify(&public, &hash, &signature)
+            .map_err(|e| format!("{hash}: signature: {e}"))?;
+        if genesis && !roots.contains(&author_ref) {
+            return Err(format!("{hash}: genesis author {author_ref} is not root"));
+        }
+
+        println!(
+            "  ✓ {}  integrity ✓  authorship ✓ ({author_ref})  governance: {admitted_by}",
+            short(&hash)
+        );
+    }
+    println!("  state hash {}", short(&state.state_hash()?));
+    for note in &degraded {
+        println!("  ⚠ degraded: {note}");
+    }
+    println!(
+        "  VERIFIED: {} changesets, levels 1-3 (§5.3){}",
+        chain.len(),
+        if degraded.is_empty() { "" } else { ", with degradations noted" }
+    );
+    Ok(())
+}
+
+// ---------------- the demo ----------------
+
+fn cmd_demo(dir: &Path, schema_dir: &Path) -> Result<(), String> {
+    println!("allod agent-memory demo — the jarvis flow (ontologies/memory)");
+    println!("═══════════════════════════════════════════════════════════════");
+    println!("\n[1/7] Genesis: conner creates a graph, memory-local policy, restricted posture");
+    cmd_init(dir, "conner", schema_dir)?;
+
+    println!("\n[2/7] Register the agent: jarvis, delegated by conner (§6.1)");
+    cmd_agent_add(dir, "jarvis", "conner")?;
+
+    println!("\n[3/7] Jarvis writes a scratch note — thinks at full speed (rule scratch-is-free)");
+    let (note_id, admitted) = cmd_note(
+        dir,
+        "jarvis",
+        "Conner declined 4 of the last 5 meetings before 09:00, all with a reschedule note.",
+    )?;
+    if !admitted {
+        return Err("scratch note should have admitted freely".into());
+    }
+
+    println!("\n[4/7] Jarvis proposes a Preference — held for the owner (§4.3)");
+    let hash = cmd_propose_preference(
+        dir,
+        "jarvis",
+        "No meetings before 09:00",
+        "soft",
+        Some(&note_id),
+    )?;
+
+    println!("\n[5/7] Conner approves — a signed, portable decision record admits it");
+    cmd_approve(dir, &hash, "conner")?;
+
+    println!("\n[6/7] Verify from the log and public keys alone (§5.3)");
+    cmd_verify(dir)?;
+
+    println!("\n[7/7] The memory:");
+    cmd_show(dir)?;
+
+    println!("\nThe sovereign-memory claim, demonstrated: the preference exists");
+    println!("because conner signed, and any host — or no host — can verify that.");
+    Ok(())
+}
+
+// ---------------- argument plumbing ----------------
+
+fn flag(args: &[String], name: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+}
+
+fn positional(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut skip = false;
+    for arg in args {
+        if skip {
+            skip = false;
+            continue;
+        }
+        if arg.starts_with("--") {
+            skip = true;
+            continue;
+        }
+        out.push(arg.clone());
+    }
+    out
+}
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let command = args.first().cloned().unwrap_or_default();
+    let rest = &args[1.min(args.len())..];
+    let pos = positional(rest);
+    let dir = pos.first().map(PathBuf::from);
+    let schema = flag(rest, "--schema").map(PathBuf::from).unwrap_or_else(|| {
+        PathBuf::from("ontologies")
+    });
+
+    let result = match command.as_str() {
+        "init" => match (dir, flag(rest, "--owner")) {
+            (Some(dir), Some(owner)) => cmd_init(&dir, &owner, &schema),
+            _ => Err("usage: allod init <dir> --owner <name> [--schema <dir>]".into()),
+        },
+        "agent-add" => match (dir, pos.get(1), flag(rest, "--by")) {
+            (Some(dir), Some(name), Some(by)) => cmd_agent_add(&dir, name, &by),
+            _ => Err("usage: allod agent-add <dir> <name> --by <owner>".into()),
+        },
+        "note" => match (dir, flag(rest, "--as")) {
+            (Some(dir), Some(agent)) => {
+                let content = pos[1..].join(" ");
+                cmd_note(&dir, &agent, &content).map(|_| ())
+            }
+            _ => Err("usage: allod note <dir> --as <agent> <content…>".into()),
+        },
+        "propose-preference" => match (dir, flag(rest, "--as"), flag(rest, "--statement")) {
+            (Some(dir), Some(agent), Some(statement)) => cmd_propose_preference(
+                &dir,
+                &agent,
+                &statement,
+                &flag(rest, "--strength").unwrap_or_else(|| "soft".into()),
+                flag(rest, "--from-note").as_deref(),
+            )
+            .map(|_| ()),
+            _ => Err(
+                "usage: allod propose-preference <dir> --as <agent> --statement <s> \
+                 [--strength hard|soft] [--from-note <id>]"
+                    .into(),
+            ),
+        },
+        "approve" => match (dir, pos.get(1), flag(rest, "--as")) {
+            (Some(dir), Some(hash), Some(by)) => cmd_approve(&dir, hash, &by),
+            _ => Err("usage: allod approve <dir> <proposal-hash> --as <principal>".into()),
+        },
+        "proposals" => dir.ok_or("usage: allod proposals <dir>".to_string())
+            .and_then(|d| cmd_proposals(&d)),
+        "log" => dir.ok_or("usage: allod log <dir>".to_string()).and_then(|d| cmd_log(&d)),
+        "show" => dir.ok_or("usage: allod show <dir>".to_string()).and_then(|d| cmd_show(&d)),
+        "verify" => dir
+            .ok_or("usage: allod verify <dir>".to_string())
+            .and_then(|d| cmd_verify(&d)),
+        "demo" => {
+            let dir = dir.unwrap_or_else(|| PathBuf::from("allod-demo"));
+            cmd_demo(&dir, &schema)
+        }
+        _ => Err(
+            "usage: allod <init|agent-add|note|propose-preference|proposals|approve|log|show|verify|demo> …"
+                .into(),
+        ),
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("error: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}

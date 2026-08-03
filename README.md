@@ -44,6 +44,23 @@ Part 9 builds on that property. Graphs identify each other by genesis
 hash, disclose scoped, verifiable slices of history under signed grants,
 and import each other's knowledge through their own admission flow.
 
+## Try it
+
+The reference CLI runs the founding use case — governed agent memory —
+end to end on one machine:
+
+```
+cargo run -p allod -- demo /tmp/allod-demo
+```
+
+Genesis with a root keypair, an agent registered under delegation, a
+scratch note admitted at full speed, a preference proposal held for
+the owner, a signed decision record admitting it, and a three-level
+verification (integrity, authorship, governance) from the log and
+public keys alone. The individual commands (`init`, `agent-add`,
+`note`, `propose-preference`, `approve`, `verify`, `show`) run the
+same flow by hand: see [crates/allod](crates/allod/).
+
 ## Specification contents
 
 | Part | File | Conformance |

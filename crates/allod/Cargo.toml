@@ -1,0 +1,11 @@
+[package]
+name = "allod"
+version = "0.1.0"
+edition = "2021"
+description = "Create and operate a governed Allod graph: init, propose, approve, verify, and the agent-memory demo"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+allod-core = { path = "../allod-core" }
+serde_yaml = "0.9"
+rand = "0.8"
