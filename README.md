@@ -59,7 +59,13 @@ the owner, a signed decision record admitting it, and a three-level
 verification (integrity, authorship, governance) from the log and
 public keys alone. The individual commands (`init`, `agent-add`,
 `note`, `propose-preference`, `approve`, `verify`, `show`) run the
-same flow by hand: see [crates/allod](crates/allod/).
+same flow by hand: see [crates/allod](crates/allod/). Two more
+demos complete the Appendix A acceptance scenario, which runs as an
+integration test: `demo-code` derives a repository into a governed
+code graph and holds a commit that touches security-classified code
+(§8.3), and `demo-federation` moves a preference between two
+sovereign graphs under a grant, with membership proofs, and refuses
+after revocation (Part 9).
 
 ## Specification contents
 

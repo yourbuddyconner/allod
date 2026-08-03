@@ -3,11 +3,16 @@
 ## Appendix A: MVP acceptance test (normative for the reference implementation)
 
 The reference implementation passes when this scenario runs end to end on
-one machine, with the plain-keypair profile:
+one machine, with the plain-keypair profile. The scenario is
+executable: `crates/allod/tests/mvp.rs` runs every step through the
+CLI, and the `demo`, `demo-code`, and `demo-federation` commands walk
+the same ground interactively.
 
-1. **Genesis.** Create a graph with a 1-of-1 root authority, the core
-   ontology, the code ontology, and the Appendix C policy. Set the
-   default posture to `restricted`.
+1. **Genesis.** Create graphs with 1-of-1 root authorities and the
+   reference profiles: the memory profile (core + memory ontologies,
+   memory-local policy) for the founding use case, and the code
+   profile (core + code ontologies, the eng taxonomy, code-local
+   policy) for the derived graph. Default posture `restricted`.
 2. **Repo import.** Point the indexer at a small git repository, 50 files
    or fewer. It emits commit-aligned derived changesets under the code
    ontology, using SCIP or tree-sitter extraction. Policy admits all of
@@ -16,7 +21,7 @@ one machine, with the plain-keypair profile:
    the graph diff: changed functions plus the inbound-call blast radius.
    Render it as a review artifact.
 4. **Governed admission, accept path.** A `user` principal proposes a
-   manual change: classify a module as security-critical. Policy requires
+   manual change: classify a function as security-critical. Policy requires
    owner sign-off. The owner issues a decision record. The changeset is
    admitted. Verify the decision record with only the log and public
    keys.
