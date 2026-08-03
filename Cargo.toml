@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/allod-lint"]
+resolver = "2"
