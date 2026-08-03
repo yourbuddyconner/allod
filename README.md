@@ -2,10 +2,10 @@
 
 **An open format for knowledge graphs that you own, verify, and govern.**
 
-> Working name. "Allod" (allodial title) is the legal term for property that
-> the holder owns absolutely, free of any landlord or superior authority.
-> This spec applies that goal to knowledge: you own the graph outright, its
-> history is verifiable, and changes follow rules that you declare.
+The name comes from allodial title: the legal term for property that the
+holder owns absolutely, free of any landlord or superior authority. This
+spec applies that goal to knowledge — you own the graph outright, its
+history is verifiable, and changes follow rules that you declare.
 
 | | |
 |---|---|
