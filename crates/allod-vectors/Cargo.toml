@@ -1,0 +1,11 @@
+[package]
+name = "allod-vectors"
+version = "0.1.0"
+edition = "2021"
+description = "Generate the Appendix H test vectors and package content hashes"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+allod-core = { path = "../allod-core" }
+serde_yaml = "0.9"
+sha2 = "0.10"

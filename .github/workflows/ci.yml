@@ -1,0 +1,21 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Unit tests
+        run: cargo test --workspace
+      - name: Lint the ontology packages
+        run: cargo run -p allod-lint -- ontologies
+      - name: Vectors are reproducible
+        run: |
+          cargo run -p allod-vectors -- generate /tmp/vectors ontologies
+          diff -r /tmp/vectors spec/vectors --exclude=README.md
