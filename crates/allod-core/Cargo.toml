@@ -1,0 +1,10 @@
+[package]
+name = "allod-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core domain model for Allod tooling: spec vocabulary, package and taxonomy registries, reference resolution, and the attribute type grammar"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde = "1"
+serde_yaml = "0.9"

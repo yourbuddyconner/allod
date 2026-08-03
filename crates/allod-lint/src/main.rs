@@ -1,7 +1,7 @@
 //! Lint Allod ontology packages against the specification.
 //!
-//! Validates the projection-form YAML under ontologies/ against the
-//! rules of Part 1 (object model), Part 2 (schema), and Part 4 (policy):
+//! The domain model (vocabulary, registries, resolution, type grammar,
+//! loading) lives in allod-core. This binary runs the checks:
 //!
 //!   ontology.yaml   type grammar, edge domains and ranges, cardinality,
 //!                   inheritance, import declarations
@@ -17,86 +17,25 @@
 //! placeholders until the reference implementation ships Appendix H
 //! vectors, so hash values are checked for algorithm prefixes only.
 
-use serde::Deserialize;
+use allod_core::vocab::{
+    AUTHOR_KINDS, BASES, CARDINALITIES, DOC_KINDS, HASH_FIELDS, OPERATIONS,
+    POSTURES, REQUIREMENT_KEYS, SELECTOR_KEYS, STORAGE, TERM_STATUS, VERDICTS,
+};
+use allod_core::{bare, get_str, has_algo_prefix, type_expr_errors, Registry};
 use serde_yaml::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const BASE_TYPES: &[&str] = &[
-    "string", "int", "float", "decimal", "bool", "timestamp", "date",
-    "duration", "bytes", "node-ref", "edge-ref", "document-ref",
-    "external-ref",
-];
-const CARDINALITIES: &[&str] =
-    &["many-to-many", "many-to-one", "one-to-many", "one-to-one"];
-const POSTURES: &[&str] = &["open", "restricted"];
-const SELECTOR_KEYS: &[&str] = &[
-    "author_kind", "basis", "operation", "region", "repo", "substrate",
-    "target_ref", "type",
-];
-const AUTHOR_KINDS: &[&str] = &["agent", "service", "user"];
-const BASES: &[&str] = &["deterministic", "manual", "model-assisted"];
-const REQUIREMENT_KEYS: &[&str] = &[
-    "attestation_required", "authors", "classification_required",
-    "reviewers", "review_window", "schema_valid", "substrate_checks",
-];
-const OPERATIONS: &[&str] = &[
-    "create", "update", "delete", "resolve", "redact-document",
-    "redact-operation", "define-type", "set-policy", "deprecate-term",
-];
-const DOC_KINDS: &[&str] = &[
-    "changeset", "classification", "decision-record", "document", "edge",
-    "node",
-];
-const VERDICTS: &[&str] = &["abstain", "approve", "reject"];
-const STORAGE: &[&str] = &["external", "inline", "stored"];
-const TERM_STATUS: &[&str] = &["active", "deprecated"];
-const HASH_FIELDS: &[&str] = &[
-    "content_hash", "hash", "policy_context", "rev", "schema_context",
-    "state_hash",
-];
-
-fn get_str<'a>(doc: &'a Value, key: &str) -> Option<&'a str> {
-    doc.get(key).and_then(Value::as_str)
-}
-
-fn has_algo_prefix(s: &str) -> bool {
-    match s.find(':') {
-        Some(i) if i > 0 => s[..i]
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
-        _ => false,
-    }
-}
-
 fn truncate_chars(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
-}
-
-fn bare(reference: &str) -> &str {
-    reference.split('@').next().unwrap_or(reference)
-}
-
-#[derive(Clone)]
-struct Package {
-    types: Value,
-    edges: Value,
-    imports: Vec<String>,
-}
-
-struct Taxonomy {
-    terms: HashMap<String, Vec<String>>,
 }
 
 #[derive(Default)]
 struct Linter {
     errors: Vec<String>,
     warnings: Vec<String>,
-    packages: HashMap<String, Package>,
-    taxonomies: HashMap<String, Taxonomy>,
-    docs: Vec<(PathBuf, Value)>,
+    registry: Registry,
 }
 
 impl Linter {
@@ -109,224 +48,19 @@ impl Linter {
             .push(format!("{}: {}: {}", path.display(), where_, msg));
     }
 
-    // ---------------- loading ----------------
-
-    fn load_dir(&mut self, root: &Path) {
-        let mut files = Vec::new();
-        collect_yaml(root, &mut files);
-        files.sort();
-        for path in files {
-            let text = match fs::read_to_string(&path) {
-                Ok(text) => text,
-                Err(err) => {
-                    self.error(&path, "io", &err.to_string());
-                    continue;
-                }
-            };
-            for de in serde_yaml::Deserializer::from_str(&text) {
-                match Value::deserialize(de) {
-                    Ok(doc) if doc.is_mapping() => {
-                        self.docs.push((path.clone(), doc))
-                    }
-                    Ok(_) => {}
-                    Err(err) => {
-                        self.error(&path, "yaml", &format!("parse failure: {err}"));
-                        break;
-                    }
-                }
-            }
-        }
-        // Register schemas first so references resolve regardless of order.
-        let docs = self.docs.clone();
-        for (path, doc) in &docs {
-            if doc.get("ontology").is_some() {
-                self.register_ontology(path, doc);
-            } else if doc.get("taxonomy").is_some() {
-                self.register_taxonomy(path, doc);
-            }
-        }
-    }
-
-    fn register_ontology(&mut self, path: &Path, doc: &Value) {
-        let Some(name) = get_str(doc, "ontology") else {
-            self.error(path, "ontology", "missing or invalid package name");
-            return;
-        };
-        let imports = doc
-            .get("imports")
-            .and_then(Value::as_sequence)
-            .map(|seq| {
-                seq.iter()
-                    .filter_map(|imp| get_str(imp, "ontology"))
-                    .map(String::from)
-                    .collect()
-            })
-            .unwrap_or_default();
-        self.packages.insert(
-            name.to_string(),
-            Package {
-                types: doc.get("entity_types").cloned().unwrap_or(Value::Null),
-                edges: doc.get("edge_types").cloned().unwrap_or(Value::Null),
-                imports,
-            },
-        );
-    }
-
-    fn register_taxonomy(&mut self, path: &Path, doc: &Value) {
-        let Some(name) = get_str(doc, "taxonomy") else {
-            self.error(path, "taxonomy", "missing or invalid taxonomy name");
-            return;
-        };
-        let mut terms = HashMap::new();
-        if let Some(seq) = doc.get("terms").and_then(Value::as_sequence) {
-            for term in seq {
-                if let Some(tname) = get_str(term, "name") {
-                    let parents = term
-                        .get("parents")
-                        .and_then(Value::as_sequence)
-                        .map(|p| {
-                            p.iter()
-                                .filter_map(Value::as_str)
-                                .map(String::from)
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    terms.insert(tname.to_string(), parents);
-                }
-            }
-        }
-        self.taxonomies.insert(name.to_string(), Taxonomy { terms });
-    }
-
-    // ---------------- resolution helpers ----------------
-
-    /// Resolve `Type` or `pkg/Type`, returning (pkg, name, definition).
-    fn resolve_type(
-        &self,
-        reference: &str,
-        pkg: Option<&str>,
-    ) -> Option<(String, String, Value)> {
-        let name = bare(reference);
-        if let Some((pname, tname)) = name.rsplit_once('/') {
-            let info = self.packages.get(pname)?;
-            let def = info.types.get(tname)?;
-            return Some((pname.to_string(), tname.to_string(), def.clone()));
-        }
-        let pname = pkg?;
-        let info = self.packages.get(pname)?;
-        let def = info.types.get(name)?;
-        Some((pname.to_string(), name.to_string(), def.clone()))
-    }
-
-    fn resolve_edge_type(&self, reference: &str) -> Option<(String, Value)> {
-        let name = bare(reference);
-        let (pname, ename) = name.rsplit_once('/')?;
-        let info = self.packages.get(pname)?;
-        let def = info.edges.get(ename)?;
-        Some((name.to_string(), def.clone()))
-    }
-
-    fn term_exists(&self, reference: &str) -> bool {
-        let name = bare(reference);
-        self.taxonomies
-            .values()
-            .any(|tax| tax.terms.contains_key(name))
-    }
-
-    /// Attribute map including inherited attributes.
-    fn collected_attrs(
-        &self,
-        pkg: &str,
-        tname: &str,
-        seen: &mut BTreeSet<(String, String)>,
-    ) -> BTreeMap<String, Value> {
-        let key = (pkg.to_string(), tname.to_string());
-        if seen.contains(&key) {
-            return BTreeMap::new();
-        }
-        seen.insert(key);
-        let Some(info) = self.packages.get(pkg) else {
-            return BTreeMap::new();
-        };
-        let Some(tdef) = info.types.get(tname).cloned() else {
-            return BTreeMap::new();
-        };
-        let mut attrs = BTreeMap::new();
-        if let Some(map) = tdef.get("attributes").and_then(Value::as_mapping) {
-            for (aname, adef) in map {
-                if let Some(aname) = aname.as_str() {
-                    attrs.insert(aname.to_string(), adef.clone());
-                }
-            }
-        }
-        if let Some(parent) = get_str(&tdef, "extends") {
-            if let Some((ppkg, pname, _)) = self.resolve_type(parent, Some(pkg)) {
-                for (aname, adef) in self.collected_attrs(&ppkg, &pname, seen) {
-                    attrs.entry(aname).or_insert(adef);
-                }
-            }
-        }
-        attrs
-    }
-
-    // ---------------- type expression grammar ----------------
-
     fn check_type_expr(&mut self, path: &Path, where_: &str, expr: &Value) {
-        let Some(expr) = expr.as_str() else {
-            self.error(
+        match expr.as_str() {
+            None => self.error(
                 path,
                 where_,
                 &format!("attribute type must be a string, got {expr:?}"),
-            );
-            return;
-        };
-        self.check_type_str(path, where_, expr.trim());
-    }
-
-    fn check_type_str(&mut self, path: &Path, where_: &str, expr: &str) {
-        if BASE_TYPES.contains(&expr) {
-            return;
-        }
-        if let Some(inner) = expr
-            .strip_prefix("list<")
-            .and_then(|rest| rest.strip_suffix('>'))
-        {
-            self.check_type_str(path, where_, inner.trim());
-            return;
-        }
-        if let Some(inner) = expr
-            .strip_prefix("map<")
-            .and_then(|rest| rest.strip_suffix('>'))
-        {
-            let mut depth = 0usize;
-            let mut split = None;
-            for (i, ch) in inner.char_indices() {
-                match ch {
-                    '<' => depth += 1,
-                    '>' => depth = depth.saturating_sub(1),
-                    ',' if depth == 0 => {
-                        split = Some(i);
-                        break;
-                    }
-                    _ => {}
+            ),
+            Some(expr) => {
+                for msg in type_expr_errors(expr) {
+                    self.error(path, where_, &msg);
                 }
             }
-            let Some(split) = split else {
-                self.error(
-                    path,
-                    where_,
-                    &format!("map type needs key and value: {expr}"),
-                );
-                return;
-            };
-            let key = inner[..split].trim();
-            if key != "string" {
-                self.error(path, where_, &format!("map keys must be string, got {key}"));
-            }
-            self.check_type_str(path, where_, inner[split + 1..].trim());
-            return;
         }
-        self.error(path, where_, &format!("unknown attribute type {expr:?}"));
     }
 
     // ---------------- schema checks ----------------
@@ -343,7 +77,7 @@ impl Linter {
                     self.error(path, &where_, &format!("malformed import {imp:?}"));
                     continue;
                 };
-                if !self.packages.contains_key(target) {
+                if !self.registry.packages.contains_key(target) {
                     self.error(
                         path,
                         &where_,
@@ -364,6 +98,7 @@ impl Linter {
             }
         }
         let imports: BTreeSet<String> = self
+            .registry
             .packages
             .get(&pkg)
             .map(|p| p.imports.iter().cloned().collect())
@@ -403,7 +138,7 @@ impl Linter {
                                     "target is only valid on node-ref",
                                 );
                             } else if target.as_str().is_none_or(|t| {
-                                self.resolve_type(t, Some(&pkg)).is_none()
+                                self.registry.resolve_type(t, Some(&pkg)).is_none()
                             }) {
                                 self.error(
                                     path,
@@ -415,14 +150,13 @@ impl Linter {
                     }
                 }
                 if let Some(parent) = get_str(tdef, "extends") {
-                    match self.resolve_type(parent, Some(&pkg)) {
+                    match self.registry.resolve_type(parent, Some(&pkg)) {
                         None => self.error(
                             path,
                             &twhere,
                             &format!("extends {parent:?} does not resolve"),
                         ),
-                        Some((ppkg, pname, _)) if !foreign_ok(parent) => {
-                            let _ = (ppkg, pname);
+                        Some(_) if !foreign_ok(parent) => {
                             self.error(
                                 path,
                                 &twhere,
@@ -432,11 +166,7 @@ impl Linter {
                             );
                         }
                         Some((ppkg, pname, _)) => {
-                            let inherited = self.collected_attrs(
-                                &ppkg,
-                                &pname,
-                                &mut BTreeSet::new(),
-                            );
+                            let inherited = self.registry.collected_attrs(&ppkg, &pname);
                             if let Some(attrs) =
                                 tdef.get("attributes").and_then(Value::as_mapping)
                             {
@@ -492,7 +222,8 @@ impl Linter {
                         other => other.as_str().into_iter().collect(),
                     };
                     for reference in refs {
-                        if self.resolve_type(reference, Some(&pkg)).is_none() {
+                        if self.registry.resolve_type(reference, Some(&pkg)).is_none()
+                        {
                             self.error(
                                 path,
                                 &ewhere,
@@ -574,7 +305,7 @@ impl Linter {
                     })
                     .unwrap_or_default();
                 for parent in &parents {
-                    if !seen.contains(parent) && !self.term_exists(parent) {
+                    if !seen.contains(parent) && !self.registry.term_exists(parent) {
                         self.error(
                             path,
                             &format!("{where_}.{tname}"),
@@ -694,7 +425,7 @@ impl Linter {
             }
         }
         if let Some(region) = get_str(sel, "region") {
-            if !self.term_exists(region) {
+            if !self.registry.term_exists(region) {
                 self.error(
                     path,
                     where_,
@@ -703,7 +434,7 @@ impl Linter {
             }
         }
         if let Some(tref) = get_str(sel, "type") {
-            if self.resolve_type(tref, None).is_none() {
+            if self.registry.resolve_type(tref, None).is_none() {
                 self.error(path, where_, &format!("type {tref:?} does not resolve"));
             }
         }
@@ -864,7 +595,7 @@ impl Linter {
 
     fn check_node_payload(&mut self, path: &Path, where_: &str, doc: &Value) {
         let reference = get_str(doc, "type").unwrap_or("<missing>");
-        let Some((pkg, tname, _)) = self.resolve_type(reference, None) else {
+        let Some((pkg, tname, _)) = self.registry.resolve_type(reference, None) else {
             self.error(
                 path,
                 where_,
@@ -879,7 +610,7 @@ impl Linter {
                 &format!("type ref {reference:?} lacks a version (§1.2)"),
             );
         }
-        let attrs = self.collected_attrs(&pkg, &tname, &mut BTreeSet::new());
+        let attrs = self.registry.collected_attrs(&pkg, &tname);
         let given: BTreeSet<String> = doc
             .get("attributes")
             .and_then(Value::as_mapping)
@@ -913,7 +644,7 @@ impl Linter {
 
     fn check_edge_payload(&mut self, path: &Path, where_: &str, doc: &Value) {
         let reference = get_str(doc, "type").unwrap_or("<missing>");
-        let Some((ename, edef)) = self.resolve_edge_type(reference) else {
+        let Some((_, edef)) = self.registry.resolve_edge_type(reference) else {
             self.error(
                 path,
                 where_,
@@ -921,7 +652,6 @@ impl Linter {
             );
             return;
         };
-        let _ = ename;
         if !reference.contains('@') {
             self.error(
                 path,
@@ -973,7 +703,7 @@ impl Linter {
             }
         }
         if let Some(term) = get_str(doc, "term") {
-            if !self.term_exists(term) {
+            if !self.registry.term_exists(term) {
                 self.error(
                     path,
                     where_,
@@ -1146,9 +876,17 @@ impl Linter {
     // ---------------- driver ----------------
 
     fn run(&mut self, root: &Path) -> u8 {
-        self.load_dir(root);
-        let docs = self.docs.clone();
-        for (path, doc) in &docs {
+        let loaded = allod_core::load_dir(root);
+        self.registry = loaded.registry;
+        for issue in &loaded.issues {
+            self.errors.push(format!(
+                "{}: {}: {}",
+                issue.path.display(),
+                issue.context,
+                issue.message
+            ));
+        }
+        for (path, doc) in &loaded.docs {
             if doc.get("ontology").is_some() {
                 self.check_ontology(path, doc);
             } else if doc.get("taxonomy").is_some() {
@@ -1169,25 +907,12 @@ impl Linter {
         }
         println!(
             "\nchecked {} packages, {} taxonomies: {} errors, {} warnings",
-            self.packages.len(),
-            self.taxonomies.len(),
+            self.registry.packages.len(),
+            self.registry.taxonomies.len(),
             self.errors.len(),
             self.warnings.len()
         );
         u8::from(!self.errors.is_empty())
-    }
-}
-
-fn collect_yaml(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else { return };
-    let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
-    paths.sort();
-    for path in paths {
-        if path.is_dir() {
-            collect_yaml(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
-            out.push(path);
-        }
     }
 }
 

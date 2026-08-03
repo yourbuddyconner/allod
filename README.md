@@ -90,10 +90,12 @@ between two local graphs.
 | `grc` | [ontologies/grc/](ontologies/grc/) | Controls, attested audit evidence, findings, exceptions |
 | `spec` | [ontologies/spec/](ontologies/spec/) | The specification governing itself |
 
-The packages are validated by [allod-lint](crates/allod-lint/), a Rust
-tool that checks ontology, taxonomy, policy, and example files against
-the rules of Parts 1, 2, and 4. Run it with `cargo run --release -p
-allod-lint`.
+The packages are validated by [allod-lint](crates/allod-lint/), built
+on [allod-core](crates/allod-core/), the shared domain crate holding
+the spec vocabulary, package and taxonomy registries, reference
+resolution, and the attribute type grammar. The linter checks
+ontology, taxonomy, policy, and example files against the rules of
+Parts 1, 2, and 4. Run it with `cargo run --release -p allod-lint`.
 
 These packages are projections (§2.5). In a live graph, ontologies are
 versioned objects, and imports bind by state hash.

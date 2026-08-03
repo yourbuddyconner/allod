@@ -3,10 +3,18 @@
 version = 4
 
 [[package]]
-name = "allod-lint"
+name = "allod-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_yaml",
+]
+
+[[package]]
+name = "allod-lint"
+version = "0.1.0"
+dependencies = [
+ "allod-core",
  "serde_yaml",
 ]
 
