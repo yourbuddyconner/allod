@@ -13,8 +13,8 @@ Knowledge produced by and for AI agents is locked inside vendor silos.
 Current systems lack three properties:
 
 1. **Portability.** An agent's accumulated memory cannot move to another
-   system in a form that system can faithfully consume. Markdown dumps lose
-   structure. API exports lose history.
+   system intact. Markdown dumps lose structure. API exports lose
+   history.
 2. **Verifiability.** No mainstream knowledge store can prove to a third
    party how its contents came to be. There is no way to check who wrote
    each claim, under what authority, or from what source.
@@ -23,16 +23,18 @@ Current systems lack three properties:
    classifications require elevated authority. Access control lives in the
    database layer today and does not travel with the knowledge.
 
-Allod makes all three properties intrinsic to the format, independent of
-the host. Each property is useful on its own. Together they are also
-what federation needs: knowledge that carries its provenance can move
-between parties and stay checkable on arrival. Part 9 builds that
-transfer layer on top of them.
+Allod makes all three properties part of the format itself, so they do
+not depend on any host and are not lost when knowledge changes hands.
+Exchange between independent graphs
+([Part 9](09-federation.md)) relies on this: knowledge that carries its
+own provenance can be verified by whoever receives it.
 
-The founding axiom is a generalization from code review: **all governance
-is the administration of diffs.** When every change to a body of knowledge
-is a signed, well-formed diff, governance, provenance, and audit all reduce
-to operations over the diff log. This axiom drives design principle 1.
+The design generalizes a practice that already works: code review.
+Reviewing code is governing a body of knowledge by governing its diffs.
+Allod applies the same move to knowledge in general. When every change is
+a signed, well-formed diff, then who may change what, where a fact came
+from, and whether the rules were followed are all questions answered by
+reading the diff log. Design principle 1 follows from this.
 
 ## 0.3 Design principles
 
@@ -45,8 +47,8 @@ dispute, the resolution MUST agree with them, in priority order:
 2. **Sovereignty.** No capability of this specification may require a
    specific host, vendor, network service, or hardware supplier. An owner
    with only local, open implementations MUST be able to exercise every
-   capability. Attestation hardware is an optional strengthening, confined
-   to conformance level L3.
+   capability. Attestation hardware is optional and confined to
+   conformance level L3.
 3. **Verifiability before trust.** Every graph state MUST be
    reconstructible and checkable from signed history alone. A verifier
    needs only the log and the public keys.
@@ -66,7 +68,7 @@ Interpret the key words MUST, MUST NOT, REQUIRED, SHALL, SHOULD, SHOULD
 NOT, and MAY as described in RFC 2119 and RFC 8174.
 
 - **Graph.** The materialized set {nodes, edges, classifications,
-  documents} produced by folding a changeset log against a schema.
+  documents} produced by replaying a changeset log against a schema.
 - **Schema.** The pair (ontology, taxonomy) plus attached governance
   policy. The schema is stored in-graph as versioned objects.
 - **Ontology.** The typed entity and relationship model: entity types,
@@ -102,7 +104,8 @@ NOT, and MAY as described in RFC 2119 and RFC 8174.
   reference plus disclosed objects or elided changesets with proofs
   (§9.5).
 - **Mirror / Import.** The two ways a graph holds foreign knowledge:
-  verbatim outside admitted state, or adopted through admission (§9.6).
+  kept verbatim outside the admitted state (mirror), or adopted through
+  the graph's own admission flow (import) (§9.6).
 
 ## 0.5 Conformance levels
 
@@ -124,10 +127,10 @@ of an implementation.
   attestation envelopes that a third party can verify against hardware
   vendor roots.
 
-**F (federated)** is a capability marker orthogonal to the levels,
-claimable at L1 or above: graph identity, peer records, grants, share
-bundles, and sync (Part 9). At L2, imports run through admission. At
-L3, grants can require attestation.
+**F (federated)** is a capability independent of the levels, claimable
+at L1 or above: graph identity, peer records, grants, share bundles, and
+sync (Part 9). At L2, imports run through admission. At L3, grants can
+require attestation.
 
 ## 0.6 Prior art and positioning
 
@@ -137,11 +140,11 @@ The RDF mapping is normative in Appendix D.
 - **RDF / OWL / SPARQL.** The most complete prior formalization of typed
   knowledge graphs. RDF has no changeset primitive. Named graphs and
   RDF-star do not provide signed, ordered history. RDF has no governance
-  model and no attestation mechanism. Three decades of practice show that
-  agents and application developers route around its ergonomics. Allod
-  accepts RDF's lesson that triples are too low-level an authoring
-  surface. Appendix D preserves compatibility through a lossy export
-  mapping.
+  model and no attestation mechanism. Three decades of practice show
+  that application developers work around RDF rather than with it. Allod
+  accepts the lesson: triples are too low-level a form to author
+  knowledge in directly. Appendix D preserves compatibility through a
+  lossy export mapping.
 - **JSON-LD / schema.org.** These provide vocabulary and serialization
   but no history, authority, or governance. An Allod ontology MAY import
   schema.org type vocabularies.
@@ -149,8 +152,8 @@ The RDF mapping is normative in Appendix D.
   a log as the source of truth works in production, but they are products
   with internal logs rather than interchange formats. Their logs are not
   portable, signed, or governed.
-- **git.** git demonstrates at planetary scale that a content-addressed
-  DAG of signed diffs with deterministic state works. Allod adopts git as
+- **git.** git demonstrates at scale that a content-addressed DAG of
+  signed diffs with deterministic state works. Allod adopts git as
   a substrate (§3.3) instead of reinventing it, and git's remote-and-patch
   exchange shapes the sync model of Part 9.
 - **LSIF / SCIP.** These formats precompute code intelligence
