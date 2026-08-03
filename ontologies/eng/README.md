@@ -1,68 +1,69 @@
 # eng: the engineering organization ontology
 
-The human layer of an engineering org, built on `corp` for structure
-and `code` for the derived code graph. It covers services and their
-ownership, releases and deployments, change management, incidents and
-postmortems, and the regions and rules that make code review and
-change approval governed history.
+This package describes the human side of an engineering org. It builds
+on `corp` for company structure and on `code` for the graphs derived
+from source code. It covers services and their ownership, releases and deployments, change
+management, incidents and postmortems, and the rules that turn code
+review and change approval into verifiable history.
 
 ## Contents
 
 | File | Contents |
 |---|---|
 | [ontology.yaml](ontology.yaml) | Services, environments, releases, deployments, change requests, design docs, incidents, postmortems, SLOs |
-| [taxonomy.yaml](taxonomy.yaml) | Regions: change, security, reliability, ops |
-| [policy.yaml](policy.yaml) | Code review on git, security regions, change windows, postmortem review |
+| [taxonomy.yaml](taxonomy.yaml) | Classification terms for change risk, security, reliability, and operations |
+| [policy.yaml](policy.yaml) | Code review on git, security-sensitive code, change windows, postmortem review |
 | [examples/payments-change.yaml](examples/payments-change.yaml) | A worked high-risk change: proposal, dual review, deployment, incident, postmortem |
 
 ## How change management works
 
-A change request is a node, and its risk classification routes it. Tag
-a `ChangeRequest` under `change/high-risk` and the policy demands an
-eng-lead decision record plus a 24 hour cooling-off window. Tag it
-`change/emergency` and it needs an SRE and a 4 hour clock instead.
-The two regions sit side by side in the taxonomy on purpose: ancestor
-requirements only tighten (§4.1), so nesting emergency beneath
-high-risk would force the cooling-off onto emergencies.
+A change request is a record in the graph, and its risk classification
+decides what approval it needs. Tag a `ChangeRequest` as high-risk and
+the policy requires a signed approval from an engineering lead plus a
+24-hour cooling-off period. Tag it as an emergency and it instead
+requires an SRE's approval within a 4-hour window. The two
+classifications sit side by side rather than nested, on purpose: a child
+term inherits all of its parent's requirements (spec §4.1), so nesting
+"emergency" under "high-risk" would force the 24-hour cooling-off onto
+emergencies.
 
 Validation rules close the loop at the data level: a high-risk change
-must carry a rollback plan, and a production deployment must arrive in
-the same changeset as a `fulfills` edge to an approved change request.
-The approval itself is a decision record (§4.3), so "was this deploy
-authorized, by whom, under which policy version" is a log query with a
-verifiable answer.
+must include a rollback plan, and a production deployment must arrive in
+the same changeset as a link to an approved change request. The approval
+itself is a signed record in the log, so "was this deploy authorized, by
+whom, under which version of the policy" is a query with a verifiable
+answer.
 
 ## How code review works
 
-Code review runs on the git substrate (§3.3), and this package
-supplies the rule shapes:
+Allod can treat a git repository as a governed history (spec §3.3), and
+this package supplies the review rules for it:
 
-1. `main-requires-review` keys on repo and ref patterns, the same
-   shape as CODEOWNERS and branch protection, with signed portable
-   verdicts instead of host-locked settings.
-2. The derived code graph makes review risk-aware. Classify a
-   function node under `security/critical`, and the
-   `security-critical-code` region rule pulls a security reviewer into
-   any change whose semantic diff touches it (§8.3). Appendix F walks
-   the full flow: propose, derive, evaluate, review artifact, decision
-   records, attested gate.
-3. Ownership is graph data. `owns` edges from org units to services
-   and repositories, and `on_call_for` edges with validity dates,
-   replace the org chart lookups that review tooling usually hides in
+1. `main-requires-review` matches on repository and branch patterns — the
+   same shape as CODEOWNERS and branch protection — but the review
+   verdicts are signed records you can take with you, not settings locked
+   inside a hosting provider.
+2. The code graph makes review risk-aware. Classify a function as
+   security-critical, and the `security-critical-code` rule requires a
+   security reviewer on any change that touches that function — detected
+   from the change's effect on the code graph, not from file paths (spec
+   §8.3). Appendix F of the spec walks the full flow.
+3. Ownership is data in the graph. `owns` edges connect teams to services
+   and repositories, and `on_call_for` edges carry validity dates. This
+   replaces the org-chart lookups that review tooling usually buries in
    config files.
 
 ## The learning loop
 
-Incidents point at what caused them (`caused_by` a deployment or a
-change request) and what they hurt (`impacts` a service). A postmortem
-is a document-anchored node whose region requires eng-lead review, and
+Incidents point at what caused them (`caused_by` a deployment or a change
+request) and at what they affected (`impacts` a service). A postmortem is
+a record anchored to its document, requires engineering-lead review, and
 its action items are assigned, dated objects. Six months later, "which
-tier-0 services had sev1 incidents caused by emergency changes, and
-did the action items close" is a query over governed history instead
-of an archaeology project.
+tier-0 services had sev1 incidents caused by emergency changes, and were
+the action items closed" is a query over recorded history, not a dig
+through old tickets and chat logs.
 
 ## Status
 
-Draft, tracks spec v0.3. Import hashes are real content hashes,
-generated by `allod-vectors` and verified by `allod-lint`
-(Appendix H).
+Draft, tracks spec v0.3. The import hashes in these files are real
+content hashes, generated by `allod-vectors` and verified by `allod-lint`.

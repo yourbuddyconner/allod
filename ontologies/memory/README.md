@@ -1,65 +1,67 @@
-# memory: personal agent memory
+# memory: personal AI-assistant memory
 
-The founding use case (§0.2): an assistant that accumulates knowledge
-about its owner's life, under the owner's rules, in a format the owner
-can take anywhere. The sovereign-memory claim from §6.3 is this
-package in operation: "my AI wrote this into my memory, under my
-rules, and I can prove it."
+This package covers the use case Allod was designed around: an assistant
+that accumulates knowledge about its owner's life, under the owner's
+rules, in a format the owner can take anywhere. The goal is to be able
+to say "my AI wrote this into my memory, under my rules, and I can prove
+it."
 
 ## Contents
 
 | File | Contents |
 |---|---|
 | [ontology.yaml](ontology.yaml) | Notes, preferences, routines, commitments, interests |
-| [taxonomy.yaml](taxonomy.yaml) | Life regions, sensitivity, workspace scratch and curated |
-| [policy.yaml](policy.yaml) | Agent proposals, owner-approved preferences, private regions |
-| [policy-local.yaml](policy-local.yaml) | The single-machine demo variant: attestation relaxed to a signed envelope (§5.2 `evidence: none`) |
-| [examples/jarvis.yaml](examples/jarvis.yaml) | An agent principal, a free scratch note, and a governed preference |
+| [taxonomy.yaml](taxonomy.yaml) | Life areas, sensitivity levels, and scratch vs. curated workspaces |
+| [policy.yaml](policy.yaml) | Agent proposals, owner-approved preferences, protected private areas |
+| [policy-local.yaml](policy-local.yaml) | A relaxed variant for single-machine demos: it accepts a plain signed statement from the indexer instead of hardware-backed proof |
+| [examples/jarvis.yaml](examples/jarvis.yaml) | A registered agent, a freely admitted scratch note, and a preference that needed owner approval |
 
 ## Why governance matters in a single-player graph
 
-The agent writes constantly, and the owner cannot review everything.
-The policy splits the world in three:
+The agent writes constantly, and the owner cannot review everything. The
+policy splits the world in three:
 
-1. **Scratch is free.** Notes in `workspace/scratch` admit without
-   review, so the agent thinks at full speed.
-2. **Preferences are owner business.** A `Preference` node states what
-   the owner wants, and the rule `preferences-are-owner-business`
-   means the agent can propose one and only the owner can make it
-   true. An assistant that decides your preferences for you has
-   crossed a line this policy makes structural.
-3. **Private regions are guarded.** `life/health` and `life/finances`
-   carry `sensitivity/private` as a parent, so one classification puts
-   a record behind owner sign-off.
+1. **Scratch is free.** Notes classified as scratch are admitted without
+   review, so the agent can think at full speed.
+2. **Preferences are the owner's business.** A `Preference` record states
+   what the owner wants. The rule `preferences-are-owner-business` means
+   the agent can propose one, but only the owner's signed approval makes
+   it true. An assistant should never decide your preferences for you,
+   and this policy enforces that rather than assuming it.
+3. **Private areas are guarded.** Health and finance records are
+   classified as private by default, so a single classification puts a
+   record behind owner sign-off.
 
-## Portability is the product
+## Portability
 
-The markdown bundle (§7.2) of this graph is a directory of notes with
-front matter, which is the format agent memory systems already read.
-The difference is what travels with it: switch assistants and the new
-agent receives typed history with provenance instead of a text dump,
-and every preference in it can prove who approved it. Exporting the
-ontology alone (§2.5) shares the shape of a life without one private
-fact.
+Exported as markdown (spec §7.2), this graph is a directory of notes with
+front matter — the format existing agent-memory systems already read. The
+difference is what travels with it: switch assistants, and the new agent
+receives typed history with a record of who wrote what and who approved
+it, instead of a text dump. Every preference can prove its own approval.
+And you can share the ontology alone — the shape of a life, without a
+single private fact in it.
 
 ## Run it
 
-The reference CLI executes this package's jarvis flow end to end:
+The reference CLI runs this package's flow end to end:
 
 ```
 cargo run -p allod -- demo /tmp/allod-demo
 ```
 
-Scratch admits freely under `scratch-is-free`, the preference proposal
-is held by `agent-writes-are-proposals` and
-`preferences-are-owner-business`, the owner's signed decision record
-admits it, and `allod verify` replays the log through integrity,
-authorship, and governance checks — reporting the `evidence: none`
-envelope as degraded, exactly as §5.2 requires.
+The scratch note is admitted freely under `scratch-is-free`. The
+preference proposal is held by `agent-writes-are-proposals` and
+`preferences-are-owner-business` until the owner's signed approval admits
+it. Then `allod verify` replays the log and checks three things: the
+hashes are intact, the signatures are genuine, and every change followed
+the policy. Because the demo policy accepts a plain signed statement
+instead of hardware-backed proof, the verifier reports that link as
+degraded — exactly as spec §5.2 requires.
 
 ## Status
 
-Draft, tracks spec v0.3. Import hashes are real content hashes,
-generated by `allod-vectors` and verified by `allod-lint`
-(Appendix H). The demo path uses `memory-local`; the baseline policy
-is the target once an attested indexer exists.
+Draft, tracks spec v0.3. The import hashes in these files are real
+content hashes, generated by `allod-vectors` and verified by `allod-lint`.
+The demo uses the relaxed `memory-local` policy; the baseline policy is
+the target once an indexer that runs in trusted hardware exists.

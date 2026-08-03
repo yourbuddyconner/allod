@@ -1,44 +1,51 @@
 # Reference ontologies
 
-These packages are projections (§2.5). In a live graph, every entity
-type, taxonomy term, and policy rule here is a versioned object, created
-by changesets and governed like any other mutation. The YAML in this
-directory is the human-readable form of those objects, in the notation
-the spec uses for examples.
+An **ontology package** defines the vocabulary for one domain: the record
+types a graph can hold, the relationship types that connect them, a
+**taxonomy** (a tree of classification terms, like tags with hierarchy),
+and the policy rules that govern changes.
+
+The YAML files in this directory are human-readable snapshots. In a live
+graph, every type, term, and rule here is a versioned object inside the
+graph, created and changed through the same governed process as any other
+data. Spec §2.5 defines the relationship between the two forms.
 
 | Package | Path | Contents |
 |---|---|---|
-| `core` | [core/](core/) | The minimal shared vocabulary: Person, Company, principals (§6.1), peers (§9.3), grants (§9.4) |
-| `corp` | [corp/](corp/) | The base company ontology: org structure, external parties, contracts, work artifacts, plus a taxonomy and a reference policy |
-| `code` | [code/](code/) | The derived code-graph ontology indexers emit into (§8.3): repositories, files, functions, types, and their relationships |
-| `eng` | [eng/](eng/) | The engineering organization: services, releases, change management, code review regions, incidents, postmortems |
-| `memory` | [memory/](memory/) | Personal agent memory: notes, preferences, commitments, with owner-governed promotion |
-| `research` | [research/](research/) | Claims and evidence: sources, quotations, citation chains, review ladder |
-| `supply` | [supply/](supply/) | Cross-organization supply chain: parts, batches, certifications, disclosure regions for federation |
-| `grc` | [grc/](grc/) | Controls and audit evidence: frameworks, attested collection, findings, exceptions |
-| `spec` | [spec/](spec/) | The specification governing itself: parts, requirements, design decisions, test vectors |
+| `core` | [core/](core/) | The minimal shared vocabulary: people, companies, identities that can sign changes, peer graphs, and grants |
+| `corp` | [corp/](corp/) | A base company ontology: org structure, external parties, contracts, work artifacts, plus a taxonomy and a reference policy |
+| `code` | [code/](code/) | Code graphs built from git repositories: files, functions, types, and their relationships |
+| `eng` | [eng/](eng/) | An engineering organization: services, releases, change management, code review, incidents, postmortems |
+| `memory` | [memory/](memory/) | Personal AI-assistant memory: notes, preferences, commitments, with owner approval for changes that matter |
+| `research` | [research/](research/) | Claims and evidence: sources, quotations, citation chains, and a staged review process |
+| `supply` | [supply/](supply/) | A supply chain spanning several organizations: parts, batches, certifications, and controlled disclosure |
+| `grc` | [grc/](grc/) | Compliance: control frameworks, audit evidence, findings, exceptions |
+| `spec` | [spec/](spec/) | The specification managing its own change history: parts, requirements, design decisions, test vectors |
 
 ## Imports bind by hash
 
-A graph imports a package by state hash, and the name exists for
-human-readable projections (§2.3):
+A package can build on another package. The import names the package for
+readability, but the binding is the hash — a fingerprint of the imported
+package's exact content:
 
 ```yaml
 imports:
   - { ontology: corp, state_hash: "sha256:…" }
 ```
 
-The hashes in these files are real: each is the imported package's
-content hash under the canonical encoding (§7.1, Appendix H),
-computed by `allod-vectors hashes` and verified by `allod-lint` on
-every run. Until schema-as-object materialization ships, this content
-hash is what imports bind to; the migration to true in-graph state
-hashes is a pre-v1 breaking change already anticipated.
+The hashes in these files are real. Each one is computed over the imported
+package's content using the spec's canonical byte encoding (§7.1), by
+running `allod-vectors hashes`, and `allod-lint` re-verifies every one on
+each run. One caveat: the spec ultimately wants imports to bind to the
+hash of the definitions as stored inside a live graph, not to the YAML
+snapshot. Until that ships, the snapshot content hash is what imports bind
+to, and the switch is a planned pre-v1 breaking change.
 
 ## Extension is the intended use
 
-A base package covers the common shape. A company or an agent extends
-it with local types and regions (§2.3), and a consumer that understands
-only the base still reads projections of the extended data by dropping
-unknown attributes. Share the base, extend privately, and exchange
-either one on its own.
+A base package covers the common shape of a domain. A company or an agent
+extends it with its own types and classification terms, without modifying
+the base. A consumer that understands only the base can still read the
+extended data — it simply drops the attributes it does not recognize
+(§2.3). This lets you share the base vocabulary publicly, extend it
+privately, and exchange either one on its own.
