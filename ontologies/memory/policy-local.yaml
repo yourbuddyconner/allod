@@ -1,0 +1,46 @@
+# memory-local — genesis policy for a single-machine demo
+# (projection form, §2.5)
+#
+# memory-baseline with the attested-indexer requirement relaxed to a
+# signed envelope. The attester class `indexer` is a registered
+# principal signing with `evidence: none` (§5.2): the envelope proves
+# who ran the pipeline, not what code ran, and verification reports
+# the difference. Audits of basis-keyed matches stay degraded (§4.8).
+# Swap back to memory-baseline when an attested indexer exists.
+
+policy: memory-local
+version: 1
+default_posture: restricted
+roles:
+  owner: [ "principal:…" ]
+rules:
+
+  - name: agent-writes-are-proposals
+    select:
+      all:
+        - { author_kind: agent }
+        - { not: { region: "workspace/scratch" } }  # scratch is the carve-out
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  # The agent can propose a preference. Only the owner can make it true.
+  - name: preferences-are-owner-business
+    select: { type: memory/Preference }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  - name: private-region-guarded
+    select: { region: "sensitivity/private" }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  # The demo relaxation: a signature-only envelope from any registered
+  # indexer principal satisfies this. Scratch stays exempt, as in the
+  # baseline.
+  - name: model-assisted-needs-signed-envelope
+    select:
+      all:
+        - { basis: model-assisted }
+        - { not: { region: "workspace/scratch" } }
+    require:
+      attestation_required: { attester_class: indexer }
