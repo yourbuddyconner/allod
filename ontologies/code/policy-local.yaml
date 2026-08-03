@@ -1,0 +1,30 @@
+# code-local — genesis policy for a derived code graph on one
+# machine (projection form, §2.5)
+#
+# Pairs with the code ontology and the eng taxonomy's security
+# regions. Role bindings are placeholders to fill at genesis.
+
+policy: code-local
+version: 1
+default_posture: restricted
+roles:
+  owner:    [ "principal:…" ]
+  security: [ "principal:…" ]
+rules:
+
+  # A matching rule replaces the restricted default (§4.1), so this
+  # is a broad authorization: any service asserting deterministic
+  # basis writes without review, and basis is author-asserted below
+  # L3 (§4.8). Narrow the selector to the deployment's indexers.
+  - name: deterministic-indexer-writes
+    select: { author_kind: service, basis: deterministic }
+    require: { schema_valid: true }
+
+  # Classifying into security/, and any change whose subject is
+  # classified there, takes the owner — including the indexer's own
+  # derived updates when they touch classified code (§8.3,
+  # Appendix A step 4).
+  - name: security-region-owner-signoff
+    select: { region: "security" }
+    require:
+      reviewers: { role: owner, quorum: 1 }

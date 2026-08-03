@@ -17,6 +17,7 @@
 //! verification pass.
 
 mod fed;
+mod repo;
 mod md;
 
 use allod_core::fold::State;
@@ -203,28 +204,54 @@ pub(crate) fn admit_or_hold(
 // ---------------- commands ----------------
 
 fn cmd_init(dir: &Path, owner: &str, schema_dir: &Path) -> Result<(), String> {
+    cmd_init_profile(dir, owner, schema_dir, "memory")
+}
+
+fn cmd_init_profile(
+    dir: &Path,
+    owner: &str,
+    schema_dir: &Path,
+    profile: &str,
+) -> Result<(), String> {
     let graph = Graph::create(dir)?;
     let kp = Keypair::generate(owner);
     graph.save_key(&kp)?;
 
-    // Install the schema projection: core, memory, and the local demo
-    // policy with the owner bound into the roles.
+    // Install the schema projection and the profile's local policy
+    // with the owner bound into every role.
     let read = |p: PathBuf| -> Result<Value, String> {
         let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
         serde_yaml::from_str(&text).map_err(|e| e.to_string())
     };
-    graph.install_schema("core", &read(schema_dir.join("core/ontology.yaml"))?)?;
-    graph.install_schema("memory", &read(schema_dir.join("memory/ontology.yaml"))?)?;
-    graph.install_schema(
-        "memory-taxonomy",
-        &read(schema_dir.join("memory/taxonomy.yaml"))?,
-    )?;
-    let mut policy = read(schema_dir.join("memory/policy-local.yaml"))?;
+    let (files, policy_path): (Vec<(&str, &str)>, &str) = match profile {
+        "memory" => (
+            vec![
+                ("core", "core/ontology.yaml"),
+                ("memory", "memory/ontology.yaml"),
+                ("memory-taxonomy", "memory/taxonomy.yaml"),
+            ],
+            "memory/policy-local.yaml",
+        ),
+        "code" => (
+            vec![
+                ("core", "core/ontology.yaml"),
+                ("code", "code/ontology.yaml"),
+                ("eng-taxonomy", "eng/taxonomy.yaml"),
+            ],
+            "code/policy-local.yaml",
+        ),
+        other => return Err(format!("unknown profile {other:?}")),
+    };
+    for (name, rel) in files {
+        graph.install_schema(name, &read(schema_dir.join(rel))?)?;
+    }
+    let mut policy = read(schema_dir.join(policy_path))?;
     if let Some(roles) = policy.get_mut("roles").and_then(Value::as_mapping_mut) {
-        roles.insert(
-            s("owner"),
-            Value::Sequence(vec![s(&format!("principal:{owner}"))]),
-        );
+        let bind = Value::Sequence(vec![s(&format!("principal:{owner}"))]);
+        let names: Vec<Value> = roles.keys().cloned().collect();
+        for name in names {
+            roles.insert(name, bind.clone());
+        }
     }
     graph.install_schema("policy", &policy)?;
 
@@ -943,6 +970,67 @@ fn cmd_demo_federation(dir_a: &Path, dir_b: &Path, schema: &Path) -> Result<(), 
     Ok(())
 }
 
+/// Code-graph demo (Appendix A steps 2-4 and 8): commit-aligned
+/// derivation, governed classification, the semantic diff with blast
+/// radius, and one attested (simulated) envelope.
+fn cmd_demo_code(dir: &Path, schema: &Path) -> Result<(), String> {
+    println!("allod code-graph demo — a repository as governed knowledge (§8.3)");
+    println!("═══════════════════════════════════════════════════════════════════");
+    let repo_dir = dir.with_extension("repo");
+    println!("\n[1/8] A sample repository: two commits on a spend path");
+    let (first, second) = repo::make_sample_repo(&repo_dir)?;
+    println!("  ✓ {} then {}", short(&first), short(&second));
+
+    println!("\n[2/8] Genesis: code profile — core + code ontologies, eng taxonomy");
+    cmd_init_profile(dir, "conner", schema, "code")?;
+    cmd_principal_add(dir, "indexer", "service", "conner")?;
+    cmd_principal_add(dir, "maria", "user", "conner")?;
+
+    println!("\n[3/8] Import commit one — deterministic indexer writes admit (§8.1)");
+    let (_h1, admitted) = repo::import_commit(dir, &repo_dir, &first, "indexer")?;
+    if !admitted {
+        return Err("first import should admit under the deterministic rule".into());
+    }
+
+    println!("\n[4/8] Maria proposes: authorize_spend is security/critical (Appendix A step 4)");
+    let graph = Graph::open(dir)?;
+    let state = graph.fold()?;
+    let fn_id = state
+        .objects
+        .iter()
+        .find_map(|((kind, id), obj)| {
+            (kind == "node"
+                && obj.content.get("attributes").and_then(|a| get_str(a, "name"))
+                    == Some("authorize_spend"))
+            .then(|| id.clone())
+        })
+        .ok_or("authorize_spend not derived")?;
+    let held = cmd_classify(dir, &fn_id, "security/critical@1", "maria", "manual")?;
+    let proposal = held.ok_or("classification should be held for the owner")?;
+    println!("      the owner signs off:");
+    cmd_approve(dir, &proposal, "conner")?;
+
+    println!("\n[5/8] Import commit two — it touches classified code, so it is held (§8.3)");
+    let (h2, admitted) = repo::import_commit(dir, &repo_dir, &second, "indexer")?;
+    if admitted {
+        return Err("second import touches security/critical and must be held".into());
+    }
+
+    println!("\n[6/8] The semantic diff, as a review artifact (§4.4): what changed, who calls it");
+    repo::semantic_diff(dir, &h2, None)?;
+    println!("      reviewed; the owner admits it:");
+    cmd_approve(dir, &h2, "conner")?;
+
+    println!("\n[7/8] One attested envelope, simulated evidence, real verification (step 8)");
+    let measurement = allod_core::hash::plain_sha256(repo::SCAN_TOOL.as_bytes());
+    cmd_trust(dir, &measurement)?;
+    cmd_envelope(dir, &h2, "indexer", repo::SCAN_TOOL)?;
+
+    println!("\n[8/8] Verify the whole graph from the log and keys");
+    cmd_verify(dir)?;
+    Ok(())
+}
+
 // ---------------- argument plumbing ----------------
 
 fn flag(args: &[String], name: &str) -> Option<String> {
@@ -1073,6 +1161,26 @@ fn main() -> ExitCode {
             ).map(|_| ()),
             _ => Err("usage: allod bundle-import <dir> <bundle-file> --as <principal> [--import <node-id>]".into()),
         },
+        "init-code" => match (dir, flag(rest, "--owner")) {
+            (Some(dir), Some(owner)) => cmd_init_profile(&dir, &owner, &schema, "code"),
+            _ => Err("usage: allod init-code <dir> --owner <name> [--schema <dir>]".into()),
+        },
+        "repo-import" => match (dir, pos.get(1), pos.get(2), flag(rest, "--as")) {
+            (Some(dir), Some(repo_path), Some(commit), Some(by)) => {
+                repo::import_commit(&dir, Path::new(repo_path), commit, &by).map(|_| ())
+            }
+            _ => Err("usage: allod repo-import <dir> <repo> <commit> --as <service>".into()),
+        },
+        "semantic-diff" => match (dir, pos.get(1)) {
+            (Some(dir), Some(hash)) => repo::semantic_diff(
+                &dir, hash, flag(rest, "--out").as_deref().map(Path::new),
+            ),
+            _ => Err("usage: allod semantic-diff <dir> <cs-hash> [--out <file>]".into()),
+        },
+        "demo-code" => {
+            let dir = dir.unwrap_or_else(|| PathBuf::from("allod-demo-code"));
+            cmd_demo_code(&dir, &schema)
+        }
         "demo-federation" => {
             let a = dir.unwrap_or_else(|| PathBuf::from("allod-demo-a"));
             let b = pos.get(1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("allod-demo-b"));
