@@ -24,10 +24,11 @@ one machine, with the plain-keypair profile:
    model-assisted classification into `sensitivity/private`. Policy
    requires an attestation. The proposal lacks one. Admission fails. The
    proposal and its rejection stay auditable.
-6. **Projections.** Export a markdown bundle and Parquet. Re-ingest the
+6. **Projections.** Export a markdown bundle. Re-ingest the
    unmodified bundle. The state hash matches (§7.4). Edit one file by
    hand. Re-ingest. Confirm the edit arrives as a proposal that awaits
-   admission.
+   admission. (Parquet is an optional binding per §7.3, exercised
+   only by implementations that claim it.)
 7. **Replay.** Cold-start from the log on a second machine. The state
    hash matches. Repeat from a checkpoint. It matches.
 8. **L3, once.** Run the indexer or the admission gate in an attested

@@ -16,6 +16,7 @@
 //! free scratch note, a governed preference promotion, and a full
 //! verification pass.
 
+mod fed;
 mod md;
 
 use allod_core::fold::State;
@@ -36,7 +37,7 @@ pub(crate) fn s(v: &str) -> Value {
     Value::String(v.to_string())
 }
 
-fn uuid4() -> String {
+pub(crate) fn uuid4() -> String {
     let mut bytes: [u8; 16] = rand::random();
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -53,7 +54,7 @@ fn uuid4() -> String {
 
 /// UTC now as RFC 3339, from the civil-from-days algorithm — no
 /// clock dependencies beyond the system time.
-fn now_iso() -> String {
+pub(crate) fn now_iso() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -872,6 +873,76 @@ fn cmd_demo(dir: &Path, schema_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Federation demo (Appendix A step 9): two sovereign graphs, a
+/// grant, a proofs-carrying bundle by file copy, a governed import,
+/// and revocation.
+fn cmd_demo_federation(dir_a: &Path, dir_b: &Path, schema: &Path) -> Result<(), String> {
+    println!("allod federation demo — two sovereign graphs, one byte channel (a file)");
+    println!("═══════════════════════════════════════════════════════════════════════");
+    println!("\n[1/8] Graph A: conner + jarvis build the memory (the jarvis flow, quietly)");
+    cmd_init(dir_a, "conner", schema)?;
+    cmd_agent_add(dir_a, "jarvis", "conner")?;
+    let (note_id, _) = cmd_note(
+        dir_a,
+        "jarvis",
+        "Conner declined 4 of the last 5 meetings before 09:00.",
+    )?;
+    let hash = cmd_propose_preference(
+        dir_a, "jarvis", "No meetings before 09:00", "soft", Some(&note_id),
+    )?;
+    cmd_approve(dir_a, &hash, "conner")?;
+
+    println!("\n[2/8] Graph B: dana's own graph, its own root authority (§9.1)");
+    cmd_init(dir_b, "dana", schema)?;
+
+    println!("\n[3/8] B learns A's identity out of band: a peer record (§9.3)");
+    let graph_a = Graph::open(dir_a)?;
+    let a_id = get_str(&graph_a.meta()?, "graph_id").unwrap_or("").to_string();
+    let a_key = graph_a.load_key("conner")?.public_hex();
+    fed::peer_add(dir_b, "conner-memory", &a_id, &a_key, "dana")?;
+
+    println!("\n[4/8] A issues a grant: region work, audience = B's graph ID (§9.4)");
+    let graph_b = Graph::open(dir_b)?;
+    let b_id = get_str(&graph_b.meta()?, "graph_id").unwrap_or("").to_string();
+    let grant_id = fed::grant(dir_a, &b_id, "work", "conner")?;
+
+    println!("\n[5/8] A produces a share bundle: objects with membership proofs (§9.5)");
+    let bundle_path = std::env::temp_dir().join("allod-share-bundle.yaml");
+    fed::bundle(dir_a, &grant_id, &bundle_path, "conner")?;
+
+    println!("\n[6/8] B verifies the bundle with A's keys and imports the preference (§9.6)");
+    let state_a = graph_a.fold()?;
+    let pref_id = state_a
+        .objects
+        .iter()
+        .find_map(|((kind, id), obj)| {
+            (kind == "node"
+                && get_str(&obj.content, "type").map(allod_core::bare)
+                    == Some("memory/Preference"))
+            .then(|| id.clone())
+        })
+        .ok_or("no preference in A")?;
+    let held = fed::import(dir_b, &bundle_path, "dana", Some(&pref_id))?;
+    if let Some(proposal) = held {
+        println!("      B's own policy held the foreign preference — receiver-governed");
+        println!("      exchange (§9.6, design principle 6). Dana decides:");
+        cmd_approve(dir_b, &proposal, "dana")?;
+    }
+
+    println!("\n[7/8] B verifies its own graph — the import's lineage crosses intact");
+    cmd_verify(dir_b)?;
+
+    println!("\n[8/8] A revokes the grant; the next bundle request is refused (§9.4)");
+    fed::revoke(dir_a, &grant_id, "conner")?;
+    match fed::bundle(dir_a, &grant_id, &bundle_path, "conner") {
+        Err(e) => println!("  ✓ refused: {e}"),
+        Ok(()) => return Err("bundle should be refused after revocation".into()),
+    }
+    println!("\nBoth graphs stayed sovereign: B admitted under its own policy, and");
+    println!("the claim in B still proves where it came from, by hash, forever.");
+    Ok(())
+}
+
 // ---------------- argument plumbing ----------------
 
 fn flag(args: &[String], name: &str) -> Option<String> {
@@ -974,6 +1045,39 @@ fn main() -> ExitCode {
             (Some(dir), Some(hash), Some(by)) => cmd_approve(&dir, hash, &by),
             _ => Err("usage: allod approve <dir> <proposal-hash> --as <principal>".into()),
         },
+        "peer-add" => match (dir, pos.get(1), flag(rest, "--graph-id"), flag(rest, "--key"), flag(rest, "--by")) {
+            (Some(dir), Some(name), Some(gid), Some(key), Some(by)) => {
+                fed::peer_add(&dir, name, &gid, &key, &by)
+            }
+            _ => Err("usage: allod peer-add <dir> <name> --graph-id <hash> --key <public-hex> --by <principal>".into()),
+        },
+        "grant" => match (dir, flag(rest, "--audience"), flag(rest, "--region"), flag(rest, "--as")) {
+            (Some(dir), Some(aud), Some(region), Some(by)) => {
+                fed::grant(&dir, &aud, &region, &by).map(|id| println!("  grant id {id}"))
+            }
+            _ => Err("usage: allod grant <dir> --audience <graph-id|public> --region <term> --as <principal>".into()),
+        },
+        "grant-revoke" => match (dir, pos.get(1), flag(rest, "--as")) {
+            (Some(dir), Some(id), Some(by)) => fed::revoke(&dir, id, &by),
+            _ => Err("usage: allod grant-revoke <dir> <grant-id> --as <principal>".into()),
+        },
+        "bundle" => match (dir, pos.get(1), pos.get(2), flag(rest, "--as")) {
+            (Some(dir), Some(grant_id), Some(out), Some(by)) => {
+                fed::bundle(&dir, grant_id, Path::new(out), &by)
+            }
+            _ => Err("usage: allod bundle <dir> <grant-id> <out-file> --as <principal>".into()),
+        },
+        "bundle-import" => match (dir, pos.get(1), flag(rest, "--as")) {
+            (Some(dir), Some(bundle), Some(by)) => fed::import(
+                &dir, Path::new(bundle), &by, flag(rest, "--import").as_deref(),
+            ).map(|_| ()),
+            _ => Err("usage: allod bundle-import <dir> <bundle-file> --as <principal> [--import <node-id>]".into()),
+        },
+        "demo-federation" => {
+            let a = dir.unwrap_or_else(|| PathBuf::from("allod-demo-a"));
+            let b = pos.get(1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("allod-demo-b"));
+            cmd_demo_federation(&a, &b, &schema)
+        }
         "export-md" => match (dir, pos.get(1)) {
             (Some(dir), Some(out)) => md::export(&dir, Path::new(out)),
             _ => Err("usage: allod export-md <dir> <out-dir>".into()),
