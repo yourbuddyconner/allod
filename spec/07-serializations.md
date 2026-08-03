@@ -33,8 +33,9 @@ Layout and conventions:
 - One file per node. The path derives from the taxonomy: the primary term
   maps to the directory.
 - Front matter carries the envelope: `id`, `rev`, `type`,
-  classifications, and key attributes. The prose body maps to designated
-  long-text attributes.
+  classifications, and key attributes. The prose body maps to the
+  attribute the schema marks `long_text: true` (§2.1); trailing
+  newlines are not significant in the body.
 - Edges project as typed wiki-links inline (`[[node-id|label]]` with an
   edge-type annotation) and/or as a `links:` block in front matter.
 - A redacted object (§1.8) projects as front matter only, marked

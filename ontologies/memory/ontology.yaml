@@ -13,7 +13,7 @@ entity_types:
   Note:
     attributes:
       title:   { type: string }
-      content: { type: string, required: true }   # long text; projects to the markdown body
+      content: { type: string, required: true, long_text: true }  # projects to the markdown body (§7.2)
 
   Preference:
     attributes:
@@ -25,7 +25,7 @@ entity_types:
     attributes:
       name:        { type: string, required: true }
       cadence:     { type: string }               # e.g. "weekly, Monday morning"
-      description: { type: string }               # long text
+      description: { type: string, long_text: true }  # projects to the markdown body (§7.2)
 
   Commitment:
     attributes:

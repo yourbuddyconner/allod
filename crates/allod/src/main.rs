@@ -16,6 +16,8 @@
 //! free scratch note, a governed preference promotion, and a full
 //! verification pass.
 
+mod md;
+
 use allod_core::fold::State;
 use allod_core::get_str;
 use allod_core::model::{changeset_hash, schema_context};
@@ -30,7 +32,7 @@ fn yaml(s: &str) -> Value {
     serde_yaml::from_str(s).expect("internal template must parse")
 }
 
-fn s(v: &str) -> Value {
+pub(crate) fn s(v: &str) -> Value {
     Value::String(v.to_string())
 }
 
@@ -74,14 +76,14 @@ fn now_iso() -> String {
     )
 }
 
-fn short(hash: &str) -> String {
+pub(crate) fn short(hash: &str) -> String {
     let h = hash.strip_prefix("sha256:").unwrap_or(hash);
     h.chars().take(12).collect()
 }
 
 // ---------------- changeset construction ----------------
 
-fn build_changeset(
+pub(crate) fn build_changeset(
     graph: &Graph,
     author: &Keypair,
     intent: &str,
@@ -147,7 +149,7 @@ fn print_checklist(checklist: &Checklist) {
 }
 
 /// Evaluate, then admit or hold. Returns true when admitted.
-fn admit_or_hold(
+pub(crate) fn admit_or_hold(
     graph: &Graph,
     author_name: &str,
     cs: &Value,
@@ -971,6 +973,14 @@ fn main() -> ExitCode {
         "approve" => match (dir, pos.get(1), flag(rest, "--as")) {
             (Some(dir), Some(hash), Some(by)) => cmd_approve(&dir, hash, &by),
             _ => Err("usage: allod approve <dir> <proposal-hash> --as <principal>".into()),
+        },
+        "export-md" => match (dir, pos.get(1)) {
+            (Some(dir), Some(out)) => md::export(&dir, Path::new(out)),
+            _ => Err("usage: allod export-md <dir> <out-dir>".into()),
+        },
+        "import-md" => match (dir, pos.get(1), flag(rest, "--as")) {
+            (Some(dir), Some(bundle), Some(by)) => md::import(&dir, Path::new(bundle), &by),
+            _ => Err("usage: allod import-md <dir> <bundle-dir> --as <principal>".into()),
         },
         "proposals" => dir.ok_or("usage: allod proposals <dir>".to_string())
             .and_then(|d| cmd_proposals(&d)),
