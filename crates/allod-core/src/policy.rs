@@ -297,7 +297,49 @@ pub struct Satisfaction {
     pub degraded: Vec<String>,
 }
 
+/// Verify one envelope's evidence chain (§5.2, §5.3 level 4). The
+/// verification code path is real; `simulated` evidence checks the
+/// claimed measurement against the trusted set, exactly as a
+/// hardware chain would check a quote against vendor roots, and the
+/// result names the mode honestly.
+pub enum EvidenceResult {
+    /// Verified against a trusted measurement, with the mode named.
+    Verified(String),
+    /// Signature-only or otherwise weakened; the reason travels.
+    Degraded(String),
+    Failed(String),
+}
+
+pub fn verify_evidence(envelope: &Value, trusted_measurements: &[String]) -> EvidenceResult {
+    match get_str(envelope, "evidence_type") {
+        Some("none") | None => EvidenceResult::Degraded(
+            "evidence is none — the envelope proves who signed, not what code ran (§5.2)"
+                .into(),
+        ),
+        Some("simulated") => {
+            let measurement = envelope
+                .get("evidence")
+                .and_then(|e| get_str(e, "measurement"))
+                .unwrap_or("");
+            if measurement.is_empty() {
+                EvidenceResult::Failed("simulated evidence carries no measurement".into())
+            } else if trusted_measurements.contains(&measurement.to_string()) {
+                EvidenceResult::Verified(format!(
+                    "simulated measurement {measurement} is trusted (development mode, \
+                     Appendix A step 8)"
+                ))
+            } else {
+                EvidenceResult::Failed(format!(
+                    "simulated measurement {measurement} is not in the trusted set"
+                ))
+            }
+        }
+        Some(other) => EvidenceResult::Failed(format!("unknown evidence_type {other:?}")),
+    }
+}
+
 /// Check a proposal's evidence against its checklist (§4.3 step 4).
+#[allow(clippy::too_many_arguments)]
 pub fn check_satisfied(
     parent: &State,
     policy: &Value,
@@ -307,6 +349,25 @@ pub fn check_satisfied(
     checklist: &Checklist,
     decisions: &[Value],
     envelopes: &[Value],
+) -> Result<Satisfaction, String> {
+    check_satisfied_with(
+        parent, policy, roots, cs, author_ref, checklist, decisions, envelopes, &[],
+    )
+}
+
+/// As `check_satisfied`, with a trusted-measurement set for
+/// `simulated` evidence (graph meta supplies it).
+#[allow(clippy::too_many_arguments)]
+pub fn check_satisfied_with(
+    parent: &State,
+    policy: &Value,
+    roots: &[String],
+    cs: &Value,
+    author_ref: &str,
+    checklist: &Checklist,
+    decisions: &[Value],
+    envelopes: &[Value],
+    trusted_measurements: &[String],
 ) -> Result<Satisfaction, String> {
     let (cs_hash, _, _, _) = changeset_hash(cs)?;
     let pctx = policy_context(policy)?;
@@ -408,12 +469,16 @@ pub fn check_satisfied(
             if !verified {
                 continue;
             }
-            satisfied = true;
-            if get_str(envelope, "evidence") == Some("none") {
-                degraded.push(format!(
-                    "attestation for class {class}: evidence is none — the envelope \
-                     proves who signed, not what code ran (§5.2)"
-                ));
+            match verify_evidence(envelope, trusted_measurements) {
+                EvidenceResult::Verified(note) => {
+                    satisfied = true;
+                    degraded.push(format!("attestation for class {class}: {note}"));
+                }
+                EvidenceResult::Degraded(note) => {
+                    satisfied = true;
+                    degraded.push(format!("attestation for class {class}: {note}"));
+                }
+                EvidenceResult::Failed(_) => {}
             }
         }
         if !satisfied {

@@ -104,6 +104,68 @@ pub fn merkle_root(leaves: &[String], node_domain: &str) -> Option<String> {
     level.pop()
 }
 
+/// Membership path for a leaf (§5.4 subgraph proofs): the sibling
+/// hashes from the leaf to the root, each tagged with whether the
+/// sibling sits on the left. A promoted odd node contributes no
+/// entry at that level.
+pub fn merkle_path(
+    leaves: &[String],
+    index: usize,
+    node_domain: &str,
+) -> Option<Vec<(String, bool)>> {
+    if index >= leaves.len() {
+        return None;
+    }
+    let mut path = Vec::new();
+    let mut level: Vec<String> = leaves.to_vec();
+    let mut idx = index;
+    while level.len() > 1 {
+        let sibling = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        if sibling < level.len() {
+            path.push((level[sibling].clone(), sibling < idx));
+        }
+        let mut next = Vec::with_capacity(level.len().div_ceil(2));
+        for pair in level.chunks(2) {
+            if pair.len() == 2 {
+                let mut payload = Vec::with_capacity(64);
+                payload.extend_from_slice(&digest_bytes(&pair[0])?);
+                payload.extend_from_slice(&digest_bytes(&pair[1])?);
+                next.push(sha256_hex(node_domain, &payload));
+            } else {
+                next.push(pair[0].clone());
+            }
+        }
+        idx /= 2;
+        level = next;
+    }
+    Some(path)
+}
+
+/// Verify a membership path from a leaf to a root.
+pub fn verify_merkle_path(
+    leaf: &str,
+    path: &[(String, bool)],
+    root: &str,
+    node_domain: &str,
+) -> bool {
+    let mut current = leaf.to_string();
+    for (sibling, sibling_is_left) in path {
+        let (left, right) = if *sibling_is_left {
+            (sibling.as_str(), current.as_str())
+        } else {
+            (current.as_str(), sibling.as_str())
+        };
+        let (Some(lb), Some(rb)) = (digest_bytes(left), digest_bytes(right)) else {
+            return false;
+        };
+        let mut payload = Vec::with_capacity(64);
+        payload.extend_from_slice(&lb);
+        payload.extend_from_slice(&rb);
+        current = sha256_hex(node_domain, &payload);
+    }
+    current == root
+}
+
 /// Hash a value's canonical encoding under a domain.
 pub fn hash_value(domain: &str, value: &Value) -> Result<String, String> {
     Ok(sha256_hex(domain, &canonical_cbor(value)?))
@@ -132,6 +194,24 @@ mod tests {
     #[test]
     fn domains_separate() {
         assert_ne!(sha256_hex("op-leaf", b"x"), sha256_hex("op-node", b"x"));
+    }
+
+    #[test]
+    fn merkle_paths_verify() {
+        let leaves: Vec<String> = (0..5)
+            .map(|i| sha256_hex("state-leaf", &[i as u8]))
+            .collect();
+        let root = merkle_root(&leaves, "state-node").unwrap();
+        for (i, leaf) in leaves.iter().enumerate() {
+            let path = merkle_path(&leaves, i, "state-node").unwrap();
+            assert!(verify_merkle_path(leaf, &path, &root, "state-node"));
+            assert!(!verify_merkle_path(
+                &sha256_hex("state-leaf", b"other"),
+                &path,
+                &root,
+                "state-node"
+            ));
+        }
     }
 
     #[test]

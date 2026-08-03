@@ -165,8 +165,9 @@ fn admit_or_hold(
         .ok_or_else(|| format!("unknown principal {author_ref}"))?;
     let checklist = policy::evaluate(&reg, &policy, &state, cs, &author_kind)?;
     let roots = graph.roots()?;
-    let sat = policy::check_satisfied(
+    let sat = policy::check_satisfied_with(
         &state, &policy, &roots, cs, &author_ref, &checklist, &[], &envelopes,
+        &graph.trusted_measurements()?,
     )?;
     if sat.unmet.is_empty() {
         let mut state = state;
@@ -254,27 +255,34 @@ fn cmd_init(dir: &Path, owner: &str, schema_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_agent_add(dir: &Path, name: &str, by: &str) -> Result<(), String> {
+fn cmd_principal_add(dir: &Path, name: &str, kind: &str, by: &str) -> Result<(), String> {
     let graph = Graph::open(dir)?;
     let owner_kp = graph.load_key(by)?;
-    let agent_kp = Keypair::generate(name);
-    graph.save_key(&agent_kp)?;
-    let state = graph.fold()?;
-    let (_, owner_obj) = state
-        .find_principal(&format!("principal:{by}"))
-        .ok_or_else(|| format!("unknown principal {by}"))?;
-    let owner_node = get_str(&owner_obj.content, "id").unwrap_or("").to_string();
-
+    let kp = Keypair::generate(name);
+    graph.save_key(&kp)?;
+    let type_ref = match kind {
+        "agent" => "core/Agent@1",
+        "service" => "core/Service@1",
+        "user" => "core/User@1",
+        other => return Err(format!("unknown principal kind {other:?}")),
+    };
     let mut attrs = Mapping::new();
     attrs.insert(s("display_name"), s(name));
-    attrs.insert(s("keys"), Value::Sequence(vec![key_record(&agent_kp)]));
+    attrs.insert(s("keys"), Value::Sequence(vec![key_record(&kp)]));
     attrs.insert(s("status"), s("active"));
-    attrs.insert(s("delegated_by"), s(&format!("node:{owner_node}")));
-    attrs.insert(s("scope"), yaml("{ region: workspace }"));
+    if kind == "agent" {
+        let state = graph.fold()?;
+        let (_, owner_obj) = state
+            .find_principal(&format!("principal:{by}"))
+            .ok_or_else(|| format!("unknown principal {by}"))?;
+        let owner_node = get_str(&owner_obj.content, "id").unwrap_or("").to_string();
+        attrs.insert(s("delegated_by"), s(&format!("node:{owner_node}")));
+        attrs.insert(s("scope"), yaml("{ region: workspace }"));
+    }
     let mut node = Mapping::new();
     node.insert(s("kind"), s("node"));
     node.insert(s("id"), s(&uuid4()));
-    node.insert(s("type"), s("core/Agent@1"));
+    node.insert(s("type"), s(type_ref));
     node.insert(s("attributes"), Value::Mapping(attrs));
     let mut op = Mapping::new();
     op.insert(s("create"), Value::Mapping(node));
@@ -282,11 +290,15 @@ fn cmd_agent_add(dir: &Path, name: &str, by: &str) -> Result<(), String> {
     let (cs, hash) = build_changeset(
         &graph,
         &owner_kp,
-        &format!("Register agent {name}, delegated by {by}"),
+        &format!("Register {kind} {name}, by {by}"),
         vec![Value::Mapping(op)],
     )?;
     admit_or_hold(&graph, by, &cs, &hash, vec![], false)?;
     Ok(())
+}
+
+fn cmd_agent_add(dir: &Path, name: &str, by: &str) -> Result<(), String> {
+    cmd_principal_add(dir, name, "agent", by)
 }
 
 fn provenance(agent: &str, tool: &str) -> Value {
@@ -398,6 +410,14 @@ fn cmd_propose_preference(
 }
 
 fn cmd_approve(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
+    cmd_decide(dir, hash, by, "approve")
+}
+
+fn cmd_reject(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
+    cmd_decide(dir, hash, by, "reject")
+}
+
+fn cmd_decide(dir: &Path, hash: &str, by: &str, verdict: &str) -> Result<(), String> {
     let graph = Graph::open(dir)?;
     let kp = graph.load_key(by)?;
     let cs = graph.read_proposal(hash)?;
@@ -418,7 +438,7 @@ fn cmd_approve(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
     record.insert(s("kind"), s("decision-record"));
     record.insert(s("subject"), s(hash));
     record.insert(s("policy_context"), s(&policy::policy_context(&policy_doc)?));
-    record.insert(s("verdict"), s("approve"));
+    record.insert(s("verdict"), s(verdict));
     record.insert(s("timestamp"), s(&now_iso()));
     let mut record = Value::Mapping(record);
     let payload = policy::decision_payload(&record)?;
@@ -429,6 +449,15 @@ fn cmd_approve(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
         map.insert(s("deciders"), Value::Sequence(vec![Value::Mapping(decider)]));
     }
     decisions.push(record);
+
+    if verdict == "reject" {
+        // The proposal and its rejection stay auditable (§4.3,
+        // Appendix A step 5): both remain on disk, and the signed
+        // record is the evidence.
+        graph.write_proposal_evidence(hash, &evidence_doc(&decisions, &envelopes))?;
+        println!("  ✗ rejected {} — proposal and decision record stay auditable", short(hash));
+        return Ok(());
+    }
 
     let reg = graph.registry()?;
     let state = graph.fold()?;
@@ -441,8 +470,9 @@ fn cmd_approve(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
         .ok_or_else(|| format!("unknown author {author_ref}"))?;
     let checklist = policy::evaluate(&reg, &policy_doc, &state, &cs, &author_kind)?;
     let roots = graph.roots()?;
-    let sat = policy::check_satisfied(
+    let sat = policy::check_satisfied_with(
         &state, &policy_doc, &roots, &cs, &author_ref, &checklist, &decisions, &envelopes,
+        &graph.trusted_measurements()?,
     )?;
     if !sat.unmet.is_empty() {
         graph.write_proposal_evidence(hash, &evidence_doc(&decisions, &envelopes))?;
@@ -460,6 +490,151 @@ fn cmd_approve(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
     for note in &sat.degraded {
         println!("      degraded: {note}");
     }
+    Ok(())
+}
+
+fn cmd_classify(
+    dir: &Path,
+    node_id: &str,
+    term: &str,
+    by: &str,
+    basis: &str,
+) -> Result<Option<String>, String> {
+    let graph = Graph::open(dir)?;
+    let kp = graph.load_key(by)?;
+    let mut cls = Mapping::new();
+    cls.insert(s("kind"), s("classification"));
+    cls.insert(s("id"), s(&uuid4()));
+    cls.insert(s("subject"), s(&format!("node:{node_id}")));
+    cls.insert(s("term"), s(term));
+    cls.insert(s("asserted_by"), s(&format!("principal:{by}")));
+    cls.insert(s("basis"), s(basis));
+    let mut op = Mapping::new();
+    op.insert(s("create"), Value::Mapping(cls));
+    let (cs, hash) = build_changeset(
+        &graph,
+        &kp,
+        &format!("Classify node:{node_id} as {term}"),
+        vec![Value::Mapping(op)],
+    )?;
+    let admitted = admit_or_hold(&graph, by, &cs, &hash, vec![], false)?;
+    Ok(if admitted { None } else { Some(hash) })
+}
+
+fn cmd_checkpoint(dir: &Path, by: &str) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    let kp = graph.load_key(by)?;
+    let head = graph.head()?.ok_or("empty graph")?;
+    let state = graph.fold()?;
+    let mut cp = Mapping::new();
+    cp.insert(s("kind"), s("checkpoint"));
+    cp.insert(s("revision"), s(&head));
+    cp.insert(s("state_hash"), s(&state.state_hash()?));
+    cp.insert(s("state"), Value::Sequence(state.entries()));
+    cp.insert(s("timestamp"), s(&now_iso()));
+    cp.insert(s("signer"), s(&format!("principal:{by}")));
+    let mut cp = Value::Mapping(cp);
+    let payload = allod_core::sha256_hex(
+        "checkpoint",
+        &allod_core::canonical_cbor(&{
+            let mut pre = cp.clone();
+            pre.as_mapping_mut().unwrap().remove("signature");
+            pre
+        })?,
+    );
+    if let Some(map) = cp.as_mapping_mut() {
+        map.insert(s("signature"), s(&kp.sign(&payload)));
+    }
+    graph.write_checkpoint(&head, &cp)?;
+    println!("  ✓ checkpoint at {} (state {})", short(&head), short(
+        get_str(&cp, "state_hash").unwrap_or("?")));
+    Ok(())
+}
+
+fn checkpoint_payload(cp: &Value) -> Result<String, String> {
+    let mut pre = cp.clone();
+    if let Some(map) = pre.as_mapping_mut() {
+        map.remove("signature");
+    }
+    Ok(allod_core::sha256_hex(
+        "checkpoint",
+        &allod_core::canonical_cbor(&pre)?,
+    ))
+}
+
+fn cmd_trust(dir: &Path, measurement: &str) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    graph.trust_measurement(measurement)?;
+    println!("  ✓ trusting simulated measurement {}", short(measurement));
+    Ok(())
+}
+
+/// Emit and verify one attestation envelope for an admitted
+/// changeset (Appendix A step 8). Evidence is a simulated
+/// measurement; the verification code path is the real one.
+fn cmd_envelope(dir: &Path, cs_hash: &str, by: &str, tool: &str) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    let kp = graph.load_key(by)?;
+    let measurement = allod_core::hash::plain_sha256(tool.as_bytes());
+    let mut statement = Mapping::new();
+    statement.insert(s("changeset_hash"), s(cs_hash));
+    let mut evidence = Mapping::new();
+    evidence.insert(s("measurement"), s(&measurement));
+    evidence.insert(s("claimed_identity"), s(tool));
+    let mut envelope = Mapping::new();
+    envelope.insert(s("kind"), s("attestation-envelope"));
+    envelope.insert(s("statement"), Value::Mapping(statement));
+    envelope.insert(s("attester"), s(&format!("principal:{by}")));
+    envelope.insert(s("evidence"), Value::Mapping(evidence));
+    envelope.insert(s("evidence_type"), s("simulated"));
+    let mut envelope = Value::Mapping(envelope);
+    let payload = policy::envelope_payload(&envelope)?;
+    if let Some(map) = envelope.as_mapping_mut() {
+        map.insert(s("signature"), s(&kp.sign(&payload)));
+    }
+    // Verify: signature against the attester's registered key, then
+    // the evidence chain against the trusted measurements.
+    let state = graph.fold()?;
+    let attester_ref = format!("principal:{by}");
+    let public = state
+        .find_principal(&attester_ref)
+        .and_then(|(_, obj)| {
+            obj.content
+                .get("attributes")?
+                .get("keys")?
+                .as_sequence()?
+                .iter()
+                .find_map(|r| get_str(r, "public").map(String::from))
+        })
+        .ok_or("attester has no registered key")?;
+    allod_core::sign::verify(&public, &payload, get_str(&envelope, "signature").unwrap())?;
+    match policy::verify_evidence(&envelope, &graph.trusted_measurements()?) {
+        policy::EvidenceResult::Verified(note) => {
+            println!("  ✓ envelope verified: {note}");
+        }
+        policy::EvidenceResult::Degraded(note) => println!("  ⚠ envelope degraded: {note}"),
+        policy::EvidenceResult::Failed(reason) => {
+            return Err(format!("envelope failed: {reason}"))
+        }
+    }
+    // Attach it to the changeset's evidence for the audit trail.
+    let mut evidence_file = graph
+        .read_evidence(cs_hash)?
+        .unwrap_or_else(|| evidence_doc(&[], &[]));
+    if let Some(list) = evidence_file
+        .as_mapping_mut()
+        .and_then(|m| m.get_mut("envelopes"))
+        .and_then(Value::as_sequence_mut)
+    {
+        list.push(envelope);
+    }
+    let base = graph.dir.join(".allod/changesets");
+    let short_hash = cs_hash.strip_prefix("sha256:").unwrap_or(cs_hash);
+    std::fs::write(
+        base.join(format!("{short_hash}.evidence.yaml")),
+        serde_yaml::to_string(&evidence_file).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -567,9 +742,9 @@ fn cmd_verify(dir: &Path) -> Result<(), String> {
                 .and_then(Value::as_sequence)
                 .cloned()
                 .unwrap_or_default();
-            let sat = policy::check_satisfied(
+            let sat = policy::check_satisfied_with(
                 &state, &policy_doc, &roots, cs, &author_ref, &checklist, &decisions,
-                &envelopes,
+                &envelopes, &graph.trusted_measurements()?,
             )?;
             if !sat.unmet.is_empty() {
                 return Err(format!(
@@ -613,6 +788,33 @@ fn cmd_verify(dir: &Path) -> Result<(), String> {
         );
     }
     println!("  state hash {}", short(&state.state_hash()?));
+    // Checkpoints (§3.2.5): replay MUST be able to verify each one.
+    for cp in graph.checkpoints()? {
+        let revision = get_str(&cp, "revision").unwrap_or("?").to_string();
+        let claimed = get_str(&cp, "state_hash").unwrap_or("?").to_string();
+        let signer = get_str(&cp, "signer").unwrap_or("?").to_string();
+        let signature = get_str(&cp, "signature").unwrap_or("").to_string();
+        if revision == graph.head()?.unwrap_or_default() && claimed != state.state_hash()? {
+            return Err(format!("checkpoint at {} disagrees with replay", short(&revision)));
+        }
+        let payload = checkpoint_payload(&cp)?;
+        let public = state
+            .public_key_of(&signer, "")
+            .or_else(|| {
+                state.find_principal(&signer).and_then(|(_, obj)| {
+                    obj.content
+                        .get("attributes")?
+                        .get("keys")?
+                        .as_sequence()?
+                        .iter()
+                        .find_map(|r| get_str(r, "public").map(String::from))
+                })
+            })
+            .ok_or_else(|| format!("checkpoint signer {signer} unknown"))?;
+        allod_core::sign::verify(&public, &payload, &signature)
+            .map_err(|e| format!("checkpoint signature: {e}"))?;
+        println!("  ✓ checkpoint {} verified against replay ({signer})", short(&revision));
+    }
     for note in &degraded {
         println!("  ⚠ degraded: {note}");
     }
@@ -712,6 +914,37 @@ fn main() -> ExitCode {
         "agent-add" => match (dir, pos.get(1), flag(rest, "--by")) {
             (Some(dir), Some(name), Some(by)) => cmd_agent_add(&dir, name, &by),
             _ => Err("usage: allod agent-add <dir> <name> --by <owner>".into()),
+        },
+        "principal-add" => match (dir, pos.get(1), flag(rest, "--kind"), flag(rest, "--by")) {
+            (Some(dir), Some(name), Some(kind), Some(by)) => {
+                cmd_principal_add(&dir, name, &kind, &by)
+            }
+            _ => Err("usage: allod principal-add <dir> <name> --kind user|service|agent --by <owner>".into()),
+        },
+        "classify" => match (dir, pos.get(1), pos.get(2), flag(rest, "--as")) {
+            (Some(dir), Some(node), Some(term), Some(by)) => cmd_classify(
+                &dir, node, term, &by,
+                &flag(rest, "--basis").unwrap_or_else(|| "manual".into()),
+            ).map(|_| ()),
+            _ => Err("usage: allod classify <dir> <node-id> <term> --as <principal> [--basis b]".into()),
+        },
+        "reject" => match (dir, pos.get(1), flag(rest, "--as")) {
+            (Some(dir), Some(hash), Some(by)) => cmd_reject(&dir, hash, &by),
+            _ => Err("usage: allod reject <dir> <proposal-hash> --as <principal>".into()),
+        },
+        "checkpoint" => match (dir, flag(rest, "--as")) {
+            (Some(dir), Some(by)) => cmd_checkpoint(&dir, &by),
+            _ => Err("usage: allod checkpoint <dir> --as <principal>".into()),
+        },
+        "trust" => match (dir, pos.get(1)) {
+            (Some(dir), Some(m)) => cmd_trust(&dir, m),
+            _ => Err("usage: allod trust <dir> <measurement-hash>".into()),
+        },
+        "envelope" => match (dir, pos.get(1), flag(rest, "--as"), flag(rest, "--tool")) {
+            (Some(dir), Some(hash), Some(by), Some(tool)) => {
+                cmd_envelope(&dir, hash, &by, &tool)
+            }
+            _ => Err("usage: allod envelope <dir> <cs-hash> --as <principal> --tool <identity>".into()),
         },
         "note" => match (dir, flag(rest, "--as")) {
             (Some(dir), Some(agent)) => {

@@ -21,6 +21,9 @@ pub struct Obj {
     pub content: Value,
     pub rev: String,
     pub deleted: bool,
+    /// §1.8: the envelope survives, the content is gone, and the
+    /// recorded revision hash stays in the state tree.
+    pub redacted: bool,
 }
 
 #[derive(Clone, Default)]
@@ -163,6 +166,7 @@ impl State {
                             content: payload.clone(),
                             rev,
                             deleted: false,
+                            redacted: false,
                         },
                     );
                 }
@@ -187,6 +191,7 @@ impl State {
                             content,
                             rev,
                             deleted: false,
+                            redacted: false,
                         },
                     );
                 }
@@ -203,8 +208,41 @@ impl State {
                         content: current.content.clone(),
                         rev: current.rev.clone(),
                         deleted: true,
+                        redacted: current.redacted,
                     };
                     working.objects.insert(key, obj);
+                }
+                "redact-document" => {
+                    // §3.2.2, §1.8: the envelope survives, the
+                    // recorded revision hash stays in the state tree.
+                    let current = working
+                        .objects
+                        .get(&key)
+                        .ok_or_else(|| format!("redaction of unknown object {key:?}"))?;
+                    let mut envelope = serde_yaml::Mapping::new();
+                    envelope.insert(
+                        Value::String("kind".into()),
+                        Value::String(kind.clone()),
+                    );
+                    envelope.insert(Value::String("id".into()), Value::String(id.clone()));
+                    if let Some(prov) = current.content.get("provenance").cloned() {
+                        envelope.insert(Value::String("provenance".into()), prov);
+                    }
+                    let obj = Obj {
+                        content: Value::Mapping(envelope),
+                        rev: current.rev.clone(),
+                        deleted: current.deleted,
+                        redacted: true,
+                    };
+                    working.objects.insert(key, obj);
+                }
+                "redact-operation" => {
+                    // Removes recorded content from a stored prior
+                    // changeset (§3.2.2). The state is untouched; the
+                    // store performs the rewrite after admission, and
+                    // the hashes survive by construction (§3.2.6).
+                    get_str(payload, "target")
+                        .ok_or("redact-operation needs a target changeset hash")?;
                 }
                 other => {
                     return Err(format!(

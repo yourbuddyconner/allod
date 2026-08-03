@@ -46,9 +46,13 @@ conforms to the hashing layer when it reproduces every hash in
   to until schema-as-object materialization ships; allod-lint
   verifies every import declaration against it.
 
-## Pending
+## Signatures and the governance audit
 
-Signature vectors land with Part 6 of the reference implementation
-(the log carries `sig:pending:part-6` placeholders — signatures are
-outside every hash preimage, so the hashes are final). Governance
-audit vectors, one passing and one failing, land with Part 4.
+Signatures are Ed25519 over the ASCII bytes of the changeset hash,
+using the RFC 8032 test keys (secrets in `vectors.yaml` — they are
+deterministic test material, never for real graphs). The
+`governance` section carries a passing and a failing audit of the
+same proposal under the memory-local policy: two setup changesets
+build the principal state, and the two decision records differ only
+in who signed. An implementation reproduces the audit verdicts with
+the log, the policy, and the keys alone.

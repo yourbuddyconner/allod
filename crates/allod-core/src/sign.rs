@@ -24,6 +24,17 @@ impl Keypair {
         }
     }
 
+    /// A keypair from a fixed secret, for deterministic test vectors
+    /// (Appendix H). Never for real graphs.
+    pub fn from_secret_hex(name: &str, secret_hex: &str) -> Result<Keypair, String> {
+        let bytes = hex_decode(secret_hex).ok_or("secret is not hex")?;
+        let bytes: [u8; 32] = bytes.try_into().map_err(|_| "secret must be 32 bytes")?;
+        Ok(Keypair {
+            name: name.to_string(),
+            signing: SigningKey::from_bytes(&bytes),
+        })
+    }
+
     /// Key ID (§6.2): plain SHA-256 of the raw public key bytes.
     pub fn key_id(&self) -> String {
         plain_sha256(self.signing.verifying_key().as_bytes())

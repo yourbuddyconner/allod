@@ -6,7 +6,7 @@ kind: changeset
 parents: []
 author:
   principal: principal:vector-author
-  key: key:ed25519:vec0
+  key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:00:00Z
 intent: 'Genesis: two people, an edge, a document, a label'
 schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
@@ -44,15 +44,15 @@ operations:
     term: workspace/curated@1
     asserted_by: principal:vector-author
     basis: manual
-signature: sig:pending:part-6
-hash: sha256:63752f88d991b293f318fcb4a113e6e3c5f87e5a7f129f824f3e7b58f230826b
+signature: sig:ed25519:4db959d74d76caac6420b477bc444d375a1889876a03637dfa9e565ac0181c7646df5d2c92cc0c555a5fd91920941c73dc8460d0940f361d198f7684f1de9200
+hash: sha256:54b342dcbae8d06c223e741db6c7012c0665ab2043762ee751b4c9b2bf7f9dd5
 ---
 kind: changeset
 parents:
-- sha256:63752f88d991b293f318fcb4a113e6e3c5f87e5a7f129f824f3e7b58f230826b
+- sha256:54b342dcbae8d06c223e741db6c7012c0665ab2043762ee751b4c9b2bf7f9dd5
 author:
   principal: principal:vector-author
-  key: key:ed25519:vec0
+  key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:01:00Z
 intent: Rename Ada; retire Grace
 schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
@@ -68,15 +68,15 @@ operations:
     kind: node
     id: 00000000-0000-4000-8000-000000000002
     prior: sha256:c859b489e0a106a74e967e939f671e8418374541f44565d9285cb5e61bd9ff85
-signature: sig:pending:part-6
-hash: sha256:4f12515793edec9245426834174d79c69c69500536117ec4e3008b2d7589f432
+signature: sig:ed25519:23475dea757dd86201a273c8721e665e414fdceeb46cc71673fa0cf7c041435c5a31d0e04bb7ca24c5947091772c22c5d23d61fdd1d3fd15174072cc09a8b703
+hash: sha256:0669380bc7a20b5e544dca455bbcc57007296bdcfeb33b85b8e0a7d7bc602d87
 ---
 kind: changeset
 parents:
-- sha256:4f12515793edec9245426834174d79c69c69500536117ec4e3008b2d7589f432
+- sha256:0669380bc7a20b5e544dca455bbcc57007296bdcfeb33b85b8e0a7d7bc602d87
 author:
   principal: principal:vector-author
-  key: key:ed25519:vec0
+  key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:02:00Z
 intent: A note about Ada, labeled
 schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
@@ -100,5 +100,5 @@ operations:
     term: workspace/curated@1
     asserted_by: principal:vector-author
     basis: manual
-signature: sig:pending:part-6
-hash: sha256:26c51f1ecdd4f633a671e948150ce2303b20f36bd04976ea1fcbc76676f0f3fb
+signature: sig:ed25519:bee4e5843b10894e905a9de3dfd780bab84a04145b23a0d9c1a812c06cf09aa96c134f85c83e99ffc451cca8e8603ed40601f23f511575ce984e5735e6fae207
+hash: sha256:6fd8d2de5077e00b0bf362231d076dde29c550b71ff27c2f48f90d5c46755f66

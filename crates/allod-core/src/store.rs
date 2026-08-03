@@ -75,6 +75,64 @@ impl Graph {
         read_yaml(&self.allod().join("graph.yaml"))
     }
 
+    pub fn trusted_measurements(&self) -> Result<Vec<String>, String> {
+        Ok(self
+            .meta()?
+            .get("trusted_measurements")
+            .and_then(Value::as_sequence)
+            .map(|seq| {
+                seq.iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// Trust a measurement for `simulated` evidence (Appendix A
+    /// step 8). A real deployment pins hardware vendor roots instead.
+    pub fn trust_measurement(&self, measurement: &str) -> Result<(), String> {
+        let mut meta = self.meta()?;
+        let map = meta.as_mapping_mut().ok_or("meta must be a map")?;
+        let key = Value::String("trusted_measurements".into());
+        let mut list = map
+            .get(&key)
+            .and_then(Value::as_sequence)
+            .cloned()
+            .unwrap_or_default();
+        if !list.iter().any(|m| m.as_str() == Some(measurement)) {
+            list.push(Value::String(measurement.into()));
+        }
+        map.insert(key, Value::Sequence(list));
+        write_yaml(&self.allod().join("graph.yaml"), &meta)
+    }
+
+    // ---------------- checkpoints (§3.2.5) ----------------
+
+    pub fn write_checkpoint(&self, revision: &str, checkpoint: &Value) -> Result<(), String> {
+        let dir = self.allod().join("checkpoints");
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        write_yaml(&dir.join(format!("{}.yaml", short(revision))), checkpoint)
+    }
+
+    pub fn checkpoints(&self) -> Result<Vec<Value>, String> {
+        let dir = self.allod().join("checkpoints");
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut out = Vec::new();
+        let mut paths: Vec<PathBuf> = fs::read_dir(&dir)
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        paths.sort();
+        for path in paths {
+            out.push(read_yaml(&path)?);
+        }
+        Ok(out)
+    }
+
     pub fn roots(&self) -> Result<Vec<String>, String> {
         Ok(self
             .meta()?

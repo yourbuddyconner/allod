@@ -14,10 +14,13 @@
 //!       revision, one elided changeset with its leaf proof, and one
 //!       intent redaction. Deterministic: same inputs, same bytes.
 //!
-//! Signature and governance-audit vectors land with Parts 6 and 4 of
-//! the reference implementation.
+//! Signatures use the RFC 8032 test keys, so they are deterministic;
+//! the governance section carries one passing and one failing audit
+//! of the same proposal under the memory-local policy.
 
+use allod_core::fold::State as FoldState;
 use allod_core::hash::{hex_string, package_hash, plain_sha256, sha256_hex};
+use allod_core::sign::Keypair;
 use allod_core::model::{
     changeset_hash, changeset_hash_from_leaves, revision_hash, state_entry, state_root,
 };
@@ -179,6 +182,10 @@ impl State {
 
 // ---------------- the vector log ----------------
 
+/// RFC 8032 test keys — deterministic, never for real graphs.
+const OWNER_SECRET: &str = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+const AGENT_SECRET: &str = "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb";
+
 struct Built {
     name: String,
     stored: Value,
@@ -195,15 +202,18 @@ fn build_changeset(
     header: &str,
     ops: Vec<Value>,
     state: &mut State,
+    signer: &Keypair,
 ) -> Result<Built, String> {
     let mut cs = yaml(header);
     let map = cs.as_mapping_mut().ok_or("changeset template must be a map")?;
     map.insert(Value::String("operations".into()), Value::Sequence(ops.clone()));
-    map.insert(
-        Value::String("signature".into()),
-        Value::String("sig:pending:part-6".into()),
-    );
     let (hash, root, leaves, bytes) = changeset_hash(&cs)?;
+    if let Some(map) = cs.as_mapping_mut() {
+        map.insert(
+            Value::String("signature".into()),
+            Value::String(signer.sign(&hash)),
+        );
+    }
     if let Some(map) = cs.as_mapping_mut() {
         map.insert(Value::String("hash".into()), Value::String(hash.clone()));
     }
@@ -233,6 +243,8 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
 
     let doc_bytes = b"hello, vectors\n";
     let doc_hash = plain_sha256(doc_bytes);
+    let owner = Keypair::from_secret_hex("vector-owner", OWNER_SECRET)?;
+    let owner_key_id = owner.key_id();
     let mut state = State::default();
 
     // --- cs1: genesis ---
@@ -268,13 +280,14 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         &format!(
             "{{ kind: changeset, parents: [], \
              author: {{ principal: \"principal:vector-author\", \
-             key: \"key:ed25519:vec0\" }}, \
+             key: \"{owner_key_id}\" }}, \
              timestamp: \"2026-08-02T00:00:00Z\", \
              intent: \"Genesis: two people, an edge, a document, a label\", \
              schema_context: \"{core_hash}\" }}"
         ),
         cs1_ops,
         &mut state,
+        &owner,
     )?;
 
     // --- cs2: update Ada, delete Grace. Its intent is the redaction
@@ -295,7 +308,7 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         &format!(
             "{{ kind: changeset, parents: [\"{}\"], \
              author: {{ principal: \"principal:vector-author\", \
-             key: \"key:ed25519:vec0\" }}, \
+             key: \"{owner_key_id}\" }}, \
              timestamp: \"2026-08-02T00:01:00Z\", \
              intent: \"Rename Ada; retire Grace\", \
              schema_context: \"{core_hash}\" }}",
@@ -303,6 +316,7 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         ),
         cs2_ops,
         &mut state,
+        &owner,
     )?;
 
     // --- cs3: three operations, the middle one elided in the vector ---
@@ -328,7 +342,7 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         &format!(
             "{{ kind: changeset, parents: [\"{}\"], \
              author: {{ principal: \"principal:vector-author\", \
-             key: \"key:ed25519:vec0\" }}, \
+             key: \"{owner_key_id}\" }}, \
              timestamp: \"2026-08-02T00:02:00Z\", \
              intent: \"A note about Ada, labeled\", \
              schema_context: \"{core_hash}\" }}",
@@ -336,6 +350,7 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         ),
         cs3_ops,
         &mut state,
+        &owner,
     )?;
 
     // --- elision (§3.2.6): disclose ops 0 and 2, elide op 1, verify
@@ -362,6 +377,129 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
     let (redacted_hash, _, _) = changeset_hash_from_leaves(&cs2_redacted, &cs2_leaves)?;
     if redacted_hash != cs2.hash {
         return Err("redacted hash does not reproduce".into());
+    }
+
+    // --- governance audit pair (Appendix H): one passing, one
+    // failing audit of the same proposal under memory-local ---
+    let loaded = allod_core::load_dir(ontologies_dir);
+    let reg = loaded.registry;
+    let mut policy: Value = serde_yaml::from_str(
+        &std::fs::read_to_string(ontologies_dir.join("memory/policy-local.yaml"))
+            .map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    if let Some(roles) = policy.get_mut("roles").and_then(Value::as_mapping_mut) {
+        roles.insert(
+            Value::String("owner".into()),
+            Value::Sequence(vec![Value::String("principal:vector-owner".into())]),
+        );
+    }
+    let pctx = allod_core::policy::policy_context(&policy)?;
+    let agent = Keypair::from_secret_hex("vector-agent", AGENT_SECRET)?;
+
+    let key_yaml = |kp: &Keypair| {
+        format!(
+            "{{ key_id: \"{}\", algorithm: \"ed25519\", public: \"{}\", status: \"active\" }}",
+            kp.key_id(),
+            kp.public_hex()
+        )
+    };
+    let g1 = yaml(&format!(
+        "{{ kind: changeset, parents: [], author: {{ principal: \"principal:vector-owner\", \
+         key: \"{}\" }}, timestamp: \"2026-08-02T01:00:00Z\", \
+         intent: \"Governance vectors: genesis\", schema_context: \"{core_hash}\", \
+         operations: [ {{ create: {{ kind: node, \
+         id: \"00000000-0000-4000-8000-000000000010\", type: \"core/User@1\", \
+         attributes: {{ display_name: \"vector-owner\", status: \"active\", \
+         keys: [ {} ] }} }} }} ] }}",
+        owner.key_id(),
+        key_yaml(&owner)
+    ));
+    let (g1_hash, _, _, _) = changeset_hash(&g1)?;
+    let mut g1 = g1;
+    if let Some(m) = g1.as_mapping_mut() {
+        m.insert(Value::String("hash".into()), Value::String(g1_hash.clone()));
+        m.insert(Value::String("signature".into()), Value::String(owner.sign(&g1_hash)));
+    }
+    let g2 = yaml(&format!(
+        "{{ kind: changeset, parents: [\"{g1_hash}\"], author: {{ \
+         principal: \"principal:vector-owner\", key: \"{}\" }}, \
+         timestamp: \"2026-08-02T01:01:00Z\", \
+         intent: \"Governance vectors: register agent\", schema_context: \"{core_hash}\", \
+         operations: [ {{ create: {{ kind: node, \
+         id: \"00000000-0000-4000-8000-000000000011\", type: \"core/Agent@1\", \
+         attributes: {{ display_name: \"vector-agent\", status: \"active\", \
+         keys: [ {} ], \
+         delegated_by: \"node:00000000-0000-4000-8000-000000000010\" }} }} }} ] }}",
+        owner.key_id(),
+        key_yaml(&agent)
+    ));
+    let (g2_hash, _, _, _) = changeset_hash(&g2)?;
+    let mut g2 = g2;
+    if let Some(m) = g2.as_mapping_mut() {
+        m.insert(Value::String("hash".into()), Value::String(g2_hash.clone()));
+        m.insert(Value::String("signature".into()), Value::String(owner.sign(&g2_hash)));
+    }
+    let mut audit_state = FoldState::default();
+    audit_state.apply_changeset(&reg, &g1)?;
+    audit_state.apply_changeset(&reg, &g2)?;
+
+    let proposal = yaml(&format!(
+        "{{ kind: changeset, parents: [\"{g2_hash}\"], author: {{ \
+         principal: \"principal:vector-agent\", key: \"{}\" }}, \
+         timestamp: \"2026-08-02T01:02:00Z\", \
+         intent: \"Governance vectors: agent write needing owner review\", \
+         schema_context: \"{core_hash}\", operations: [ \
+         {{ create: {{ kind: node, id: \"00000000-0000-4000-8000-000000000012\", \
+         type: \"memory/Note@1\", attributes: {{ content: \"audited note\" }}, \
+         provenance: {{ derived_by: \"principal:vector-agent\", method: \"manual\" }} }} }}, \
+         {{ create: {{ kind: classification, \
+         id: \"00000000-0000-4000-8000-000000000013\", \
+         subject: \"node:00000000-0000-4000-8000-000000000012\", term: \"work@1\", \
+         asserted_by: \"principal:vector-agent\", basis: \"manual\" }} }} ] }}",
+        agent.key_id()
+    ));
+    let (p_hash, _, _, _) = changeset_hash(&proposal)?;
+    let mut proposal = proposal;
+    if let Some(m) = proposal.as_mapping_mut() {
+        m.insert(Value::String("hash".into()), Value::String(p_hash.clone()));
+        m.insert(Value::String("signature".into()), Value::String(agent.sign(&p_hash)));
+    }
+    let checklist =
+        allod_core::policy::evaluate(&reg, &policy, &audit_state, &proposal, "agent")?;
+    let decision = |signer: &Keypair, principal: &str| -> Result<Value, String> {
+        let mut record = yaml(&format!(
+            "{{ kind: decision-record, subject: \"{p_hash}\", policy_context: \"{pctx}\", \
+             verdict: approve, timestamp: \"2026-08-02T01:03:00Z\" }}"
+        ));
+        let payload = allod_core::policy::decision_payload(&record)?;
+        if let Some(m) = record.as_mapping_mut() {
+            m.insert(
+                Value::String("deciders".into()),
+                yaml(&format!(
+                    "[ {{ principal: \"{principal}\", signature: \"{}\" }} ]",
+                    signer.sign(&payload)
+                )),
+            );
+        }
+        Ok(record)
+    };
+    let good = decision(&owner, "principal:vector-owner")?;
+    let bad = decision(&agent, "principal:vector-agent")?;
+    let roots = vec!["principal:vector-owner".to_string()];
+    let pass = allod_core::policy::check_satisfied(
+        &audit_state, &policy, &roots, &proposal, "principal:vector-agent", &checklist,
+        &[good.clone()], &[],
+    )?;
+    if !pass.unmet.is_empty() {
+        return Err(format!("governance passing vector fails: {:?}", pass.unmet));
+    }
+    let fail = allod_core::policy::check_satisfied(
+        &audit_state, &policy, &roots, &proposal, "principal:vector-agent", &checklist,
+        &[bad.clone()], &[],
+    )?;
+    if fail.unmet.is_empty() {
+        return Err("governance failing vector unexpectedly passes".into());
     }
 
     // --- write the files ---
@@ -429,6 +567,33 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         cs2.hash
     ));
     vectors.insert(Value::String("redaction".into()), redaction);
+
+    let mut signing = Mapping::new();
+    signing.insert(Value::String("note".into()), Value::String(
+        "RFC 8032 test keys; deterministic, never for real graphs".into()));
+    signing.insert(Value::String("owner_secret_hex".into()), Value::String(OWNER_SECRET.into()));
+    signing.insert(Value::String("owner_public_hex".into()), Value::String(owner.public_hex()));
+    signing.insert(Value::String("owner_key_id".into()), Value::String(owner.key_id()));
+    signing.insert(Value::String("agent_secret_hex".into()), Value::String(AGENT_SECRET.into()));
+    signing.insert(Value::String("agent_public_hex".into()), Value::String(agent.public_hex()));
+    vectors.insert(Value::String("signing".into()), Value::Mapping(signing));
+
+    let mut governance = Mapping::new();
+    governance.insert(Value::String("policy_context".into()), Value::String(pctx));
+    governance.insert(Value::String("setup".into()), Value::Sequence(vec![g1, g2]));
+    governance.insert(Value::String("proposal".into()), proposal);
+    let mut passing = Mapping::new();
+    passing.insert(Value::String("decision".into()), good);
+    passing.insert(Value::String("result".into()), Value::String("verified".into()));
+    governance.insert(Value::String("passing".into()), Value::Mapping(passing));
+    let mut failing = Mapping::new();
+    failing.insert(Value::String("decision".into()), bad);
+    failing.insert(
+        Value::String("result".into()),
+        Value::Sequence(fail.unmet.into_iter().map(Value::String).collect()),
+    );
+    governance.insert(Value::String("failing".into()), Value::Mapping(failing));
+    vectors.insert(Value::String("governance".into()), Value::Mapping(governance));
 
     let mut doc_map = Mapping::new();
     doc_map.insert(
