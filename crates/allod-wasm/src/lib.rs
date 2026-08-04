@@ -364,6 +364,99 @@ impl AllodGraph {
         }
     }
 
+    /// Return `{ classifications, edges_out, edges_in }` for the node with the
+    /// given bare UUID. Walks the fold state to collect:
+    ///   - `classifications`: all live classification objects whose `subject == "node:<id>"`
+    ///   - `edges_out`: all live edge objects whose `from == "node:<id>"`
+    ///   - `edges_in`:  all live edge objects whose `to   == "node:<id>"`
+    ///
+    /// Returns `null` if the node is not live in fold state.
+    pub fn entity_context(&self, node_id: String) -> Result<JsValue, JsValue> {
+        let state = self.graph.fold().map_err(err)?;
+        let node_ref = format!("node:{node_id}");
+
+        // Verify the node exists and is live
+        if state.get_live("node", &node_id).is_none() {
+            return Ok(JsValue::NULL);
+        }
+
+        let mut classifications: Vec<serde_yaml::Value> = Vec::new();
+        let mut edges_out: Vec<serde_yaml::Value> = Vec::new();
+        let mut edges_in: Vec<serde_yaml::Value> = Vec::new();
+
+        for ((kind, id), obj) in &state.objects {
+            if obj.deleted {
+                continue;
+            }
+            match kind.as_str() {
+                "classification" => {
+                    let subject = obj.content.get("subject")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if subject == node_ref {
+                        let mut entry = serde_yaml::Mapping::new();
+                        for field in ["term", "asserted_by", "basis"] {
+                            if let Some(v) = obj.content.get(field) {
+                                entry.insert(
+                                    serde_yaml::Value::String(field.to_string()),
+                                    v.clone(),
+                                );
+                            }
+                        }
+                        classifications.push(serde_yaml::Value::Mapping(entry));
+                    }
+                }
+                "edge" => {
+                    let from = obj.content.get("from")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let to = obj.content.get("to")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let etype = obj.content.get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let attrs = obj.content.get("attributes")
+                        .cloned()
+                        .unwrap_or(serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+
+                    if from == node_ref {
+                        let mut entry = serde_yaml::Mapping::new();
+                        entry.insert(serde_yaml::Value::String("id".into()), serde_yaml::Value::String(id.clone()));
+                        entry.insert(serde_yaml::Value::String("type".into()), serde_yaml::Value::String(etype.to_string()));
+                        entry.insert(serde_yaml::Value::String("to".into()), serde_yaml::Value::String(to.to_string()));
+                        entry.insert(serde_yaml::Value::String("attributes".into()), attrs.clone());
+                        edges_out.push(serde_yaml::Value::Mapping(entry));
+                    }
+                    if to == node_ref {
+                        let mut entry = serde_yaml::Mapping::new();
+                        entry.insert(serde_yaml::Value::String("id".into()), serde_yaml::Value::String(id.clone()));
+                        entry.insert(serde_yaml::Value::String("type".into()), serde_yaml::Value::String(etype.to_string()));
+                        entry.insert(serde_yaml::Value::String("from".into()), serde_yaml::Value::String(from.to_string()));
+                        entry.insert(serde_yaml::Value::String("attributes".into()), attrs);
+                        edges_in.push(serde_yaml::Value::Mapping(entry));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut result = serde_yaml::Mapping::new();
+        result.insert(
+            serde_yaml::Value::String("classifications".into()),
+            serde_yaml::Value::Sequence(classifications),
+        );
+        result.insert(
+            serde_yaml::Value::String("edges_out".into()),
+            serde_yaml::Value::Sequence(edges_out),
+        );
+        result.insert(
+            serde_yaml::Value::String("edges_in".into()),
+            serde_yaml::Value::Sequence(edges_in),
+        );
+        yaml_to_js(&serde_yaml::Value::Mapping(result))
+    }
+
     /// Re-evaluate the admission policy for the proposal identified by `hash`
     /// and return the matched rule names from the checklist. Returns an empty
     /// array if the proposal does not exist or policy evaluation fails.

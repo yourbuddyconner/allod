@@ -201,3 +201,80 @@ test("object_get returns content+rev+deleted for a live node, null for unknown",
   const missing = g.object_get("node", "00000000-0000-0000-0000-000000000000");
   expect(missing).toBeNull();
 });
+
+test("entity_context returns classifications and edges for a node", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "allod-wasm-entity-ctx-"));
+  const backend = fsBackend(dir);
+  const g = new AllodGraph([], backend.persist);
+
+  await g.init("conner", "memory");
+  await g.principal_add("jarvis", "agent", "conner");
+
+  // Create two nodes (scratch notes are admitted immediately)
+  const noteAId = uuid4();
+  const noteBId = uuid4();
+  const clsIdA = uuid4();
+  const edgeId = uuid4();
+  const clsIdEdge = uuid4();
+
+  // Create noteA with scratch classification
+  const r1 = await g.commit("jarvis", "Scratch note A", [
+    { create: { kind: "node", id: noteAId, type: "memory/Note@1", attributes: { content: "note A" } } },
+    { create: { kind: "classification", id: clsIdA, subject: `node:${noteAId}`, term: "workspace/scratch@1", asserted_by: "principal:jarvis", basis: "model-assisted" } },
+  ], []);
+  expect(r1.Admitted).toBeDefined();
+
+  // Create noteB with scratch classification
+  const clsIdB = uuid4();
+  const r2 = await g.commit("jarvis", "Scratch note B", [
+    { create: { kind: "node", id: noteBId, type: "memory/Note@1", attributes: { content: "note B" } } },
+    { create: { kind: "classification", id: clsIdB, subject: `node:${noteBId}`, term: "workspace/scratch@1", asserted_by: "principal:jarvis", basis: "model-assisted" } },
+  ], []);
+  expect(r2.Admitted).toBeDefined();
+
+  // Create an edge from noteA to noteB with scratch classification on the edge changeset
+  const r3 = await g.commit("jarvis", "Relate memory/relates_to@1", [
+    { create: { kind: "edge", id: edgeId, type: "memory/relates_to@1", from: `node:${noteAId}`, to: `node:${noteBId}`, attributes: {} } },
+    { create: { kind: "classification", id: clsIdEdge, subject: `node:${noteAId}`, term: "workspace/scratch@1", asserted_by: "principal:jarvis", basis: "model-assisted" } },
+  ], []);
+  // relate changeset may be Admitted or Held depending on policy; just check it doesn't error
+  expect(r3.Admitted !== undefined || r3.Held !== undefined).toBe(true);
+
+  // entity_context for noteA
+  const ctx = g.entity_context(noteAId) as {
+    classifications: Array<{ term: string; asserted_by: string; basis: string }>;
+    edges_out: Array<{ id: string; type: string; to: string; attributes: Record<string, unknown> }>;
+    edges_in: Array<{ id: string; type: string; from: string; attributes: Record<string, unknown> }>;
+  } | null;
+
+  expect(ctx).not.toBeNull();
+  // classifications: workspace/scratch@1 was asserted on noteA
+  expect(Array.isArray(ctx!.classifications)).toBe(true);
+  expect(ctx!.classifications.length).toBeGreaterThan(0);
+  const cls = ctx!.classifications.find((c) => c.term === "workspace/scratch@1");
+  expect(cls).toBeDefined();
+  expect(cls!.asserted_by).toBe("principal:jarvis");
+  expect(cls!.basis).toBe("model-assisted");
+
+  // edges_out: the edge from noteA to noteB (only if r3 was admitted)
+  if (r3.Admitted) {
+    expect(Array.isArray(ctx!.edges_out)).toBe(true);
+    expect(ctx!.edges_out.length).toBeGreaterThan(0);
+    const edge = ctx!.edges_out.find((e) => e.id === edgeId);
+    expect(edge).toBeDefined();
+    expect(edge!.type).toBe("memory/relates_to@1");
+    expect(edge!.to).toBe(`node:${noteBId}`);
+
+    // entity_context for noteB should have edges_in
+    const ctxB = g.entity_context(noteBId) as typeof ctx;
+    expect(ctxB).not.toBeNull();
+    expect(Array.isArray(ctxB!.edges_in)).toBe(true);
+    expect(ctxB!.edges_in.length).toBeGreaterThan(0);
+    const edgeIn = ctxB!.edges_in.find((e) => e.id === edgeId);
+    expect(edgeIn).toBeDefined();
+    expect(edgeIn!.from).toBe(`node:${noteAId}`);
+  }
+
+  // unknown node returns null
+  expect(g.entity_context("00000000-0000-0000-0000-000000000000")).toBeNull();
+});
