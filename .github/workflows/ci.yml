@@ -19,3 +19,42 @@ jobs:
         run: |
           cargo run -p allod-vectors -- generate /tmp/vectors ontologies
           diff -r /tmp/vectors spec/vectors --exclude=README.md
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: crates/allod-wasm/pnpm-lock.yaml
+
+      - name: Install JS dependencies
+        working-directory: crates/allod-wasm
+        run: pnpm install --frozen-lockfile
+
+      - name: Build allod binary (for interop tests)
+        run: cargo build -p allod --release
+
+      - name: Build WASM package
+        working-directory: crates/allod-wasm
+        run: pnpm run build
+
+      - name: TypeScript tests (memory-flow + interop)
+        working-directory: crates/allod-wasm
+        env:
+          ALLOD_BIN: ${{ github.workspace }}/target/release/allod
+        run: pnpm test
