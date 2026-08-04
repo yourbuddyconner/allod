@@ -12,6 +12,10 @@ pub enum AllodError {
     UnknownPrincipal(String),
     #[error("not found: {0}")]
     NotFound(String),
+    #[error("proposal not found: {0}")]
+    ProposalNotFound(String),
+    #[error("already decided: {0}")]
+    AlreadyDecided(String),
     #[error("storage: {0}")]
     Storage(String),
     #[error("{0}")]

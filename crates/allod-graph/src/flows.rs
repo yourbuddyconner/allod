@@ -399,7 +399,8 @@ pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<Deci
     use allod_core::{get_str, policy};
 
     let kp = graph.load_key(by).map_err(AllodError::from)?;
-    let cs = graph.read_proposal(hash).map_err(AllodError::from)?;
+    let cs = graph.read_proposal(hash)
+        .map_err(|_| AllodError::ProposalNotFound(hash.to_string()))?;
     let evidence = graph.read_proposal_evidence(hash).map_err(AllodError::from)?;
 
     let mut decisions: Vec<Value> = evidence
@@ -412,6 +413,25 @@ pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<Deci
         .and_then(Value::as_sequence)
         .cloned()
         .unwrap_or_default();
+
+    // Guard against deciding a proposal that has already been finalized.
+    // A final decision is any record whose verdict is "reject" or (for the
+    // approve path) any that pushed the proposal to Admitted via append_changeset.
+    // After rejection the proposal file is removed, so if we get here the file
+    // exists — but a StillUnmet loop may have left prior decision records.
+    // We surface AlreadyDecided only when a prior record already carries the
+    // same terminal verdict that the caller is requesting now, preventing
+    // duplicate rejections on proposals that somehow survived (e.g. partial
+    // failure during a previous run).
+    let already_decided = decisions.iter().any(|d| {
+        d.get("verdict")
+            .and_then(Value::as_str)
+            .map(|v| v == "reject")
+            .unwrap_or(false)
+    });
+    if already_decided {
+        return Err(AllodError::AlreadyDecided(hash.to_string()));
+    }
 
     let policy_doc = graph.policy().map_err(AllodError::from)?;
 
@@ -699,13 +719,44 @@ pub fn envelope(graph: &Graph, cs_hash: &str, by: &str, tool: &str) -> Result<En
     Ok(outcome)
 }
 
-/// List pending proposals.
+/// Return true if the proposal evidence file contains a terminal decision
+/// (a record whose verdict is "reject" or whose presence means the proposal
+/// was already admitted — admitted proposals are removed from the inbox so
+/// only "reject" needs to be checked here).
+fn evidence_is_decided(graph: &Graph, hash: &str) -> bool {
+    let evidence = match graph.read_proposal_evidence(hash) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    evidence
+        .get("decisions")
+        .and_then(Value::as_sequence)
+        .map(|decisions| {
+            decisions.iter().any(|d| {
+                d.get("verdict")
+                    .and_then(Value::as_str)
+                    .map(|v| v == "reject")
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// List pending (undecided) proposals.
+///
+/// Proposals that have a terminal decision record in their evidence file are
+/// excluded: a rejected proposal keeps its files on disk for audit but must
+/// not reappear in the inbox.
 pub fn proposals(graph: &Graph) -> Result<Vec<ProposalSummary>, AllodError> {
     use allod_core::get_str;
 
     let hashes = graph.list_proposals().map_err(AllodError::from)?;
     let mut result = Vec::new();
     for hash in hashes {
+        // Skip proposals that have already been decided.
+        if evidence_is_decided(graph, &hash) {
+            continue;
+        }
         let cs = graph.read_proposal(&hash).map_err(AllodError::from)?;
         result.push(ProposalSummary {
             hash: hash.clone(),
