@@ -54,7 +54,7 @@ fn state_returns_nodes_and_hash() {
 
 #[test]
 fn verify_full_jarvis_flow() {
-    use allod_graph::flows::{LevelResult, VerifyReport};
+    use allod_graph::flows::LevelResult;
     let graph = common::init_memory_graph();
     flows::principal_add(&graph, "agent", "agent", "o").unwrap();
     let note_r = flows::note(&graph, "agent", "some content").unwrap();
@@ -82,42 +82,46 @@ fn verify_full_jarvis_flow() {
 #[test]
 fn verify_governance_failure_has_real_reason() {
     use allod_graph::flows::LevelResult;
-    let graph = common::init_memory_graph();
 
-    // Add a valid agent and create a changeset
+    // Build the full jarvis flow to get an admitted preference changeset.
+    let graph = common::init_memory_graph();
     flows::principal_add(&graph, "agent", "agent", "o").unwrap();
     let note_r = flows::note(&graph, "agent", "test content").unwrap();
+    let prop = flows::propose_preference(&graph, "agent", "prefer foo", "soft", Some(&note_r.note_id)).unwrap();
+    flows::decide(&graph, &prop.hash, "o", "approve").unwrap();
 
-    // Manually corrupt the chain: insert a changeset with an unknown author
-    // (The easiest way to trigger a governance failure without modifying the actual chain
-    // is to add a principal that will be removed later, but that's complex.
-    // Instead, we can rely on the structure: after normal operations succeed,
-    // we know governance passes. The regression test here is to verify that IF
-    // a governance failure occurs, the VerifyReport contains the real reason,
-    // not the "not reached" sentinel.)
-    //
-    // For now, verify the happy path records non-sentinel reasons everywhere.
-    let report = flows::verify(&graph).expect("verify");
+    // Find the preference changeset hash (the most recently admitted, non-genesis one
+    // that would be held under normal policy — it was admitted by a decision record).
+    let chain = graph.chain().expect("chain");
+    let pref_cs_hash = allod_core::get_str(chain.last().unwrap(), "hash")
+        .unwrap()
+        .to_string();
 
-    for cs_entry in &report.changesets {
-        // governance should never be Failed("not reached") — if Failed, it must have real reason
-        if let LevelResult::Failed(ref reason) = cs_entry.governance {
+    // Overwrite that changeset's evidence with an empty decisions/envelopes doc.
+    // This makes verify re-evaluate governance and find the requirements unmet.
+    let empty_evidence: serde_yaml::Value = serde_yaml::from_str(
+        "decisions: []\nenvelopes: []\n"
+    ).unwrap();
+    graph.write_evidence(&pref_cs_hash, &empty_evidence).expect("write_evidence");
+
+    // Verify: governance for the corrupted changeset must fail with a real reason.
+    let report = flows::verify(&graph).expect("verify returns a report even on failure");
+    assert!(!report.ok, "verify must not be ok after evidence erasure");
+
+    let failed_entry = report.changesets.iter()
+        .find(|cs| cs.hash == pref_cs_hash)
+        .expect("corrupted changeset appears in report");
+    match &failed_entry.governance {
+        LevelResult::Failed(reason) => {
             assert_ne!(reason, "not reached",
-                "governance failure should contain real reason, not sentinel, for changeset {}",
-                cs_entry.hash);
+                "governance failure must contain real reason, not sentinel");
+            // The reason must name the unmet requirement(s).
+            assert!(
+                reason.contains("governance FAILS") || reason.contains("unmet"),
+                "reason should name the unmet requirement, got: {reason}"
+            );
         }
-        // Same for integrity and authorship: if Failed, check they're not sentinels
-        // (though the CLI precedence fix ensures governance is checked first)
-        if let LevelResult::Failed(ref reason) = cs_entry.integrity {
-            assert_ne!(reason, "not reached",
-                "integrity failure should contain real reason, not sentinel, for changeset {}",
-                cs_entry.hash);
-        }
-        if let LevelResult::Failed(ref reason) = cs_entry.authorship {
-            assert_ne!(reason, "not reached",
-                "authorship failure should contain real reason, not sentinel, for changeset {}",
-                cs_entry.hash);
-        }
+        other => panic!("expected governance Failed, got {:?}", std::mem::discriminant(other)),
     }
 }
 
@@ -153,9 +157,10 @@ fn envelope_verified_with_trusted_measurement() {
 }
 
 #[test]
-fn envelope_degraded_no_evidence() {
-    // "evidence_type: none" produces Degraded (not a failure, just no evidence of code identity)
-    use allod_graph::flows::EnvelopeOutcome;
+fn envelope_err_untrusted_measurement() {
+    // EnvelopeOutcome::Degraded is currently unreachable via flows::envelope (it always
+    // builds simulated evidence and errors on untrusted measurements rather than degrading).
+    // We test the untrusted-measurement error path here instead.
     // We can't exercise the "none" evidence_type path through the public flows::envelope API
     // (it always builds simulated evidence). But we can verify the policy directly,
     // and separately verify that an untrusted simulated measurement becomes Err.

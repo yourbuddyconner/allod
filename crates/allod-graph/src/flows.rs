@@ -421,6 +421,10 @@ pub fn classify(
 #[derive(Debug)]
 pub enum EnvelopeOutcome {
     Verified(String),
+    /// Returned when evidence is present but cannot be fully verified (e.g. a
+    /// `"none"` evidence_type). Currently unreachable via `flows::envelope`,
+    /// which always emits simulated evidence and errors on untrusted
+    /// measurements — parity with the old monolithic CLI behaviour.
     Degraded(String),
 }
 
@@ -474,6 +478,9 @@ pub struct CheckpointEntry {
     pub revision: String,
     pub signer: String,
     pub ok: bool,
+    /// Populated when `ok` is false; names the specific failure:
+    /// replay disagreement, bad signature, or unknown signer.
+    pub reason: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -849,17 +856,19 @@ pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
             && claimed != final_state_hash
         {
             ok = false;
+            let reason = format!("checkpoint at {} disagrees with replay", crate::ops::short(&revision));
             checkpoint_entries.push(CheckpointEntry {
                 revision,
                 signer,
                 ok: false,
+                reason: Some(reason),
             });
             continue;
         }
 
         // Compute checkpoint payload and verify signature
         let payload = checkpoint_payload(&cp)?;
-        let cp_ok = match state
+        let (cp_ok, cp_reason) = match state
             .public_key_of(&signer, "")
             .or_else(|| {
                 state.find_principal(&signer).and_then(|(_, obj)| {
@@ -871,8 +880,11 @@ pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
                         .find_map(|r| get_str(r, "public").map(String::from))
                 })
             }) {
-            Some(public) => allod_core::sign::verify(&public, &payload, &cp_signature).is_ok(),
-            None => false,
+            Some(public) => match allod_core::sign::verify(&public, &payload, &cp_signature) {
+                Ok(()) => (true, None),
+                Err(e) => (false, Some(format!("checkpoint signature: {e}"))),
+            },
+            None => (false, Some(format!("unknown signer {signer}"))),
         };
         if !cp_ok {
             ok = false;
@@ -881,6 +893,7 @@ pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
             revision,
             signer,
             ok: cp_ok,
+            reason: cp_reason,
         });
     }
 

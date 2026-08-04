@@ -1,4 +1,5 @@
 //! Test helpers: in-memory graph setup, no printing.
+#![allow(dead_code)]
 
 use allod_core::docstore::MemStore;
 use allod_core::store::Graph;
