@@ -267,6 +267,32 @@ fn checkpoint_records_state() {
 
 // ---- install_package ----
 
+/// Helper: return the op count of a changeset that is either admitted (in the log) or
+/// held (in proposals), identified by `hash`.
+fn op_count_for(graph: &allod_core::store::Graph, result: &Admission) -> usize {
+    use allod_core::get_str;
+    match result {
+        Admission::Admitted { hash, .. } => {
+            // Find the changeset in the log by hash.
+            let chain = graph.chain().expect("chain");
+            chain
+                .iter()
+                .find(|cs| get_str(cs, "hash") == Some(hash.as_str()))
+                .and_then(|cs| cs.get("operations").and_then(serde_yaml::Value::as_sequence))
+                .map(|ops| ops.len())
+                .unwrap_or(0)
+        }
+        Admission::Held { hash, .. } => {
+            // Find the changeset in proposals by hash.
+            let cs = graph.read_proposal(hash).expect("read_proposal");
+            cs.get("operations")
+                .and_then(serde_yaml::Value::as_sequence)
+                .map(|ops| ops.len())
+                .unwrap_or(0)
+        }
+    }
+}
+
 #[test]
 fn install_package_with_policy_emits_one_policy_op() {
     let graph = common::init_memory_graph();
@@ -287,26 +313,20 @@ fn install_package_with_policy_emits_one_policy_op() {
 
     let result = flows::install_package(&graph, &docs, Some(&policy), "o")
         .expect("install_package");
-    // Note: install_package calls ops::commit which applies policy governance
-    // Owner "o" is the principal who signed the changeset, governance approval is implicit
+    // Note: install_package calls ops::commit which applies policy governance.
+    // With a policy that requires set-policy approval, the changeset may be Held.
     let is_admitted = matches!(result, Admission::Admitted { .. });
     let is_held = matches!(result, Admission::Held { .. });
     assert!(is_admitted || is_held, "should be admitted or held, got {:?}", result);
 
-    // The new changeset should have one policy op
-    let log = flows::log(&graph).expect("log");
-    assert!(log.len() > initial_log.len(), "should have a new changeset in log");
-
-    // Policy ops are identified by metadata; we check that the changeset was created
-    // The op count includes at least the EntityType + Policy nodes
-    let latest_entry = &log[log.len() - 1];
-    assert!(latest_entry.op_count >= 2, "should have at least EntityType + Policy ops, got {}", latest_entry.op_count);
+    // Verify the changeset has at least EntityType + Policy ops regardless of hold/admit.
+    let count = op_count_for(&graph, &result);
+    assert!(count >= 2, "should have at least EntityType + Policy ops, got {count}");
 }
 
 #[test]
 fn install_package_without_policy_emits_no_policy_op() {
     let graph = common::init_memory_graph();
-    let initial_log = flows::log(&graph).expect("log");
 
     // Create a schema doc with one entity type
     let schema_doc = serde_yaml::from_str(
@@ -316,18 +336,61 @@ fn install_package_without_policy_emits_no_policy_op() {
 
     let result = flows::install_package(&graph, &docs, None, "o")
         .expect("install_package");
-    // Note: install_package calls ops::commit which applies policy governance
+    // Note: install_package calls ops::commit which applies policy governance.
     let is_admitted = matches!(result, Admission::Admitted { .. });
     let is_held = matches!(result, Admission::Held { .. });
     assert!(is_admitted || is_held, "should be admitted or held, got {:?}", result);
 
-    // The new changeset should have only the EntityType op (no policy)
-    // With policy=None, we should have exactly 1 op instead of 2
-    let log = flows::log(&graph).expect("log");
-    assert!(log.len() > initial_log.len(), "should have a new changeset in log");
+    // With policy=None, the changeset must have exactly one op (EntityType only, no Policy).
+    let count = op_count_for(&graph, &result);
+    assert_eq!(count, 1, "should have exactly one op (EntityType only, no Policy) when policy is None, got {count}");
+}
 
-    let latest_entry = &log[log.len() - 1];
-    assert_eq!(latest_entry.op_count, 1, "should have exactly one op (EntityType only, no Policy) when policy is None, got {}", latest_entry.op_count);
+// ---- install_package: policy deduplication ----
+
+/// When install_package is called with Some(policy) and a live meta/Policy node
+/// already exists, the function must rewrite the create op as an update op so
+/// the graph ends up with exactly one meta/Policy node instead of erroring.
+#[test]
+fn install_package_updates_existing_policy() {
+    let graph = common::init_memory_graph();
+
+    // After init, a meta/Policy node already exists (installed during genesis).
+    // Verify by checking that graph.policy() succeeds.
+    graph.policy().expect("genesis policy should exist");
+
+    // Build a minimal schema doc
+    let schema_doc: serde_yaml::Value = serde_yaml::from_str(
+        "ontology: test2\nentity_types:\n  AnotherType:\n    attributes:\n      label: {type: string}\n"
+    ).expect("schema doc");
+    let docs = vec![("test2".to_string(), schema_doc)];
+
+    // Get the original policy and tweak it slightly (add a comment-like field won't work in
+    // YAML Value, so just reuse the same policy — the important thing is it goes through
+    // the update path).
+    let original_policy = allod_graph::flows::profile_from_dir("memory", &schema_dir())
+        .expect("profile_from_dir")
+        .policy;
+
+    // This should NOT error with "create of existing object".
+    let result = flows::install_package(&graph, &docs, Some(&original_policy), "o")
+        .expect("install_package with existing policy should succeed via update op");
+
+    let is_admitted = matches!(result, Admission::Admitted { .. });
+    let is_held = matches!(result, Admission::Held { .. });
+    assert!(is_admitted || is_held, "should be admitted or held, got {:?}", result);
+
+    // The changeset must contain the expected ops (at least EntityType + updated Policy).
+    let count = op_count_for(&graph, &result);
+    assert!(count >= 2, "should have at least EntityType + Policy update ops, got {count}");
+
+    // If admitted, the graph state must reflect exactly one meta/Policy node.
+    // If held (proposal queue), the state is unchanged from genesis — policy still exists.
+    // Either way, graph.policy() must succeed (no "multiple meta/Policy" error).
+    graph.policy().expect("exactly one meta/Policy node should exist");
+
+    // Registry must also load cleanly (would error if multiple-policy collision).
+    graph.registry().expect("registry should load without multiple-policy error");
 }
 
 // ---- genesis sentinel contract ----

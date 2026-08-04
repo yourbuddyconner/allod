@@ -156,8 +156,11 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
 /// `deprecate-term` selectors (§3.2.2 sugar mapping in `policy::op_contexts`).
 ///
 /// Policy contract:
-/// - If `policy` is `Some(p)`, exactly one `meta/Policy@1` node is created with
-///   that policy definition.
+/// - If `policy` is `Some(p)` and **no** live `meta/Policy` node exists yet, exactly
+///   one `meta/Policy@1` node is created with that policy definition.
+/// - If `policy` is `Some(p)` and a live `meta/Policy` node **already exists**, the
+///   create op is automatically rewritten as an update op so the graph carries exactly
+///   one policy node at all times (deduplication by prior-revision chain).
 /// - If `policy` is `None`, **no** policy node is emitted — only the docs are
 ///   compiled. This preserves the existing policy in the graph; a policy update
 ///   must be explicit via `Some(policy)`.
@@ -169,13 +172,74 @@ pub fn install_package(
     policy: Option<&Value>,
     by: &str,
 ) -> Result<Admission, AllodError> {
-    use allod_core::schemaops::compile_schema_ops;
+    use allod_core::{bare, schemaops::compile_schema_ops};
 
     // Compile docs only, with optional policy override.
     // If policy is None, no policy node is emitted.
     let mut mint_id = crate::ops::uuid4;
-    let schema_ops = compile_schema_ops(docs, policy, &mut mint_id)
+    let mut schema_ops = compile_schema_ops(docs, policy, &mut mint_id)
         .map_err(AllodError::from)?;
+
+    // Dedup: if a live meta/Policy node already exists in the graph and we just
+    // compiled a new policy create op, replace that create op with an update op
+    // so fold() does not reject with "create of existing object".
+    if policy.is_some() {
+        let state = graph.fold().map_err(AllodError::from)?;
+        // Find the existing live meta/Policy node (id + rev).
+        let existing_policy = state.objects.iter().find(|((kind, _), obj)| {
+            if kind != "node" || obj.deleted {
+                return false;
+            }
+            let type_ref = match allod_core::get_str(&obj.content, "type") {
+                Some(t) => t,
+                None => return false,
+            };
+            bare(type_ref) == "meta/Policy"
+        });
+
+        if let Some(((_, existing_id), existing_obj)) = existing_policy {
+            let existing_rev = existing_obj.rev.clone();
+            // Find the policy create op in schema_ops and replace it with an update op.
+            for op in &mut schema_ops {
+                let is_policy_create = op
+                    .get("create")
+                    .and_then(|p| allod_core::get_str(p, "type"))
+                    .map(|t| bare(t) == "meta/Policy")
+                    .unwrap_or(false);
+                if !is_policy_create {
+                    continue;
+                }
+                // Extract the create payload.
+                let create_payload = match op.get("create").cloned() {
+                    Some(p) => p,
+                    None => continue,
+                };
+                // Build the update payload: same as create payload but with the
+                // existing node's id and a "prior" field.
+                let mut update_payload = create_payload.clone();
+                if let Some(m) = update_payload.as_mapping_mut() {
+                    // Reuse the existing node's id so the update targets the right object.
+                    m.insert(
+                        Value::String("id".into()),
+                        Value::String(existing_id.clone()),
+                    );
+                    // Add "prior" = current rev so fold()'s prior-revision check passes.
+                    m.insert(
+                        Value::String("prior".into()),
+                        Value::String(existing_rev.clone()),
+                    );
+                }
+                // Replace {"create": payload} with {"update": payload}.
+                let mut new_op = serde_yaml::Mapping::new();
+                new_op.insert(
+                    Value::String("update".into()),
+                    update_payload,
+                );
+                *op = Value::Mapping(new_op);
+                break;
+            }
+        }
+    }
 
     crate::ops::commit(
         graph,
