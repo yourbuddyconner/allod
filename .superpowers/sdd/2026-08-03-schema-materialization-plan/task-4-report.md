@@ -70,3 +70,47 @@ Two review findings were addressed:
 - `cargo test --workspace`: **89 tests pass, zero failures, zero warnings**.
 - All existing tests (including the 3 schema_state_hash TDD tests) pass without hash divergence.
 - Appendix H vector compatibility maintained (hashes identical before and after refactor).
+
+---
+
+## Structural Regression Fix (2026-08-03)
+
+**Issue:** After Fix 2, `crates/allod-core/src/model.rs` duplicated:
+1. State leaf hashing (`sha256_hex("state-leaf", ...)`) in TWO places:
+   - `state_root_filtered` (~line 100)
+   - `schema_state_hash` (inline, ~line 129)
+2. Entry-Value construction from `State.objects`, duplicating logic `State::entries()` owns in `crates/allod-core/src/fold.rs`
+
+**Requirements:**
+- Single site for leaf construction
+- Single site for entry construction
+- All hash-pinning tests must pass UNCHANGED
+
+**Solution:**
+
+### `crates/allod-core/src/fold.rs`
+
+Added `State::entries_filtered(&self, filter: impl Fn(&str, &Obj) -> bool) -> Vec<Value>`:
+- Extracts entry-Value construction (already owned by `entries()`)
+- Filters on `(kind, obj)` tuples
+- `entries()` now delegates: `entries_filtered(|_, _| true)`
+- Single entry-construction site; `entries()` calls `entries_filtered`
+
+### `crates/allod-core/src/model.rs`
+
+Refactored `schema_state_hash(state)`:
+- Calls `state.entries_filtered(|kind, obj| kind == "node" && get_str(...).is_some_and(|t| is_meta_type(bare(t))))`
+- Returns Err if entries is empty
+- Delegates to `state_root(&entries)` for leaf hashing
+- Deleted `state_root_filtered()` entirely
+- `state_root()` is now the single leaf-hashing site
+
+Updated `state_root()` doc comment: "This is the single site for leaf hashing."
+
+### Test Results
+
+- `cargo test --workspace`: **57 tests pass, zero failures, zero warnings**
+  - All 24 allod-core unit tests pass (including 3 hash-pinning tests)
+  - All allod/allod-graph integration tests pass
+  - Hash values identical to pre-fix state — vector compatibility maintained
+- Commit: `10bc80c` "Consolidate state leaf hashing and entry construction"

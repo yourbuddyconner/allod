@@ -52,6 +52,40 @@ struct OpContext {
     /// Ancestor-closed region set (§4.1 timing rule).
     regions: BTreeSet<String>,
     payload: Value,
+    /// Sugar-verb labels derived from the meta type of this op (§3.2.2).
+    ///
+    /// `compile_schema_ops` always emits `create`/`update` verbs; policy
+    /// rules written with `operation: define-type` (etc.) match via this
+    /// mapping so that ontologies/*/policy-*.yaml files need no changes.
+    ///
+    /// Mapping (applied at selector-match time, not at op-emit time):
+    /// - `meta/EntityType`, `meta/EdgeType`, `meta/Struct` → `"define-type"`
+    /// - `meta/Policy`                                     → `"set-policy"`
+    /// - `meta/TaxonomyTerm` with `status == "deprecated"` → `"deprecate-term"`
+    sugar_verbs: Vec<&'static str>,
+}
+
+/// Compute the sugar-verb labels that apply to an op targeting a meta-typed node.
+///
+/// These labels allow policy rules with `operation: define-type` (etc.) to match
+/// `create`/`update` ops on meta nodes without changing the ontologies/ YAML files.
+fn meta_sugar_verbs(bare_type: &str, payload: &Value) -> Vec<&'static str> {
+    match bare_type {
+        "meta/EntityType" | "meta/EdgeType" | "meta/Struct" => vec!["define-type"],
+        "meta/Policy" => vec!["set-policy"],
+        "meta/TaxonomyTerm" => {
+            // Only match deprecate-term when the status attribute is "deprecated".
+            let status = payload
+                .get("attributes")
+                .and_then(|a| get_str(a, "status"));
+            if status == Some("deprecated") {
+                vec!["deprecate-term"]
+            } else {
+                vec![]
+            }
+        }
+        _ => vec![],
+    }
 }
 
 fn op_contexts(reg: &Registry, parent: &State, cs: &Value) -> Result<Vec<OpContext>, String> {
@@ -118,6 +152,18 @@ fn op_contexts(reg: &Registry, parent: &State, cs: &Value) -> Result<Vec<OpConte
         for term in terms {
             regions.extend(reg.term_closure(&term));
         }
+        // Compute sugar-verb labels for meta-typed node ops.
+        let sugar_verbs = if (kind == "node") && !type_ref.is_empty() {
+            use crate::meta::is_meta_type;
+            if is_meta_type(&type_ref) {
+                meta_sugar_verbs(crate::bare(&type_ref), payload)
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
         contexts.push(OpContext {
             verb,
             kind,
@@ -126,6 +172,7 @@ fn op_contexts(reg: &Registry, parent: &State, cs: &Value) -> Result<Vec<OpConte
             imported,
             regions,
             payload: payload.clone(),
+            sugar_verbs,
         });
     }
     Ok(contexts)
@@ -171,7 +218,10 @@ fn selector_matches(reg: &Registry, sel: &Value, author_kind: &str, ctx: &OpCont
             Value::Sequence(seq) => seq.iter().filter_map(Value::as_str).collect(),
             other => other.as_str().into_iter().collect(),
         };
-        if !ops.contains(&ctx.verb.as_str()) {
+        // A raw verb match OR any sugar-verb label covers this op (§3.2.2).
+        let matched = ops.contains(&ctx.verb.as_str())
+            || ctx.sugar_verbs.iter().any(|sv| ops.contains(sv));
+        if !matched {
             return false;
         }
     }
@@ -489,4 +539,245 @@ pub fn check_satisfied_with(
     }
 
     Ok(Satisfaction { unmet, degraded })
+}
+
+// ─── tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fold::{Obj, State};
+    use crate::meta::meta_registry;
+    use crate::model::revision_hash;
+
+    fn s(v: &str) -> Value {
+        Value::String(v.to_string())
+    }
+
+    fn mk(pairs: &[(&str, Value)]) -> Value {
+        let mut m = serde_yaml::Mapping::new();
+        for (k, v) in pairs {
+            m.insert(s(k), v.clone());
+        }
+        Value::Mapping(m)
+    }
+
+    /// Build a minimal state with an owner principal so `find_principal` works.
+    fn state_with_owner() -> State {
+        let mut state = State::default();
+        let mut user_attrs = serde_yaml::Mapping::new();
+        user_attrs.insert(s("display_name"), s("owner"));
+        user_attrs.insert(s("keys"), Value::Sequence(vec![]));
+        user_attrs.insert(s("status"), s("active"));
+        let content = mk(&[
+            ("kind", s("node")),
+            ("id", s("user-owner")),
+            ("type", s("core/User@1")),
+            ("attributes", Value::Mapping(user_attrs)),
+        ]);
+        let rev = revision_hash(&content).unwrap();
+        state.objects.insert(
+            ("node".to_string(), "user-owner".to_string()),
+            Obj { content, rev, deleted: false, redacted: false },
+        );
+        state
+    }
+
+    /// Build a test policy doc with one rule keyed on `operation: [define-type]`.
+    fn policy_with_define_type_rule() -> Value {
+        serde_yaml::from_str(r#"
+policy: test-policy
+version: 1
+default_posture: permissive
+roles: {}
+rules:
+  - name: schema-changes-gated
+    select:
+      operation: [define-type, set-policy, deprecate-term]
+    require:
+      reviewers: { role: owner, quorum: 1 }
+"#).unwrap()
+    }
+
+    /// A create op for a meta/EntityType node.
+    fn entity_type_create_op() -> Value {
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(s("name"), s("Widget"));
+        attrs.insert(s("package"), s("myapp"));
+        attrs.insert(s("definition"), s("attributes: {}"));
+        mk(&[("create", mk(&[
+            ("kind", s("node")),
+            ("id", s("meta-widget-1")),
+            ("type", s("meta/EntityType@1")),
+            ("attributes", Value::Mapping(attrs)),
+        ]))])
+    }
+
+    /// A create op for a meta/Policy node.
+    fn policy_create_op() -> Value {
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(s("name"), s("my-policy"));
+        attrs.insert(s("definition"), s("{ default_posture: restricted, roles: {}, rules: [] }"));
+        mk(&[("create", mk(&[
+            ("kind", s("node")),
+            ("id", s("meta-policy-1")),
+            ("type", s("meta/Policy@1")),
+            ("attributes", Value::Mapping(attrs)),
+        ]))])
+    }
+
+    /// A create op for a meta/TaxonomyTerm node with status deprecated.
+    fn deprecated_term_create_op() -> Value {
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(s("name"), s("old/term"));
+        attrs.insert(s("taxonomy"), s("old"));
+        attrs.insert(s("parents"), Value::Sequence(vec![]));
+        attrs.insert(s("status"), s("deprecated"));
+        mk(&[("create", mk(&[
+            ("kind", s("node")),
+            ("id", s("meta-term-old")),
+            ("type", s("meta/TaxonomyTerm@1")),
+            ("attributes", Value::Mapping(attrs)),
+        ]))])
+    }
+
+    /// A create op for a non-meta node (should NOT match define-type).
+    fn user_create_op() -> Value {
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(s("display_name"), s("alice"));
+        attrs.insert(s("keys"), Value::Sequence(vec![]));
+        mk(&[("create", mk(&[
+            ("kind", s("node")),
+            ("id", s("user-alice")),
+            ("type", s("core/User@1")),
+            ("attributes", Value::Mapping(attrs)),
+        ]))])
+    }
+
+    fn raw_cs(ops: Vec<Value>) -> Value {
+        mk(&[
+            ("kind", s("changeset")),
+            ("parents", Value::Sequence(vec![])),
+            ("operations", Value::Sequence(ops)),
+        ])
+    }
+
+    // ── Tests for sugar-verb mapping (§3.2.2) ───────────────────────────────
+
+    /// A create op on meta/EntityType must match `operation: define-type`.
+    #[test]
+    fn entity_type_create_matches_define_type_selector() {
+        let reg = meta_registry();
+        let state = state_with_owner();
+        let policy = policy_with_define_type_rule();
+        let cs = raw_cs(vec![entity_type_create_op()]);
+
+        let checklist = evaluate(&reg, &policy, &state, &cs, "user").unwrap();
+        assert!(
+            checklist.matched_rules.contains("schema-changes-gated"),
+            "entity type create must match the define-type rule, matched: {:?}",
+            checklist.matched_rules
+        );
+    }
+
+    /// A create op on meta/Policy must match `operation: set-policy`.
+    #[test]
+    fn policy_create_matches_set_policy_selector() {
+        let reg = meta_registry();
+        let state = state_with_owner();
+        let policy = policy_with_define_type_rule();
+        let cs = raw_cs(vec![policy_create_op()]);
+
+        let checklist = evaluate(&reg, &policy, &state, &cs, "user").unwrap();
+        assert!(
+            checklist.matched_rules.contains("schema-changes-gated"),
+            "policy create must match the set-policy rule, matched: {:?}",
+            checklist.matched_rules
+        );
+    }
+
+    /// A create op on meta/TaxonomyTerm with status=deprecated must match `operation: deprecate-term`.
+    #[test]
+    fn deprecated_term_create_matches_deprecate_term_selector() {
+        let reg = meta_registry();
+        let state = state_with_owner();
+        let policy = policy_with_define_type_rule();
+        let cs = raw_cs(vec![deprecated_term_create_op()]);
+
+        let checklist = evaluate(&reg, &policy, &state, &cs, "user").unwrap();
+        assert!(
+            checklist.matched_rules.contains("schema-changes-gated"),
+            "deprecated term create must match the deprecate-term rule, matched: {:?}",
+            checklist.matched_rules
+        );
+    }
+
+    /// A create op for a non-meta type must NOT match `operation: define-type`.
+    #[test]
+    fn non_meta_create_does_not_match_define_type_selector() {
+        let reg = meta_registry();
+        let state = state_with_owner();
+        let policy = policy_with_define_type_rule();
+        let cs = raw_cs(vec![user_create_op()]);
+
+        let checklist = evaluate(&reg, &policy, &state, &cs, "user").unwrap();
+        assert!(
+            !checklist.matched_rules.contains("schema-changes-gated"),
+            "non-meta create must NOT match define-type rule, matched: {:?}",
+            checklist.matched_rules
+        );
+    }
+
+    /// A create on meta/TaxonomyTerm WITHOUT deprecated status must NOT match deprecate-term.
+    #[test]
+    fn active_term_create_does_not_match_deprecate_term() {
+        let reg = meta_registry();
+        let state = state_with_owner();
+        let policy = policy_with_define_type_rule();
+
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(s("name"), s("active/term"));
+        attrs.insert(s("taxonomy"), s("active"));
+        attrs.insert(s("parents"), Value::Sequence(vec![]));
+        // No status field — active is the default
+        let active_term_op = mk(&[("create", mk(&[
+            ("kind", s("node")),
+            ("id", s("meta-term-active")),
+            ("type", s("meta/TaxonomyTerm@1")),
+            ("attributes", Value::Mapping(attrs)),
+        ]))]);
+        let cs = raw_cs(vec![active_term_op]);
+
+        let checklist = evaluate(&reg, &policy, &state, &cs, "user").unwrap();
+        assert!(
+            !checklist.matched_rules.contains("schema-changes-gated"),
+            "active term create must NOT match deprecate-term rule, matched: {:?}",
+            checklist.matched_rules
+        );
+    }
+
+    /// A literal `operation: create` selector still matches a create verb directly.
+    #[test]
+    fn literal_create_verb_still_matches() {
+        let reg = meta_registry();
+        let state = state_with_owner();
+        let policy: Value = serde_yaml::from_str(r#"
+policy: test-policy
+version: 1
+default_posture: permissive
+roles: {}
+rules:
+  - name: any-create
+    select: { operation: create }
+    require: { schema_valid: true }
+"#).unwrap();
+        let cs = raw_cs(vec![user_create_op()]);
+
+        let checklist = evaluate(&reg, &policy, &state, &cs, "user").unwrap();
+        assert!(
+            checklist.matched_rules.contains("any-create"),
+            "literal create verb selector must still match, matched: {:?}",
+            checklist.matched_rules
+        );
+    }
 }

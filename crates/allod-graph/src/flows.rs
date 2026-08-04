@@ -92,21 +92,17 @@ pub fn profile_from_dir(profile: &str, schema_dir: &Path) -> Result<ProfileSourc
     })
 }
 
-/// Genesis: install schema + policy, create the owner principal, self-admit the first changeset.
+/// Genesis: compile schema into meta-node ops, create the owner principal, self-admit
+/// the first changeset. No schema directory is written; schema lives in the log.
 /// The Graph must be freshly created (Graph::create or Graph::with_store) before calling.
 pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<InitResult, AllodError> {
-    use allod_core::fold::State;
+    use allod_core::schemaops::compile_schema_ops;
     use allod_core::sign::Keypair;
 
     let kp = Keypair::generate(owner);
     graph.save_key(&kp).map_err(AllodError::from)?;
 
-    // Install schema docs
-    for (name, doc) in &profile.docs {
-        graph.install_schema(name, doc).map_err(AllodError::from)?;
-    }
-
-    // Bind owner into every policy role
+    // Bind owner into every policy role before compiling schema ops.
     if let Some(roles) = profile.policy.get_mut("roles").and_then(Value::as_mapping_mut) {
         let bind = Value::Sequence(vec![Value::String(format!("principal:{owner}"))]);
         let names: Vec<Value> = roles.keys().cloned().collect();
@@ -114,9 +110,13 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
             roles.insert(name, bind.clone());
         }
     }
-    graph.install_schema("policy", &profile.policy).map_err(AllodError::from)?;
 
-    // Genesis changeset: create the owner principal node
+    // Compile schema docs + policy into meta-node create ops.
+    let mut mint_id = crate::ops::uuid4;
+    let schema_ops = compile_schema_ops(&profile.docs, &profile.policy, &mut mint_id)
+        .map_err(AllodError::from)?;
+
+    // Owner User node op.
     let owner_node = crate::ops::uuid4();
     let mut attrs = serde_yaml::Mapping::new();
     attrs.insert(Value::String("display_name".into()), Value::String(owner.into()));
@@ -124,15 +124,21 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
     attrs.insert(Value::String("status".into()), Value::String("active".into()));
     let node_op = crate::ops::create_node_op(&owner_node, "core/User@1", Value::Mapping(attrs), None);
 
+    // Genesis changeset: schema meta-node ops + owner principal node.
+    let mut genesis_ops = schema_ops;
+    genesis_ops.push(node_op);
+
     let intent = format!(
         "Genesis: root authority {owner}, core + {} schema, {}-local policy",
         profile.name, profile.name
     );
-    let (cs, hash) = crate::ops::build_changeset(graph, &kp, &intent, vec![node_op])?;
+    let (cs, hash) = crate::ops::build_changeset(graph, &kp, &intent, genesis_ops)?;
 
-    let reg = graph.registry().map_err(AllodError::from)?;
-    let mut state = State::default();
-    state.apply_changeset(&reg, &cs).map_err(AllodError::from)?;
+    // Self-admit genesis (§4.6): append directly without policy check.
+    // The genesis changeset defines schema (meta-node ops) AND uses those types in the
+    // same changeset (core/User for the owner node). Validation uses the speculative
+    // registry path inside fold(), which handles this case correctly. We do not attempt
+    // a manual apply here — integrity is verified on the first fold() call.
     graph.append_changeset(&cs, &hash, None).map_err(AllodError::from)?;
     graph.write_meta(&hash, &[format!("principal:{owner}")]).map_err(AllodError::from)?;
 
@@ -140,6 +146,45 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
         graph_id: hash,
         owner: owner.to_string(),
     })
+}
+
+/// Install a schema package into the graph through policy admission.
+///
+/// Compiles `docs` and `policy` into meta-node create ops and submits them through
+/// `ops::commit` so governance rules apply. Under the reference policy, ops targeting
+/// meta-typed nodes match `operation: define-type` / `set-policy` / `deprecate-term`
+/// selectors (§3.2.2 sugar mapping in `policy::op_contexts`).
+///
+/// `by` is the principal name whose keypair signs the changeset.
+pub fn install_package(
+    graph: &Graph,
+    docs: &[(String, Value)],
+    policy: Option<&Value>,
+    by: &str,
+) -> Result<Admission, AllodError> {
+    use allod_core::schemaops::compile_schema_ops;
+
+    // If no policy override is given, use the graph's current policy.
+    let policy_owned: Value;
+    let effective_policy = match policy {
+        Some(p) => p,
+        None => {
+            policy_owned = graph.policy().map_err(AllodError::from)?;
+            &policy_owned
+        }
+    };
+
+    let mut mint_id = crate::ops::uuid4;
+    let schema_ops = compile_schema_ops(docs, effective_policy, &mut mint_id)
+        .map_err(AllodError::from)?;
+
+    crate::ops::commit(
+        graph,
+        by,
+        &format!("Install schema package ({} doc(s))", docs.len()),
+        schema_ops,
+        vec![],
+    )
 }
 
 /// Register a new principal (agent, service, or user) in the graph.
