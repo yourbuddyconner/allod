@@ -416,6 +416,42 @@ pub fn classify(
     ops::admit_or_hold(graph, by, &cs, &hash, vec![])
 }
 
-pub fn checkpoint(_graph: &Graph, _by: &str) -> Result<CheckpointResult, AllodError> {
-    Err(AllodError::Other("not implemented".into()))
+/// Write a signed checkpoint recording the current revision and state hash.
+pub fn checkpoint(graph: &Graph, by: &str) -> Result<CheckpointResult, AllodError> {
+    use allod_core::get_str;
+
+    let kp = graph.load_key(by).map_err(AllodError::from)?;
+    let head = graph.head().map_err(AllodError::from)?
+        .ok_or_else(|| AllodError::Other("empty graph".into()))?;
+    let state = graph.fold().map_err(AllodError::from)?;
+    let state_hash = state.state_hash().map_err(AllodError::from)?;
+
+    let mut cp = serde_yaml::Mapping::new();
+    cp.insert(Value::String("kind".into()), Value::String("checkpoint".into()));
+    cp.insert(Value::String("revision".into()), Value::String(head.clone()));
+    cp.insert(Value::String("state_hash".into()), Value::String(state_hash.clone()));
+    cp.insert(Value::String("state".into()), Value::Sequence(state.entries()));
+    cp.insert(Value::String("timestamp".into()), Value::String(crate::ops::now_iso()));
+    cp.insert(Value::String("signer".into()), Value::String(format!("principal:{by}")));
+    let mut cp = Value::Mapping(cp);
+
+    let payload = allod_core::sha256_hex(
+        "checkpoint",
+        &allod_core::canonical_cbor(&{
+            let mut pre = cp.clone();
+            pre.as_mapping_mut().unwrap().remove("signature");
+            pre
+        }).map_err(AllodError::from)?,
+    );
+    if let Some(map) = cp.as_mapping_mut() {
+        map.insert(Value::String("signature".into()), Value::String(kp.sign(&payload)));
+    }
+
+    graph.write_checkpoint(&head, &cp).map_err(AllodError::from)?;
+
+    let recorded_state_hash = get_str(&cp, "state_hash").unwrap_or("?").to_string();
+    Ok(CheckpointResult {
+        revision: head,
+        state_hash: recorded_state_hash,
+    })
 }

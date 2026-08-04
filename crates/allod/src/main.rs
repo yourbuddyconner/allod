@@ -333,31 +333,12 @@ fn cmd_classify(
 
 fn cmd_checkpoint(dir: &Path, by: &str) -> Result<(), String> {
     let graph = Graph::open(dir)?;
-    let kp = graph.load_key(by)?;
-    let head = graph.head()?.ok_or("empty graph")?;
-    let state = graph.fold()?;
-    let mut cp = Mapping::new();
-    cp.insert(s("kind"), s("checkpoint"));
-    cp.insert(s("revision"), s(&head));
-    cp.insert(s("state_hash"), s(&state.state_hash()?));
-    cp.insert(s("state"), Value::Sequence(state.entries()));
-    cp.insert(s("timestamp"), s(&now_iso()));
-    cp.insert(s("signer"), s(&format!("principal:{by}")));
-    let mut cp = Value::Mapping(cp);
-    let payload = allod_core::sha256_hex(
-        "checkpoint",
-        &allod_core::canonical_cbor(&{
-            let mut pre = cp.clone();
-            pre.as_mapping_mut().unwrap().remove("signature");
-            pre
-        })?,
+    let result = allod_graph::flows::checkpoint(&graph, by).map_err(|e| e.to_string())?;
+    println!(
+        "  ✓ checkpoint at {} (state {})",
+        allod_graph::ops::short(&result.revision),
+        allod_graph::ops::short(&result.state_hash),
     );
-    if let Some(map) = cp.as_mapping_mut() {
-        map.insert(s("signature"), s(&kp.sign(&payload)));
-    }
-    graph.write_checkpoint(&head, &cp)?;
-    println!("  ✓ checkpoint at {} (state {})", short(&head), short(
-        get_str(&cp, "state_hash").unwrap_or("?")));
     Ok(())
 }
 
