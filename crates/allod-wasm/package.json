@@ -22,7 +22,7 @@
     }
   },
   "scripts": {
-    "build:wasm": "wasm-pack build --target nodejs --out-dir pkg",
+    "build:wasm": "wasm-pack build --target nodejs --out-dir pkg && rm -f pkg/.gitignore",
     "build:ts": "tsc",
     "build": "pnpm run build:wasm && pnpm run build:ts",
     "prepublishOnly": "pnpm run build",
