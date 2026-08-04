@@ -36,10 +36,24 @@ imports:
 The hashes in these files are real. Each one is computed over the imported
 package's content using the spec's canonical byte encoding (§7.1), by
 running `allod-vectors hashes`, and `allod-lint` re-verifies every one on
-each run. One caveat: the spec ultimately wants imports to bind to the
-hash of the definitions as stored inside a live graph, not to the YAML
-snapshot. Until that ships, the snapshot content hash is what imports bind
-to, and the switch is a planned pre-v1 breaking change.
+each run.
+
+Two binding forms exist in the spec (§2.6):
+
+- **Projection-file binding.** The import declarations in these YAML
+  files bind by content hash: a fingerprint of the imported package's
+  exact YAML bytes. `allod-lint` verifies these hashes on every run.
+  This binding applies only to projection form and is independent of any
+  live graph.
+- **In-graph binding.** When schema elements are materialized as nodes
+  inside a live graph, in-graph import references bind by schema-subgraph
+  state hash — the `schema_context` value at the revision where the
+  importing package's schema nodes were admitted. This value is derived
+  from the log and verifiable by replay.
+
+The two forms co-exist: `allod-lint` and the package-hash vectors operate
+entirely on the projection form and are unchanged by in-graph
+materialization.
 
 ## Extension is the intended use
 

@@ -2,7 +2,7 @@
 
 ## 0.1 Status of this document
 
-This is draft v0.3 of the Allod specification. Nothing here is
+This is draft v0.4 of the Allod specification. Nothing here is
 implementation-stable. The specification is versioned. From v1.0 onward,
 the plan is to keep the spec's own change history in an Allod graph, which
 applies the Part 4 governance model to the spec itself.

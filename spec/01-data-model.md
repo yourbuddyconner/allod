@@ -31,7 +31,9 @@ A node MUST validate against its declared entity type. Validation uses
 the schema in force at the changeset's parent revision, which the
 changeset pins as `schema_context` (§3.2.1). A node that was valid under
 `core/Person@2` therefore stays valid after version 3 ships. §2.4
-governs migration.
+governs migration. The genesis changeset is the one exception: it
+carries no parent, so it validates against the schema that its own
+operations create (§4.6).
 
 ## 1.3 Attributes and the type system
 

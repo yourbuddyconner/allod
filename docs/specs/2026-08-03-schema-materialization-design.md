@@ -1,7 +1,7 @@
 # Schema-as-object materialization — design
 
 **Date:** 2026-08-03
-**Status:** Approved, pending implementation plan
+**Status:** Implemented
 **Scope:** Move the schema — ontology types, taxonomy terms, validation
 rules, and policy — into the graph as governed objects, replacing the
 installed-document mechanism (`.allod/schema/*.yaml`). This is the
@@ -16,6 +16,15 @@ materialization ships" language is retired from the docs.
 (`~/code/freehold/docs/specs/2026-08-03-freehold-v0-design.md`), whose
 `propose_ontology_change` flow becomes a true in-graph changeset because
 of this work.
+
+## Deviations from design
+
+The implementation shipped without departing from the design in substance, but four details resolved at implementation time:
+
+- **Genesis sentinel value.** The design noted genesis carries no parent. The implementation uses `sha256:0000000000000000000000000000000000000000000000000000000000000000` as the literal `schema_context` for all changesets whose parent state contains no meta nodes. This value is defined as `GENESIS_SCHEMA_CONTEXT` in `allod-core/src/model.rs`.
+- **`definition`-as-YAML encoding.** The `definition` attribute on meta nodes stores the element's YAML serialization as a string. Structural modeling of the attribute schema and rule body fields is anticipated before v1.0 and will be a breaking format change. This is disclosed explicitly in §2.6.
+- **Sugar-verb mapping at selector-match time.** The design stated "no new operation kinds" and that `define-type`, `deprecate-term`, etc. map onto `create`/`update`/`delete` on meta-typed nodes. The implementation resolves this mapping at policy selector evaluation (§4.1 / `policy.rs`), leaving the YAML package files and their hashes untouched.
+- **Genesis vector carries all loaded packages.** The `materialized_log` vector in `vectors/vectors.yaml` captures genesis for a graph whose genesis includes all profile package nodes. This means the genesis changeset in the vector set is larger than a minimal genesis; the schema_context remains the all-zeros sentinel because no parent meta subgraph exists.
 
 ## Context
 

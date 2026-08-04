@@ -30,16 +30,18 @@ when it satisfies the four properties.
 | `timestamp` | rfc3339 | Author-asserted and informational. Ordering always comes from the DAG |
 | `intent` | string (optional) | Rationale for the change, readable by humans and agents. Analogous to a commit message |
 | `operations` | list<operation> | §3.2.2. Applied atomically |
-| `schema_context` | hash | State hash of the schema the author validated against |
+| `schema_context` | hash | State hash of the meta-node subgraph at the changeset's parent revision (§2.6). MUST be the all-zeros sentinel `sha256:000…0` when the parent state contains no meta nodes, including genesis |
 | `signature` | sig \| list<sig> | Over `hash`, by the author's key. A list where a signature threshold applies (§4.6) |
 
 A changeset is atomic. All operations apply, or none do.
 
 Validation always uses the schema at the changeset's first parent.
-`schema_context` records the schema the author validated against. When
-the two differ, the changeset fails evaluation unless policy explicitly
-admits the mismatch, and the admission records it. This closes the
-loophole of pinning a stale schema to dodge new constraints.
+`schema_context` records the state hash of the meta-node subgraph the
+author validated against (§2.6). When the recorded value differs from the
+meta-subgraph hash at the first parent, the changeset fails evaluation
+unless policy explicitly admits the mismatch, and the admission records
+it. This closes the loophole of pinning a stale schema to dodge new
+constraints.
 
 ### 3.2.2 Operation set
 
@@ -51,7 +53,9 @@ at fold time is a conflict (§3.2.4).
 Schema mutations are ordinary operations that target schema objects
 (§2.5): `define-type`, `deprecate-term`, `set-policy`, and similar. They
 travel like any other operation, though policy usually holds them to
-stricter review.
+stricter review. These sugar verbs map onto `create`, `update`, and
+`delete` operations on meta-typed nodes; the mapping resolves at
+selector-evaluation time (§4.1).
 
 `delete` writes a tombstone. The log is append-only and history is never
 rewritten. Two governed redaction operations remove content while every

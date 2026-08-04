@@ -123,21 +123,115 @@ ontology and evolve it locally.
 ## 2.5 Schema-as-object
 
 The schema lives inside the graph rather than beside it. Ontology types,
-taxonomy terms, and governance policies (Part 4) are objects in the graph. Changesets create
-and mutate them like any other data, and governance applies to them like
-any other mutation.
+taxonomy terms, and governance policies (Part 4) are nodes in the graph,
+typed by the meta-ontology defined in §2.6. Changesets create and mutate
+them through the same `create`, `update`, and `delete` operations that
+apply to any data node (§3.2.2). Governance applies to them like any
+other mutation — the reference policy in Appendix C uses the
+`schema-changes-are-serious` rule, which selects on the meta types.
 
-This design has three intended consequences:
+Three consequences follow from this design:
 
 1. **An ontology can be shared on its own.** To export an ontology,
-   export a subgraph (Part 7), or publish it under a `public` grant
-   (§9.4). An agent that evolved a domain ontology can share it with
-   another agent without sharing any of the private data classified
-   under it.
+   export the meta-node subgraph (Part 7), or publish it under a
+   `public` grant (§9.4). An agent that evolved a domain ontology can
+   share it without sharing any of the private data classified under it.
 2. **Schema changes have provenance.** The graph records who added an
    entity type, when, and from what discussion it derives, using the same
    lineage machinery as any node.
-3. **Schema changes are governed.** An ontology bump is a changeset,
+3. **Schema changes are governed.** A schema mutation is a changeset,
    admitted under the current policy (§4.6). A graph can require elevated
-   review for schema mutations, and the reference policy in Appendix C
-   does.
+   review for schema mutations.
+
+The registry derives from the materialized meta-node state at the
+parent revision of each changeset (§3.2.1). The fold rebuilds the
+registry whenever a changeset touches meta nodes; otherwise it reuses the
+registry from the prior step. This implements §1.2 exactly: validation
+always uses the schema in force at the parent, not the current head.
+
+## 2.6 The meta-ontology (normative)
+
+The meta-ontology is the fixed point that describes itself. It declares
+the six node types used to store all other schema elements. The
+meta-ontology is defined here and compiled into conforming
+implementations; it is never stored in a log.
+
+**Meta types.** The package name is `meta`, version 1. The six types are:
+
+| Type | Purpose |
+|---|---|
+| `meta/EntityType` | One entity type declaration from an ontology |
+| `meta/EdgeType` | One edge type declaration |
+| `meta/Struct` | One named struct declaration |
+| `meta/TaxonomyTerm` | One taxonomy term |
+| `meta/ValidationRule` | One validation rule |
+| `meta/Policy` | One governance policy |
+
+**Attribute schemas.** The normative attribute schema for each type:
+
+`meta/EntityType`:
+
+| Attribute | Type | Required | Notes |
+|---|---|---|---|
+| `name` | `string` | yes | Bare name within the package, e.g. `Person` |
+| `package` | `string` | yes | Owning package name, e.g. `core` |
+| `version` | `int` | no | |
+| `definition` | `string` | yes | Canonical YAML mapping for the element (see below) |
+| `imports` | `list<string>` | no | Cross-package import strings for this package |
+
+`meta/EdgeType`: same attributes as `meta/EntityType`.
+
+`meta/Struct`: same attributes as `meta/EntityType`.
+
+`meta/ValidationRule`: same attributes as `meta/EntityType`.
+
+`meta/TaxonomyTerm`:
+
+| Attribute | Type | Required | Notes |
+|---|---|---|---|
+| `name` | `string` | yes | Qualified term name, e.g. `sensitivity/private` |
+| `taxonomy` | `string` | yes | Owning taxonomy name |
+| `version` | `int` | no | |
+| `parents` | `list<string>` | no | Parent term names |
+| `status` | `enum<active\|deprecated>` | no | |
+| `definition` | `string` | no | |
+
+`meta/Policy`:
+
+| Attribute | Type | Required | Notes |
+|---|---|---|---|
+| `name` | `string` | yes | Policy name |
+| `definition` | `string` | yes | Canonical YAML mapping for the policy |
+
+**The `definition` attribute.** In v0.4, `definition` stores the element's
+canonical YAML serialization as a string. The fold parses this string to
+reconstruct the registry. This encoding is deliberately simple. Structural
+modeling of attribute schemas and rule bodies — typed fields rather than
+an opaque string — is anticipated before v1.0 and will be a breaking
+format change when it ships.
+
+**Package imports.** The `imports` attribute on `meta/EntityType`,
+`meta/EdgeType`, `meta/Struct`, and `meta/ValidationRule` nodes carries
+the cross-package import declarations for the owning package. When
+`Registry::from_state` reconstructs a package, it collects the `imports`
+values from all of the package's meta nodes, deduplicates them, and sorts
+them. This allows imports to round-trip through the graph without a
+separate imports object.
+
+**The genesis bootstrap rule.** The genesis changeset carries no parent.
+It validates against the schema its own operations create (§4.6). Its
+`schema_context` field MUST be the all-zeros sentinel
+`sha256:0000000000000000000000000000000000000000000000000000000000000000`.
+This value means "no prior schema." All changesets whose parent state
+contains no meta nodes also carry this sentinel.
+
+**Import binding by form.** Two forms exist:
+
+- *Projection files* (the YAML packages in `ontologies/`) bind imports by
+  content hash: a fingerprint of the imported package's exact YAML bytes,
+  verified by `allod-lint`. This binding is defined relative to the
+  projection form and is unchanged by in-graph materialization.
+- *In-graph imports* bind by schema-subgraph state hash: the `schema_context`
+  value at the revision where the importing package's schema nodes were
+  admitted. This is the natural in-graph identifier because it is derived
+  from the log and verifiable by replay.

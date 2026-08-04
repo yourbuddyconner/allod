@@ -9,7 +9,7 @@ history is verifiable, and changes follow rules that you declare.
 
 | | |
 |---|---|
-| **Status** | Draft v0.3. For discussion. Not implementation-stable. |
+| **Status** | Draft v0.4. For discussion. Not implementation-stable. |
 | **Author** | Conner Swann |
 | **Date** | 2026-08-02 |
 
