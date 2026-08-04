@@ -321,3 +321,33 @@ test("commit with sign_envelope=true → Held; decide approve → Admitted", asy
   expect((outcome as { Admitted?: { degraded: string[] } }).Admitted).toBeDefined();
   expect(Array.isArray((outcome as { Admitted: { degraded: string[] } }).Admitted.degraded)).toBe(true);
 });
+
+test("persist callback rejection propagates to the mutating call (non-vacuous)", async () => {
+  // The wasm contract: do_persist() awaits the JS persist callback. If the callback
+  // rejects, the mutating method (e.g. init) must also reject — not silently succeed.
+  // This guards against persist failures being swallowed.
+
+  const failingPersist = async (_dump: [string, string][]) => {
+    throw new Error("simulated persist failure");
+  };
+
+  const g = new AllodGraph([], failingPersist);
+
+  // init() calls do_persist() after writing the genesis changeset.
+  // The rejection must propagate out of init().
+  await expect(g.init("owner", "memory")).rejects.toThrow("simulated persist failure");
+
+  // note() also calls do_persist() — test that too.
+  // We need a graph that was initialised without a failing persist callback first.
+  const dir = mkdtempSync(join(tmpdir(), "allod-wasm-persist-err-"));
+  const backend = fsBackend(dir);
+  const gOk = new AllodGraph([], backend.persist.bind(backend));
+  await gOk.init("owner", "memory");
+  await gOk.principal_add("agent", "agent", "owner");
+
+  // Now swap in the failing persist: re-open the graph with a failing callback
+  const gFail = new AllodGraph(backend.load(), failingPersist);
+  await expect(gFail.note("agent", "this note must not persist")).rejects.toThrow(
+    "simulated persist failure"
+  );
+});
