@@ -37,6 +37,8 @@ pub struct ImportReport {
     pub edited_files: usize,
     /// Files that failed to parse (path, error message).
     pub skipped: Vec<(PathBuf, String)>,
+    /// State hash from the bundle manifest (for round-trip verification).
+    pub manifest_hash: String,
 }
 
 // ---- Internal helpers ----
@@ -265,7 +267,7 @@ pub fn import(
     as_principal: &str,
 ) -> Result<ImportReport, AllodError> {
     let reg = graph.registry()?;
-    let state = graph.fold()?;
+    graph.fold()?;
 
     let manifest_path = bundle.join(".allod/manifest.yaml");
     let manifest_text =
@@ -312,14 +314,13 @@ pub fn import(
         updates.push(Value::Mapping(op));
     }
 
-    let _ = (manifest_hash, state); // available for callers via report fields
-
     if updates.is_empty() {
         return Ok(ImportReport {
             admissions: vec![],
             unchanged,
             edited_files: 0,
             skipped,
+            manifest_hash,
         });
     }
 
@@ -334,5 +335,6 @@ pub fn import(
         unchanged,
         edited_files: n,
         skipped,
+        manifest_hash,
     })
 }

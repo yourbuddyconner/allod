@@ -21,22 +21,13 @@ pub fn export(graph_dir: &Path, out: &Path) -> Result<(), String> {
 pub fn import(graph_dir: &Path, bundle: &Path, as_principal: &str) -> Result<(), String> {
     let graph = Graph::open(graph_dir)?;
 
-    // Read the manifest hash before delegating (for the round-trip message).
-    let manifest_text =
-        std::fs::read_to_string(bundle.join(".allod/manifest.yaml")).map_err(|e| e.to_string())?;
-    let manifest: serde_yaml::Value =
-        serde_yaml::from_str(&manifest_text).map_err(|e| e.to_string())?;
-    let manifest_hash = allod_core::get_str(&manifest, "state_hash")
-        .unwrap_or("")
-        .to_string();
-
     let report = allod_graph::md::import(&graph, bundle, as_principal).map_err(|e| e.to_string())?;
 
     if report.admissions.is_empty() && report.skipped.is_empty() {
         // Round-trip path.
         let state = graph.fold()?;
         let current = state.state_hash()?;
-        if current == manifest_hash {
+        if current == report.manifest_hash {
             println!(
                 "  ✓ round trip verified: {} nodes unchanged, state {} matches \
                  the bundle manifest (§7.4)",
@@ -47,7 +38,7 @@ pub fn import(graph_dir: &Path, bundle: &Path, as_principal: &str) -> Result<(),
             println!(
                 "  ⚠ bundle is unmodified but the graph has moved on: bundle state {}, \
                  graph state {}",
-                short(&manifest_hash),
+                short(&report.manifest_hash),
                 short(&current)
             );
         }
