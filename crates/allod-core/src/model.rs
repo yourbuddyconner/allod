@@ -98,13 +98,18 @@ pub fn state_root(entries: &[Value]) -> Result<String, String> {
     merkle_root(&leaves, "state-node").ok_or_else(|| "empty state".into())
 }
 
+/// Well-known sentinel used as the `schema_context` field in the genesis
+/// changeset, whose parent state has an empty meta subgraph.
+pub const GENESIS_SCHEMA_CONTEXT: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+
 /// State hash over the meta subgraph only (§3.2.1 schema pinning):
 /// same Merkle construction as the full state hash, leaves restricted
 /// to live meta-typed nodes and their tombstones, ordered identically
 /// (BTreeMap order: kind then logical ID).
 ///
-/// Returns `Err` only when the meta subgraph is empty (no meta-typed
-/// objects at all — not even tombstones).
+/// Returns [`GENESIS_SCHEMA_CONTEXT`] when the meta subgraph is empty
+/// (no meta-typed objects at all — not even tombstones), which is the
+/// correct value for the genesis changeset whose parent has no schema.
 pub fn schema_state_hash(state: &State) -> Result<String, String> {
     let entries = state.entries_filtered(|kind, obj| {
         kind == "node"
@@ -112,25 +117,11 @@ pub fn schema_state_hash(state: &State) -> Result<String, String> {
                 .is_some_and(|t| is_meta_type(bare(t)))
     });
     if entries.is_empty() {
-        return Err("empty meta-subgraph state".into());
+        return Ok(GENESIS_SCHEMA_CONTEXT.to_string());
     }
     state_root(&entries)
 }
 
-/// The schema context a changeset pins (§3.2.1): a content hash over
-/// the installed schema documents, keyed by name. The same bridge as
-/// package hashes (Appendix H) until schema-as-object
-/// materialization ships.
-// TRANSITIONAL (task 5 removes): superseded by schema_state_hash on materialized graphs.
-pub fn schema_context(docs: &[(String, Value)]) -> Result<String, String> {
-    let mut map = Mapping::new();
-    let mut sorted: Vec<&(String, Value)> = docs.iter().collect();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
-    for (name, doc) in sorted {
-        map.insert(Value::String(name.clone()), doc.clone());
-    }
-    Ok(sha256_hex("package", &canonical_cbor(&Value::Mapping(map))?))
-}
 
 #[cfg(test)]
 mod tests {
@@ -264,24 +255,26 @@ mod tests {
         assert!(h2.starts_with("sha256:"), "must be a sha256: hash");
     }
 
-    /// schema_state_hash returns Err when no meta nodes exist.
+    /// schema_state_hash returns GENESIS_SCHEMA_CONTEXT when no meta nodes exist.
     #[test]
-    fn schema_state_hash_empty_state_is_err() {
+    fn schema_state_hash_empty_state_is_genesis_sentinel() {
         use crate::fold::State;
         let state_empty = State::default();
-        assert!(
-            schema_state_hash(&state_empty).is_err(),
-            "empty meta subgraph must return Err"
+        assert_eq!(
+            schema_state_hash(&state_empty).unwrap(),
+            GENESIS_SCHEMA_CONTEXT,
+            "empty meta subgraph must return the genesis sentinel"
         );
 
-        // A state with only non-meta nodes is also empty from the meta pov.
+        // A state with only non-meta nodes also returns the genesis sentinel.
         use std::collections::BTreeMap;
         let mut objects = BTreeMap::new();
         objects.insert(("node".into(), "person-1".into()), non_meta_node_obj("person-1"));
         let state_only_non_meta = State { objects };
-        assert!(
-            schema_state_hash(&state_only_non_meta).is_err(),
-            "state with only non-meta nodes must return Err"
+        assert_eq!(
+            schema_state_hash(&state_only_non_meta).unwrap(),
+            GENESIS_SCHEMA_CONTEXT,
+            "state with only non-meta nodes must return genesis sentinel"
         );
     }
 }

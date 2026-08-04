@@ -1,10 +1,9 @@
-//! On-disk graph storage: a `.allod/` directory holding the schema
-//! projection, the changeset log, proposals awaiting admission, and
-//! demo keys (plain-keypair profile, §6.4.1).
+//! On-disk graph storage: a `.allod/` directory holding the changeset log,
+//! proposals awaiting admission, and demo keys (plain-keypair profile, §6.4.1).
+//! Schema lives in the changeset log as meta-typed nodes (no schema directory).
 //!
 //! Layout:
 //!   .allod/graph.yaml                 graph ID, root authority
-//!   .allod/schema/<name>.yaml         installed schema documents
 //!   .allod/keys/<name>.yaml           keypairs (demo: secrets in the clear)
 //!   .allod/changesets/<hash>.yaml     admitted changesets
 //!   .allod/changesets/<hash>.evidence.yaml  decisions and envelopes
@@ -17,7 +16,7 @@ use crate::fold::State;
 use crate::meta::{is_meta_type, meta_registry};
 use crate::registry::Registry;
 use crate::sign::Keypair;
-use crate::{bare, get_str, Loaded};
+use crate::{bare, get_str};
 use serde_yaml::{Mapping, Value};
 use std::path::{Path, PathBuf};
 
@@ -30,15 +29,6 @@ fn short(hash: &str) -> &str {
     hash.strip_prefix("sha256:").unwrap_or(hash)
 }
 
-/// True if `state` contains at least one live non-deleted node whose type
-/// is a meta type (any of the types in `META_TYPES`).
-fn state_has_meta_nodes(state: &State) -> bool {
-    state.objects.iter().any(|((kind, _), obj)| {
-        kind == "node"
-            && !obj.deleted
-            && get_str(&obj.content, "type").is_some_and(is_meta_type)
-    })
-}
 
 /// Speculatively apply the meta-type create/update ops from `cs` to a clone
 /// of `state`, then derive and return a `Registry` from the resulting state.
@@ -263,47 +253,16 @@ impl Graph {
 
     // ---------------- schema ----------------
 
-    pub fn install_schema(&self, name: &str, doc: &Value) -> Result<(), String> {
-        self.write_yaml(&format!("schema/{name}.yaml"), doc)
-    }
-
-    #[doc(hidden)] // TRANSITIONAL (task 5 removes): superseded by fold-derived registry
-    pub fn schema_docs(&self) -> Result<Vec<(String, Value)>, String> {
-        let names = self.store.list("schema")?;
-        let mut docs = Vec::new();
-        for name in names {
-            if !name.ends_with(".yaml") {
-                continue;
-            }
-            let stem = name.strip_suffix(".yaml").unwrap_or(&name).to_string();
-            let doc = self.read_yaml(&format!("schema/{name}"))?;
-            docs.push((stem, doc));
-        }
-        Ok(docs)
-    }
-
     pub fn registry(&self) -> Result<Registry, String> {
         // FIXME: fold result could be cached per call site; callers using both fold twice
         let state = self.fold()?;
-        // If the folded state contains any live meta-typed node, derive the
-        // registry from state (materialized path).
-        if state_has_meta_nodes(&state) {
-            return Registry::from_state(&state);
-        }
-        // TRANSITIONAL (task 5 removes): legacy schema-dir fallback so that
-        // every existing test and graph without meta nodes stays green.
-        let docs = self.schema_docs()?;
-        let Loaded { registry, issues, .. } = crate::loader::load_docs(&docs);
-        if let Some(issue) = issues.first() {
-            return Err(format!("schema load: {}: {}", issue.context, issue.message));
-        }
-        Ok(registry)
+        Registry::from_state(&state)
     }
 
     pub fn policy(&self) -> Result<Value, String> {
         // FIXME: fold result could be cached per call site; callers using both fold twice
         let state = self.fold()?;
-        // If a live meta/Policy node exists, parse its definition attribute.
+        // Find the live meta/Policy node and parse its definition attribute.
         for ((kind, _), obj) in &state.objects {
             if kind != "node" || obj.deleted {
                 continue;
@@ -323,12 +282,6 @@ impl Graph {
             let val: Value = serde_yaml::from_str(definition)
                 .map_err(|e| format!("meta/Policy definition is not valid YAML: {e}"))?;
             return Ok(val);
-        }
-        // TRANSITIONAL (task 5 removes): scan legacy schema docs if no meta/Policy node.
-        for (_, doc) in self.schema_docs()? {
-            if doc.get("policy").is_some() {
-                return Ok(doc);
-            }
         }
         Err("no policy installed".into())
     }
@@ -425,38 +378,7 @@ impl Graph {
     pub fn fold(&self) -> Result<State, String> {
         let chain = self.chain()?;
 
-        // TRANSITIONAL (task 5 removes): if the schema dir has docs installed
-        // and the log does not appear to contain meta-type ops (the genesis
-        // changeset is either absent or does not touch meta types), treat this
-        // as a legacy graph and fold with the schema-dir registry. This keeps
-        // every existing graph and test green while the materialized path ramps
-        // up.
-        let docs = self.schema_docs()?;
-        if !docs.is_empty() {
-            // Peek at genesis to decide which path to take.
-            let genesis_has_meta = chain
-                .first()
-                .map(|cs| changeset_touches_meta(&State::default(), cs))
-                .unwrap_or(false);
-            if !genesis_has_meta {
-                let Loaded { registry, issues, .. } = crate::loader::load_docs(&docs);
-                if let Some(issue) = issues.first() {
-                    return Err(format!("schema load: {}: {}", issue.context, issue.message));
-                }
-                let mut state = State::default();
-                for cs in &chain {
-                    state.apply_changeset(&registry, cs).map_err(|e| {
-                        format!(
-                            "fold rejected changeset {}: {e}",
-                            get_str(cs, "hash").unwrap_or("?")
-                        )
-                    })?;
-                }
-                return Ok(state);
-            }
-        }
-
-        // Mainline: derive the registry per-changeset from state.
+        // Derive the registry per-changeset from state.
         //
         // Genesis exception (§4.6 / decision 3): the very first changeset may
         // install schema (meta ops) AND create objects of those new types in

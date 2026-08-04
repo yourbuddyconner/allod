@@ -1,6 +1,6 @@
 //! Generic operations layer: helpers moved from main.rs with printing removed.
 
-use allod_core::model::{changeset_hash, schema_context, schema_state_hash};
+use allod_core::model::{changeset_hash, schema_state_hash};
 use allod_core::policy;
 use allod_core::sign::Keypair;
 use allod_core::store::Graph;
@@ -90,27 +90,8 @@ pub fn build_changeset(
     // NOTE: admit_or_hold also calls graph.fold(); the double-fold is accepted
     // here pending a caching layer — see the FIXME in store.rs registry()/policy().
     let parent_state = graph.fold()?;
-    let sctx = {
-        // Determine whether the parent state carries any live meta-typed node.
-        // If so, use the meta-subgraph state hash; otherwise fall back to the
-        // legacy docs hash (TRANSITIONAL — task 5 removes).
-        let has_meta = parent_state.objects.iter().any(|((kind, _), obj)| {
-            kind == "node"
-                && !obj.deleted
-                && allod_core::get_str(&obj.content, "type")
-                    .is_some_and(|t| allod_core::meta::is_meta_type(allod_core::bare(t)))
-        });
-        if has_meta {
-            // Materialized path: pin the meta-subgraph state hash.
-            schema_state_hash(&parent_state)
-                .map_err(|e| AllodError::Other(format!("schema_state_hash: {e}")))?
-        } else {
-            // TRANSITIONAL (task 5 removes): legacy docs-hash fallback for graphs
-            // that have no meta-typed nodes in their committed state yet.
-            schema_context(&graph.schema_docs()?)
-                .map_err(|e| AllodError::Other(format!("schema_context: {e}")))?
-        }
-    };
+    let sctx = schema_state_hash(&parent_state)
+        .map_err(|e| AllodError::Other(format!("schema_state_hash: {e}")))?;
     let mut cs = Mapping::new();
     cs.insert(s("kind"), s("changeset"));
     cs.insert(s("parents"), Value::Sequence(parents));
