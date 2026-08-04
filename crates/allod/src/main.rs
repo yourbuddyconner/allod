@@ -20,12 +20,10 @@ mod fed;
 mod repo;
 mod md;
 
-use allod_core::fold::State;
 use allod_core::get_str;
-use allod_core::policy;
 use allod_core::sign::Keypair;
 use allod_core::store::Graph;
-use serde_yaml::{Mapping, Value};
+use serde_yaml::Value;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -56,11 +54,6 @@ pub(crate) fn build_changeset(
 ) -> Result<(Value, String), String> {
     allod_graph::ops::build_changeset(graph, author, intent, ops).map_err(|e| e.to_string())
 }
-
-fn evidence_doc(decisions: &[Value], envelopes: &[Value]) -> Value {
-    allod_graph::ops::evidence_doc(decisions, envelopes)
-}
-
 
 /// Evaluate, then admit or hold. Returns true when admitted.
 /// Delegates to allod_graph::ops::admit_or_hold and handles printing.
@@ -322,17 +315,6 @@ fn cmd_checkpoint(dir: &Path, by: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn checkpoint_payload(cp: &Value) -> Result<String, String> {
-    let mut pre = cp.clone();
-    if let Some(map) = pre.as_mapping_mut() {
-        map.remove("signature");
-    }
-    Ok(allod_core::sha256_hex(
-        "checkpoint",
-        &allod_core::canonical_cbor(&pre)?,
-    ))
-}
-
 fn cmd_trust(dir: &Path, measurement: &str) -> Result<(), String> {
     let graph = Graph::open(dir)?;
     allod_graph::flows::trust(&graph, measurement).map_err(|e| e.to_string())?;
@@ -397,122 +379,58 @@ fn cmd_show(dir: &Path) -> Result<(), String> {
 }
 
 fn cmd_verify(dir: &Path) -> Result<(), String> {
+    use allod_graph::flows::LevelResult;
     let graph = Graph::open(dir)?;
-    let reg = graph.registry()?;
-    let policy_doc = graph.policy()?;
-    let roots = graph.roots()?;
-    let chain = graph.chain()?;
-    let mut state = State::default();
-    let mut degraded: Vec<String> = Vec::new();
-    for (i, cs) in chain.iter().enumerate() {
-        let hash = get_str(cs, "hash").unwrap_or("?").to_string();
-        let author = cs.get("author").cloned().unwrap_or(Value::Null);
-        let author_ref = get_str(&author, "principal").unwrap_or("?").to_string();
-        let key_id = get_str(&author, "key").unwrap_or("").to_string();
-        let signature = get_str(cs, "signature").unwrap_or("").to_string();
+    let report = allod_graph::flows::verify(&graph).map_err(|e| e.to_string())?;
+    let chain_len = report.changesets.len();
 
-        // Level 3 (§5.3): governance against the parent state, before
-        // this changeset applies.
-        let genesis = i == 0;
-        let mut admitted_by = String::from("genesis (self-admitted, §4.6)");
-        if !genesis {
-            let author_kind = state
-                .find_principal(&author_ref)
-                .map(|(kind, _)| kind.to_string())
-                .ok_or_else(|| format!("{hash}: unknown author {author_ref}"))?;
-            let checklist = policy::evaluate(&reg, &policy_doc, &state, cs, &author_kind)?;
-            let evidence = graph.read_evidence(&hash)?.unwrap_or(Value::Null);
-            let decisions: Vec<Value> = evidence
-                .get("decisions")
-                .and_then(Value::as_sequence)
-                .cloned()
-                .unwrap_or_default();
-            let envelopes: Vec<Value> = evidence
-                .get("envelopes")
-                .and_then(Value::as_sequence)
-                .cloned()
-                .unwrap_or_default();
-            let sat = policy::check_satisfied_with(
-                &state, &policy_doc, &roots, cs, &author_ref, &checklist, &decisions,
-                &envelopes, &graph.trusted_measurements()?,
-            )?;
-            if !sat.unmet.is_empty() {
-                return Err(format!(
-                    "governance FAILS for {}: {}",
-                    short(&hash),
-                    sat.unmet.join("; ")
-                ));
-            }
-            degraded.extend(sat.degraded);
-            admitted_by = if checklist.is_trivial() {
-                format!(
-                    "rules {}",
-                    checklist.matched_rules.iter().cloned().collect::<Vec<_>>().join(", ")
-                )
-            } else if !decisions.is_empty() {
-                format!("{} decision record(s)", decisions.len())
-            } else {
-                "root authority".to_string()
-            };
-        }
-
-        // Level 1: the fold recomputes and checks every hash.
-        state.apply_changeset(&reg, cs).map_err(|e| format!("{hash}: {e}"))?;
-
-        // Level 2 (§5.3): authorship. Genesis verifies against the key
-        // it installs; later changesets against the parent-state key,
-        // which for a linear log the post-apply lookup preserves
-        // (rotation replay is the next milestone).
-        let public = state
-            .public_key_of(&author_ref, &key_id)
-            .ok_or_else(|| format!("{hash}: no active key {key_id} for {author_ref}"))?;
-        allod_core::sign::verify(&public, &hash, &signature)
-            .map_err(|e| format!("{hash}: signature: {e}"))?;
-        if genesis && !roots.contains(&author_ref) {
-            return Err(format!("{hash}: genesis author {author_ref} is not root"));
-        }
-
+    for cs_entry in &report.changesets {
+        // Only print the happy path line for now; failures propagate as Err below
+        let author_ref = &cs_entry.author;
+        let admitted_by = &cs_entry.admitted_by;
         println!(
             "  ✓ {}  integrity ✓  authorship ✓ ({author_ref})  governance: {admitted_by}",
-            short(&hash)
+            short(&cs_entry.hash)
         );
     }
-    println!("  state hash {}", short(&state.state_hash()?));
-    // Checkpoints (§3.2.5): replay MUST be able to verify each one.
-    for cp in graph.checkpoints()? {
-        let revision = get_str(&cp, "revision").unwrap_or("?").to_string();
-        let claimed = get_str(&cp, "state_hash").unwrap_or("?").to_string();
-        let signer = get_str(&cp, "signer").unwrap_or("?").to_string();
-        let signature = get_str(&cp, "signature").unwrap_or("").to_string();
-        if revision == graph.head()?.unwrap_or_default() && claimed != state.state_hash()? {
-            return Err(format!("checkpoint at {} disagrees with replay", short(&revision)));
-        }
-        let payload = checkpoint_payload(&cp)?;
-        let public = state
-            .public_key_of(&signer, "")
-            .or_else(|| {
-                state.find_principal(&signer).and_then(|(_, obj)| {
-                    obj.content
-                        .get("attributes")?
-                        .get("keys")?
-                        .as_sequence()?
-                        .iter()
-                        .find_map(|r| get_str(r, "public").map(String::from))
-                })
-            })
-            .ok_or_else(|| format!("checkpoint signer {signer} unknown"))?;
-        allod_core::sign::verify(&public, &payload, &signature)
-            .map_err(|e| format!("checkpoint signature: {e}"))?;
-        println!("  ✓ checkpoint {} verified against replay ({signer})", short(&revision));
+    println!("  state hash {}", short(&report.state_hash));
+    for cp in &report.checkpoints {
+        println!(
+            "  ✓ checkpoint {} verified against replay ({})",
+            short(&cp.revision),
+            cp.signer
+        );
     }
-    for note in &degraded {
+    for note in &report.degraded {
         println!("  ⚠ degraded: {note}");
     }
     println!(
-        "  VERIFIED: {} changesets, levels 1-3 (§5.3){}",
-        chain.len(),
-        if degraded.is_empty() { "" } else { ", with degradations noted" }
+        "  VERIFIED: {chain_len} changesets, levels 1-3 (§5.3){}",
+        if report.degraded.is_empty() { "" } else { ", with degradations noted" }
     );
+    if !report.ok {
+        // Find the first failure to surface as an error string
+        for cs_entry in &report.changesets {
+            match &cs_entry.governance {
+                LevelResult::Failed(r) => return Err(r.clone()),
+                _ => {}
+            }
+            match &cs_entry.integrity {
+                LevelResult::Failed(r) => return Err(r.clone()),
+                _ => {}
+            }
+            match &cs_entry.authorship {
+                LevelResult::Failed(r) => return Err(r.clone()),
+                _ => {}
+            }
+        }
+        for cp in &report.checkpoints {
+            if !cp.ok {
+                return Err(format!("checkpoint at {} disagrees with replay", short(&cp.revision)));
+            }
+        }
+        return Err("verify failed".into());
+    }
     Ok(())
 }
 

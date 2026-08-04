@@ -50,6 +50,35 @@ fn state_returns_nodes_and_hash() {
     assert!(has_owner, "owner node 'o' should be in state");
 }
 
+// ---- verify ----
+
+#[test]
+fn verify_full_jarvis_flow() {
+    use allod_graph::flows::{LevelResult, VerifyReport};
+    let graph = common::init_memory_graph();
+    flows::principal_add(&graph, "agent", "agent", "o").unwrap();
+    let note_r = flows::note(&graph, "agent", "some content").unwrap();
+    let prop = flows::propose_preference(&graph, "agent", "prefer foo", "soft", Some(&note_r.note_id)).unwrap();
+    flows::decide(&graph, &prop.hash, "o", "approve").unwrap();
+    flows::checkpoint(&graph, "o").unwrap();
+
+    let report = flows::verify(&graph).expect("verify");
+    assert!(report.ok, "verify should be ok");
+    assert!(!report.changesets.is_empty());
+    assert!(!report.state_hash.is_empty());
+    assert!(!report.checkpoints.is_empty());
+    // All changesets should have integrity Verified
+    for cs_entry in &report.changesets {
+        assert!(matches!(cs_entry.integrity, LevelResult::Verified), "integrity failed for {}", cs_entry.hash);
+        assert!(matches!(cs_entry.authorship, LevelResult::Verified), "authorship failed for {}", cs_entry.hash);
+        assert!(matches!(cs_entry.governance, LevelResult::Verified), "governance failed for {}", cs_entry.hash);
+    }
+    // All checkpoints should pass
+    for cp in &report.checkpoints {
+        assert!(cp.ok, "checkpoint {} failed", cp.revision);
+    }
+}
+
 // ---- Task 4b stubs (will be implemented one by one) ----
 
 // ---- trust ----
