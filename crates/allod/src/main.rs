@@ -268,77 +268,27 @@ fn cmd_reject(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
 }
 
 fn cmd_decide(dir: &Path, hash: &str, by: &str, verdict: &str) -> Result<(), String> {
+    use allod_graph::flows::DecisionOutcome;
     let graph = Graph::open(dir)?;
-    let kp = graph.load_key(by)?;
-    let cs = graph.read_proposal(hash)?;
-    let evidence = graph.read_proposal_evidence(hash)?;
-    let mut decisions: Vec<Value> = evidence
-        .get("decisions")
-        .and_then(Value::as_sequence)
-        .cloned()
-        .unwrap_or_default();
-    let envelopes: Vec<Value> = evidence
-        .get("envelopes")
-        .and_then(Value::as_sequence)
-        .cloned()
-        .unwrap_or_default();
-
-    let policy_doc = graph.policy()?;
-    let mut record = Mapping::new();
-    record.insert(s("kind"), s("decision-record"));
-    record.insert(s("subject"), s(hash));
-    record.insert(s("policy_context"), s(&policy::policy_context(&policy_doc)?));
-    record.insert(s("verdict"), s(verdict));
-    record.insert(s("timestamp"), s(&now_iso()));
-    let mut record = Value::Mapping(record);
-    let payload = policy::decision_payload(&record)?;
-    let mut decider = Mapping::new();
-    decider.insert(s("principal"), s(&format!("principal:{by}")));
-    decider.insert(s("signature"), s(&kp.sign(&payload)));
-    if let Some(map) = record.as_mapping_mut() {
-        map.insert(s("deciders"), Value::Sequence(vec![Value::Mapping(decider)]));
-    }
-    decisions.push(record);
-
-    if verdict == "reject" {
-        // The proposal and its rejection stay auditable (§4.3,
-        // Appendix A step 5): both remain on disk, and the signed
-        // record is the evidence.
-        graph.write_proposal_evidence(hash, &evidence_doc(&decisions, &envelopes))?;
-        println!("  ✗ rejected {} — proposal and decision record stay auditable", short(hash));
-        return Ok(());
-    }
-
-    let reg = graph.registry()?;
-    let state = graph.fold()?;
-    let author_ref = get_str(cs.get("author").ok_or("proposal has no author")?, "principal")
-        .ok_or("author has no principal")?
-        .to_string();
-    let author_kind = state
-        .find_principal(&author_ref)
-        .map(|(kind, _)| kind.to_string())
-        .ok_or_else(|| format!("unknown author {author_ref}"))?;
-    let checklist = policy::evaluate(&reg, &policy_doc, &state, &cs, &author_kind)?;
-    let roots = graph.roots()?;
-    let sat = policy::check_satisfied_with(
-        &state, &policy_doc, &roots, &cs, &author_ref, &checklist, &decisions, &envelopes,
-        &graph.trusted_measurements()?,
-    )?;
-    if !sat.unmet.is_empty() {
-        graph.write_proposal_evidence(hash, &evidence_doc(&decisions, &envelopes))?;
-        println!("  ⧗ decision recorded; still unmet:");
-        for item in &sat.unmet {
-            println!("      - {item}");
+    let outcome = allod_graph::flows::decide(&graph, hash, by, verdict)
+        .map_err(|e| e.to_string())?;
+    match outcome {
+        DecisionOutcome::Rejected => {
+            println!("  ✗ rejected {} — proposal and decision record stay auditable",
+                allod_graph::ops::short(hash));
         }
-        return Ok(());
-    }
-    let mut state = state;
-    state.apply_changeset(&reg, &cs)?;
-    graph.append_changeset(&cs, hash, Some(&evidence_doc(&decisions, &envelopes)))?;
-    graph.remove_proposal(hash)?;
-    println!("  ✓ approved and admitted {}", short(hash));
-    for note in &sat.degraded {
-        println!("      degraded: {note}");
+        DecisionOutcome::StillUnmet { unmet } => {
+            println!("  ⧗ decision recorded; still unmet:");
+            for item in &unmet {
+                println!("      - {item}");
+            }
+        }
+        DecisionOutcome::Admitted { degraded } => {
+            println!("  ✓ approved and admitted {}", allod_graph::ops::short(hash));
+            for note in &degraded {
+                println!("      degraded: {note}");
+            }
+        }
     }
     Ok(())
 }

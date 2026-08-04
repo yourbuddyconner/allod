@@ -299,8 +299,95 @@ pub fn propose_preference(
     Ok(ProposalResult { hash, admission })
 }
 
-pub fn decide(_graph: &Graph, _hash: &str, _by: &str, _verdict: &str) -> Result<DecisionOutcome, AllodError> {
-    Err(AllodError::Other("not implemented".into()))
+/// Apply a decision (approve/reject) to a held proposal.
+/// Rejected and StillUnmet paths still write the signed decision record to evidence (auditable).
+pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<DecisionOutcome, AllodError> {
+    use allod_core::{get_str, policy};
+
+    let kp = graph.load_key(by).map_err(AllodError::from)?;
+    let cs = graph.read_proposal(hash).map_err(AllodError::from)?;
+    let evidence = graph.read_proposal_evidence(hash).map_err(AllodError::from)?;
+
+    let mut decisions: Vec<Value> = evidence
+        .get("decisions")
+        .and_then(Value::as_sequence)
+        .cloned()
+        .unwrap_or_default();
+    let envelopes: Vec<Value> = evidence
+        .get("envelopes")
+        .and_then(Value::as_sequence)
+        .cloned()
+        .unwrap_or_default();
+
+    let policy_doc = graph.policy().map_err(AllodError::from)?;
+
+    let mut record = serde_yaml::Mapping::new();
+    record.insert(Value::String("kind".into()), Value::String("decision-record".into()));
+    record.insert(Value::String("subject".into()), Value::String(hash.into()));
+    record.insert(
+        Value::String("policy_context".into()),
+        Value::String(policy::policy_context(&policy_doc).map_err(AllodError::from)?),
+    );
+    record.insert(Value::String("verdict".into()), Value::String(verdict.into()));
+    record.insert(Value::String("timestamp".into()), Value::String(crate::ops::now_iso()));
+    let mut record = Value::Mapping(record);
+
+    let payload = policy::decision_payload(&record).map_err(AllodError::from)?;
+    let mut decider = serde_yaml::Mapping::new();
+    decider.insert(Value::String("principal".into()), Value::String(format!("principal:{by}")));
+    decider.insert(Value::String("signature".into()), Value::String(kp.sign(&payload)));
+    if let Some(map) = record.as_mapping_mut() {
+        map.insert(Value::String("deciders".into()), Value::Sequence(vec![Value::Mapping(decider)]));
+    }
+    decisions.push(record);
+
+    if verdict == "reject" {
+        graph.write_proposal_evidence(hash, &crate::ops::evidence_doc(&decisions, &envelopes))
+            .map_err(AllodError::from)?;
+        return Ok(DecisionOutcome::Rejected);
+    }
+
+    let reg = graph.registry().map_err(AllodError::from)?;
+    let state = graph.fold().map_err(AllodError::from)?;
+    let author_ref = get_str(
+        cs.get("author").ok_or_else(|| AllodError::Other("proposal has no author".into()))?,
+        "principal",
+    )
+    .ok_or_else(|| AllodError::Other("author has no principal".into()))?
+    .to_string();
+    let author_kind = state
+        .find_principal(&author_ref)
+        .map(|(kind, _)| kind.to_string())
+        .ok_or_else(|| AllodError::UnknownPrincipal(author_ref.clone()))?;
+    let checklist = policy::evaluate(&reg, &policy_doc, &state, &cs, &author_kind)
+        .map_err(AllodError::from)?;
+    let roots = graph.roots().map_err(AllodError::from)?;
+    let sat = policy::check_satisfied_with(
+        &state,
+        &policy_doc,
+        &roots,
+        &cs,
+        &author_ref,
+        &checklist,
+        &decisions,
+        &envelopes,
+        &graph.trusted_measurements().map_err(AllodError::from)?,
+    )
+    .map_err(AllodError::from)?;
+
+    if !sat.unmet.is_empty() {
+        graph.write_proposal_evidence(hash, &crate::ops::evidence_doc(&decisions, &envelopes))
+            .map_err(AllodError::from)?;
+        return Ok(DecisionOutcome::StillUnmet { unmet: sat.unmet });
+    }
+
+    let mut state = state;
+    state.apply_changeset(&reg, &cs).map_err(AllodError::from)?;
+    graph.append_changeset(&cs, hash, Some(&crate::ops::evidence_doc(&decisions, &envelopes)))
+        .map_err(AllodError::from)?;
+    graph.remove_proposal(hash).map_err(AllodError::from)?;
+
+    Ok(DecisionOutcome::Admitted { degraded: sat.degraded })
 }
 
 pub fn classify(_graph: &Graph, _node_id: &str, _term: &str, _by: &str, _basis: &str) -> Result<Admission, AllodError> {
