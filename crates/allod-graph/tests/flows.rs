@@ -4,6 +4,23 @@ use std::path::PathBuf;
 
 mod common;
 
+// ---- proposals ----
+
+#[test]
+fn proposals_lists_pending() {
+    let graph = common::init_memory_graph();
+    flows::principal_add(&graph, "p1", "agent", "o").unwrap();
+    // No proposals initially
+    let empty = flows::proposals(&graph).expect("proposals");
+    assert!(empty.is_empty());
+    // Create a proposal
+    let r = flows::propose_preference(&graph, "p1", "prefer tea", "soft", None).unwrap();
+    assert!(matches!(r.admission, Admission::Held { .. }));
+    let list = flows::proposals(&graph).expect("proposals");
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].intent, "Propose preference: prefer tea");
+}
+
 // ---- Task 4b stubs (will be implemented one by one) ----
 
 // ---- trust ----

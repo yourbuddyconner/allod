@@ -357,18 +357,12 @@ fn cmd_envelope(dir: &Path, cs_hash: &str, by: &str, tool: &str) -> Result<(), S
 
 fn cmd_proposals(dir: &Path) -> Result<(), String> {
     let graph = Graph::open(dir)?;
-    let proposals = graph.list_proposals()?;
-    if proposals.is_empty() {
+    let list = allod_graph::flows::proposals(&graph).map_err(|e| e.to_string())?;
+    if list.is_empty() {
         println!("  no pending proposals");
     }
-    for hash in proposals {
-        let cs = graph.read_proposal(&hash)?;
-        println!(
-            "  {}  {}  by {}",
-            short(&hash),
-            get_str(&cs, "intent").unwrap_or(""),
-            get_str(cs.get("author").unwrap_or(&Value::Null), "principal").unwrap_or("?")
-        );
+    for p in &list {
+        println!("  {}  {}  by {}", short(&p.hash), p.intent, p.author);
     }
     Ok(())
 }
