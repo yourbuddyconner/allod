@@ -1,7 +1,7 @@
 {
   "name": "@allod/core",
   "version": "0.1.0",
-  "description": "WASM bindings for allod-graph — governed knowledge graph operations",
+  "description": "WASM bindings for allod-graph \u2014 governed knowledge graph operations",
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
@@ -33,5 +33,10 @@
     "@vitest/coverage-v8": "^3.2.4",
     "typescript": "^5.0.0",
     "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
