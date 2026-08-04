@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,15 +134,24 @@ describe("TS → Rust interop", () => {
 // ---------------------------------------------------------------------------
 
 describe("Rust → TS interop", () => {
-  test("graph built by CLI passes AllodGraph verify, hashes agree", () => {
+  test("graph built by CLI passes AllodGraph verify with governance cycle, hashes agree", () => {
     const dir = mkdtempSync(join(tmpdir(), "allod-rust-to-ts-"));
 
-    // Build the graph via the CLI.  We use a simple admitted-only flow
-    // (init + agent-add + note) so every changeset is immediately admitted
-    // and g.verify().ok is guaranteed true without needing governance sign-off.
+    // Build the graph via the CLI, mirroring Direction 1's flow:
+    // init → agent-add → note → propose-preference → approve.
+    // This exercises the full governance cycle and ensures every changeset
+    // (including governed writes) is properly admitted.
     cli("init", dir, "--owner", "conner");
     cli("agent-add", dir, "jarvis", "--by", "conner");
     cli("note", dir, "--as", "jarvis", "prefers tea");
+
+    // Propose and approve a preference to test the governance cycle.
+    cli("propose-preference", dir, "--as", "jarvis", "--statement", "prefers tea", "--strength", "soft");
+    const proposalsDir = join(dir, ".allod/proposals");
+    const fullHash = readdirSync(proposalsDir)
+      .filter((f) => !f.endsWith(".evidence.yaml"))
+      .map((f) => "sha256:" + f.replace(".yaml", ""))[0];
+    cli("approve", dir, fullHash, "--as", "conner");
 
     // Capture the short state hash from the CLI.
     const { exitCode: verifyExit, stdout: verifyOut } = cliVerifyRaw(dir);
