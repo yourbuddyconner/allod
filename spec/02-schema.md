@@ -151,10 +151,9 @@ always uses the schema in force at the parent, not the current head.
 
 ## 2.6 The meta-ontology (normative)
 
-The meta-ontology is the fixed point that describes itself. It declares
-the six node types used to store all other schema elements. The
-meta-ontology is defined here and compiled into conforming
-implementations; it is never stored in a log.
+The meta-ontology is compiled into conforming implementations and
+declares the six node types used to store all other schema elements.
+It is never stored in a log.
 
 **Meta types.** The package name is `meta`, version 1. The six types are:
 
@@ -234,4 +233,6 @@ contains no meta nodes also carry this sentinel.
 - *In-graph imports* bind by schema-subgraph state hash: the `schema_context`
   value at the revision where the importing package's schema nodes were
   admitted. This is the natural in-graph identifier because it is derived
-  from the log and verifiable by replay.
+  from the log and verifiable by replay. The identifier is defined and
+  derivable from the log, but install-time verification against a declared
+  state hash is not yet enforced and is anticipated before v1.0.

@@ -49,7 +49,9 @@ Two binding forms exist in the spec (§2.6):
   inside a live graph, in-graph import references bind by schema-subgraph
   state hash — the `schema_context` value at the revision where the
   importing package's schema nodes were admitted. This value is derived
-  from the log and verifiable by replay.
+  from the log and verifiable by replay. The identifier is defined and
+  derivable from the log, but install-time verification against a declared
+  state hash is not yet enforced and is anticipated before v1.0.
 
 The two forms co-exist: `allod-lint` and the package-hash vectors operate
 entirely on the projection form and are unchanged by in-graph

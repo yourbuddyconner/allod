@@ -25,6 +25,7 @@ The implementation shipped without departing from the design in substance, but f
 - **`definition`-as-YAML encoding.** The `definition` attribute on meta nodes stores the element's YAML serialization as a string. Structural modeling of the attribute schema and rule body fields is anticipated before v1.0 and will be a breaking format change. This is disclosed explicitly in §2.6.
 - **Sugar-verb mapping at selector-match time.** The design stated "no new operation kinds" and that `define-type`, `deprecate-term`, etc. map onto `create`/`update`/`delete` on meta-typed nodes. The implementation resolves this mapping at policy selector evaluation (§4.1 / `policy.rs`), leaving the YAML package files and their hashes untouched.
 - **Genesis vector carries all loaded packages.** The `materialized_log` vector in `vectors/vectors.yaml` captures genesis for a graph whose genesis includes all profile package nodes. This means the genesis changeset in the vector set is larger than a minimal genesis; the schema_context remains the all-zeros sentinel because no parent meta subgraph exists.
+- **In-graph import hash verification not yet enforced.** In-graph imports bind by schema-subgraph state hash, which is derived from the log and verifiable by replay. However, install-time verification that an imported package's state hash matches a declared constraint is not yet implemented. This verification is anticipated before v1.0.
 
 ## Context
 
