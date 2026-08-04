@@ -14,6 +14,16 @@ import { fsBackend } from "../js/store.js";
 //
 // The test assertions below follow this representation.
 
+/** Generate a UUID v4 string (mirrors the Rust ops::uuid4 helper). */
+function uuid4(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
 test("the founding loop, from TypeScript", async () => {
   const dir = mkdtempSync(join(tmpdir(), "allod-wasm-"));
   const backend = fsBackend(dir);
@@ -42,4 +52,61 @@ test("the founding loop, from TypeScript", async () => {
   // Resume from persisted state: a second instance reads the same dir
   const g2 = new AllodGraph(backend.load(), backend.persist);
   expect(g2.state().state_hash).toEqual(g.state().state_hash);
+});
+
+test("generic commit: memory/Note@1 admitted, memory/Preference@1 held", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "allod-wasm-commit-"));
+  const backend = fsBackend(dir);
+  const g = new AllodGraph([], backend.persist);
+
+  await g.init("conner", "memory");
+  await g.principal_add("jarvis", "agent", "conner");
+
+  // --- commit 1: create a memory/Note@1 + scratch classification (mirrors flows::note) ---
+  const noteId = uuid4();
+  const noteOp = {
+    create: {
+      kind: "node",
+      id: noteId,
+      type: "memory/Note@1",
+      attributes: { content: "committed note" },
+    },
+  };
+  const noteClsOp = {
+    create: {
+      kind: "classification",
+      id: uuid4(),
+      subject: `node:${noteId}`,
+      term: "workspace/scratch@1",
+      asserted_by: "principal:jarvis",
+      basis: "model-assisted",
+    },
+  };
+  const noteResult = await g.commit("jarvis", "Scratch note", [noteOp, noteClsOp], []);
+  // scratch notes are admitted immediately under scratch-is-free
+  expect(noteResult.Admitted).toBeDefined();
+
+  // --- commit 2: create a memory/Preference@1 classified work@1 (mirrors flows::propose_preference) ---
+  const prefId = uuid4();
+  const prefOp = {
+    create: {
+      kind: "node",
+      id: prefId,
+      type: "memory/Preference@1",
+      attributes: { statement: "generic commit works", strength: "hard" },
+    },
+  };
+  const prefClsOp = {
+    create: {
+      kind: "classification",
+      id: uuid4(),
+      subject: `node:${prefId}`,
+      term: "work@1",
+      asserted_by: "principal:jarvis",
+      basis: "model-assisted",
+    },
+  };
+  const prefResult = await g.commit("jarvis", "Preference proposal", [prefOp, prefClsOp], []);
+  // Preference proposals are held for owner review
+  expect(prefResult.Held).toBeDefined();
 });

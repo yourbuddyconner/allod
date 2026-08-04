@@ -3,16 +3,24 @@
   "version": "0.1.0",
   "description": "WASM bindings for allod-graph — governed knowledge graph operations",
   "type": "module",
-  "main": "./js/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./js/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
-    "build": "wasm-pack build --target nodejs --out-dir pkg",
+    "build:wasm": "wasm-pack build --target nodejs --out-dir pkg",
+    "build:ts": "tsc",
+    "build": "pnpm run build:wasm && pnpm run build:ts",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^3.2.4",
+    "typescript": "^5.0.0",
     "vitest": "^3.2.4"
   }
 }

@@ -25,6 +25,29 @@ fn to_js<T: serde::Serialize>(v: &T) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(v).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Convert a JsValue (JS array or object) to `serde_yaml::Value`.
+///
+/// serde-wasm-bindgen deserialises into serde_json-style values so we go:
+///   JsValue → serde_json::Value → JSON string → serde_yaml::Value
+fn js_to_yaml(v: JsValue) -> Result<serde_yaml::Value, JsValue> {
+    let json_val: serde_json::Value =
+        serde_wasm_bindgen::from_value(v).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let json_str =
+        serde_json::to_string(&json_val).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    serde_yaml::from_str(&json_str).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Convert a JsValue that is a JS Array into `Vec<serde_yaml::Value>`.
+fn js_array_to_yaml_vec(v: JsValue) -> Result<Vec<serde_yaml::Value>, JsValue> {
+    match js_to_yaml(v)? {
+        serde_yaml::Value::Sequence(seq) => Ok(seq),
+        other => Err(JsValue::from_str(&format!(
+            "expected array, got {:?}",
+            other
+        ))),
+    }
+}
+
 /// Convert a JS `Array<[string, string]>` (the dump/load format) into
 /// `Vec<(String, String)>`.
 fn array_to_pairs(arr: &JsValue) -> Result<Vec<(String, String)>, JsValue> {
@@ -113,12 +136,17 @@ impl AllodGraph {
 
     pub async fn commit(
         &mut self,
-        _author: String,
-        _intent: String,
-        _ops: JsValue,
-        _envelopes: JsValue,
+        author: String,
+        intent: String,
+        ops: JsValue,
+        envelopes: JsValue,
     ) -> Result<JsValue, JsValue> {
-        Err(JsValue::from_str("commit: not yet implemented"))
+        let ops_vec = js_array_to_yaml_vec(ops)?;
+        let envelopes_vec = js_array_to_yaml_vec(envelopes)?;
+        let res = allod_graph::ops::commit(&self.graph, &author, &intent, ops_vec, envelopes_vec)
+            .map_err(err)?;
+        self.do_persist().await?;
+        to_js(&res)
     }
 
     pub async fn note(&mut self, agent: String, content: String) -> Result<JsValue, JsValue> {
