@@ -21,85 +21,12 @@ mod repo;
 mod md;
 
 use allod_core::get_str;
-use allod_core::sign::Keypair;
 use allod_core::store::Graph;
-use serde_yaml::Value;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub(crate) fn s(v: &str) -> Value {
-    Value::String(v.to_string())
-}
-
-pub(crate) fn uuid4() -> String {
-    allod_graph::ops::uuid4()
-}
-
-/// UTC now as RFC 3339 — delegates to allod_graph::ops.
-pub(crate) fn now_iso() -> String {
-    allod_graph::ops::now_iso()
-}
-
 pub(crate) fn short(hash: &str) -> String {
     allod_graph::ops::short(hash)
-}
-
-// ---------------- changeset construction (delegates to allod_graph::ops) ----------------
-
-pub(crate) fn build_changeset(
-    graph: &Graph,
-    author: &Keypair,
-    intent: &str,
-    ops: Vec<Value>,
-) -> Result<(Value, String), String> {
-    allod_graph::ops::build_changeset(graph, author, intent, ops).map_err(|e| e.to_string())
-}
-
-/// Evaluate, then admit or hold. Returns true when admitted.
-/// Delegates to allod_graph::ops::admit_or_hold and handles printing.
-pub(crate) fn admit_or_hold(
-    graph: &Graph,
-    author_name: &str,
-    cs: &Value,
-    hash: &str,
-    envelopes: Vec<Value>,
-    quiet: bool,
-) -> Result<bool, String> {
-    use allod_graph::ops::Admission;
-    let admission = allod_graph::ops::admit_or_hold(graph, author_name, cs, hash, envelopes)
-        .map_err(|e| e.to_string())?;
-    match admission {
-        Admission::Admitted { hash: h, matched_rules } => {
-            if !quiet {
-                let basis = if matched_rules.is_empty() {
-                    "root authority, default posture".to_string()
-                } else {
-                    format!("rules: {}", matched_rules.join(", "))
-                };
-                println!("  ✓ admitted {} ({basis})", short(&h));
-            }
-            Ok(true)
-        }
-        Admission::Held { hash: h, checklist } => {
-            if !quiet {
-                println!("  ⧗ held as proposal {}", short(&h));
-                println!(
-                    "      matched rules: {}",
-                    checklist.matched_rules.join(", ")
-                );
-                for (role, quorum) in &checklist.reviewers {
-                    println!("      requires: reviewers role {role} (quorum {quorum})");
-                }
-                for class in &checklist.attestations {
-                    println!("      requires: attestation from class {class}");
-                }
-                if checklist.root_required {
-                    println!("      requires: root authority (default posture)");
-                }
-            }
-            Ok(false)
-        }
-    }
 }
 
 // ---------------- commands ----------------
