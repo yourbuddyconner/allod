@@ -1,6 +1,6 @@
 //! Generic operations layer: helpers moved from main.rs with printing removed.
 
-use allod_core::model::{changeset_hash, schema_context};
+use allod_core::model::{changeset_hash, schema_context, schema_state_hash};
 use allod_core::policy;
 use allod_core::sign::Keypair;
 use allod_core::store::Graph;
@@ -86,7 +86,31 @@ pub fn build_changeset(
     ops: Vec<Value>,
 ) -> Result<(Value, String), AllodError> {
     let parents: Vec<Value> = graph.head()?.into_iter().map(Value::String).collect();
-    let sctx = schema_context(&graph.schema_docs()?)?;
+    // Compute the parent state to pin the schema context.
+    // NOTE: admit_or_hold also calls graph.fold(); the double-fold is accepted
+    // here pending a caching layer — see the FIXME in store.rs registry()/policy().
+    let parent_state = graph.fold()?;
+    let sctx = {
+        // Determine whether the parent state carries any live meta-typed node.
+        // If so, use the meta-subgraph state hash; otherwise fall back to the
+        // legacy docs hash (TRANSITIONAL — task 5 removes).
+        let has_meta = parent_state.objects.iter().any(|((kind, _), obj)| {
+            kind == "node"
+                && !obj.deleted
+                && allod_core::get_str(&obj.content, "type")
+                    .is_some_and(allod_core::meta::is_meta_type)
+        });
+        if has_meta {
+            // Materialized path: pin the meta-subgraph state hash.
+            schema_state_hash(&parent_state)
+                .map_err(|e| AllodError::Other(format!("schema_state_hash: {e}")))?
+        } else {
+            // TRANSITIONAL (task 5 removes): legacy docs-hash fallback for graphs
+            // that have no meta-typed nodes in their committed state yet.
+            schema_context(&graph.schema_docs()?)
+                .map_err(|e| AllodError::Other(format!("schema_context: {e}")))?
+        }
+    };
     let mut cs = Mapping::new();
     cs.insert(s("kind"), s("changeset"));
     cs.insert(s("parents"), Value::Sequence(parents));
@@ -242,6 +266,123 @@ pub fn admit_or_hold(
                 root_required: checklist.root_required,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use allod_core::docstore::MemStore;
+    use allod_core::meta::is_meta_type;
+    use allod_core::model::{changeset_hash as cs_hash, schema_state_hash};
+    use allod_core::sign::Keypair;
+    use allod_core::store::Graph;
+    use allod_core::{bare, get_str};
+    use serde_yaml::Value;
+
+    fn s(v: &str) -> Value {
+        Value::String(v.to_string())
+    }
+
+    fn mk_map(pairs: &[(&str, Value)]) -> Value {
+        let mut m = serde_yaml::Mapping::new();
+        for (k, v) in pairs {
+            m.insert(s(k), v.clone());
+        }
+        Value::Mapping(m)
+    }
+
+    fn raw_changeset(parent: Option<&str>, ops: Vec<Value>) -> (Value, String) {
+        let parents: Vec<Value> = parent.into_iter().map(|p| s(p)).collect();
+        let mut cs_map = serde_yaml::Mapping::new();
+        cs_map.insert(s("kind"), s("changeset"));
+        cs_map.insert(s("parents"), Value::Sequence(parents));
+        cs_map.insert(s("operations"), Value::Sequence(ops));
+        let cs = Value::Mapping(cs_map);
+        let (hash, _, _, _) = cs_hash(&cs).expect("changeset_hash");
+        let mut cs = cs;
+        if let Some(m) = cs.as_mapping_mut() {
+            m.insert(s("hash"), s(&hash));
+        }
+        (cs, hash)
+    }
+
+    fn create_meta_node_op(id: &str, type_name: &str, package: &str) -> Value {
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(s("name"), s(type_name));
+        attrs.insert(s("package"), s(package));
+        attrs.insert(s("definition"), s("attributes: {}"));
+        mk_map(&[("create", mk_map(&[
+            ("kind", s("node")),
+            ("id", s(id)),
+            ("type", s("meta/EntityType@1")),
+            ("attributes", Value::Mapping(attrs)),
+        ]))])
+    }
+
+    /// (c) A changeset built on a materialized graph carries
+    /// `schema_context == schema_state_hash(parent_state)`, and after
+    /// admitting a schema changeset the NEXT changeset's schema_context differs.
+    #[test]
+    fn build_changeset_pins_meta_subgraph_state_hash() {
+        // Build a graph with a genesis changeset that installs schema.
+        let meta_op = create_meta_node_op("meta-type-1", "Widget", "myapp");
+        let (cs0, hash0) = raw_changeset(None, vec![meta_op]);
+
+        let graph = Graph::with_store(Box::new(MemStore::new()));
+        graph.write_meta("test-build-cs", &[]).unwrap();
+        graph.append_changeset(&cs0, &hash0, None).unwrap();
+
+        // Fold to get the parent state after genesis.
+        let parent_state = graph.fold().expect("fold must succeed");
+
+        // Verify the state has meta nodes.
+        let has_meta = parent_state.objects.iter().any(|((kind, _), obj)| {
+            kind == "node"
+                && !obj.deleted
+                && get_str(&obj.content, "type").is_some_and(is_meta_type)
+        });
+        assert!(has_meta, "genesis state must have meta-typed nodes");
+
+        let expected_sctx = schema_state_hash(&parent_state)
+            .expect("schema_state_hash must succeed on meta-bearing state");
+
+        // build_changeset requires at least one operation; add a dummy meta op that
+        // won't affect the parent state (genesis is already committed).
+        let dummy_op = create_meta_node_op("meta-type-dummy", "Dummy", "myapp");
+
+        // build_changeset pins schema_context = expected_sctx.
+        let kp = Keypair::generate("builder");
+        let (cs_built, _) = build_changeset(&graph, &kp, "test intent", vec![dummy_op.clone()])
+            .expect("build_changeset must succeed");
+
+        let sctx = get_str(&cs_built, "schema_context")
+            .expect("built changeset must have schema_context field");
+        assert_eq!(
+            sctx, expected_sctx,
+            "schema_context must equal schema_state_hash(parent_state)"
+        );
+
+        // Now add another schema changeset and build again — schema_context must differ.
+        let meta_op2 = create_meta_node_op("meta-type-2", "Gadget", "myapp");
+        let (cs1, hash1) = raw_changeset(Some(&hash0), vec![meta_op2]);
+        graph.append_changeset(&cs1, &hash1, None).unwrap();
+
+        let dummy_op2 = create_meta_node_op("meta-type-dummy2", "Dummy2", "myapp");
+        let (cs_built2, _) = build_changeset(&graph, &kp, "test intent 2", vec![dummy_op2])
+            .expect("build_changeset must succeed after schema changeset");
+
+        let sctx2 = get_str(&cs_built2, "schema_context")
+            .expect("built changeset must have schema_context field");
+        assert_ne!(
+            sctx2, sctx,
+            "schema_context must differ after a schema changeset is admitted"
+        );
+        // And must match the new state's meta hash.
+        let state2 = graph.fold().expect("fold must succeed");
+        let expected_sctx2 = schema_state_hash(&state2)
+            .expect("schema_state_hash must succeed");
+        assert_eq!(sctx2, expected_sctx2, "new schema_context must match new state hash");
     }
 }
 
