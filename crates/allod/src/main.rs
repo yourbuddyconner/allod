@@ -658,13 +658,7 @@ fn cmd_envelope(dir: &Path, cs_hash: &str, by: &str, tool: &str) -> Result<(), S
     {
         list.push(envelope);
     }
-    let base = graph.dir.join(".allod/changesets");
-    let short_hash = cs_hash.strip_prefix("sha256:").unwrap_or(cs_hash);
-    std::fs::write(
-        base.join(format!("{short_hash}.evidence.yaml")),
-        serde_yaml::to_string(&evidence_file).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
+    graph.write_evidence(cs_hash, &evidence_file)?;
     Ok(())
 }
 

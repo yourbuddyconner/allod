@@ -34,41 +34,15 @@ fn collect_yaml(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Load every .yaml file under `root`, registering ontologies and
-/// taxonomies so references resolve regardless of file order.
-pub fn load_dir(root: &Path) -> Loaded {
-    let mut docs = Vec::new();
+/// Process already-parsed `(name, doc)` pairs, building a registry and
+/// returning a `Loaded`. This is the core of loading; `load_dir` delegates
+/// to it after reading and parsing files from disk.
+pub fn load_docs(input: &[(String, Value)]) -> Loaded {
     let mut issues = Vec::new();
-    let mut files = Vec::new();
-    collect_yaml(root, &mut files);
-    files.sort();
-    for path in files {
-        let text = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(err) => {
-                issues.push(LoadIssue {
-                    path: path.clone(),
-                    context: "io".into(),
-                    message: err.to_string(),
-                });
-                continue;
-            }
-        };
-        for de in serde_yaml::Deserializer::from_str(&text) {
-            match Value::deserialize(de) {
-                Ok(doc) if doc.is_mapping() => docs.push((path.clone(), doc)),
-                Ok(_) => {}
-                Err(err) => {
-                    issues.push(LoadIssue {
-                        path: path.clone(),
-                        context: "yaml".into(),
-                        message: format!("parse failure: {err}"),
-                    });
-                    break;
-                }
-            }
-        }
-    }
+    let docs: Vec<(PathBuf, Value)> = input
+        .iter()
+        .map(|(name, doc)| (PathBuf::from(name), doc.clone()))
+        .collect();
     let mut registry = Registry::default();
     for (path, doc) in &docs {
         if doc.get("ontology").is_some() {
@@ -92,4 +66,47 @@ pub fn load_dir(root: &Path) -> Loaded {
         docs,
         issues,
     }
+}
+
+/// Load every .yaml file under `root`, registering ontologies and
+/// taxonomies so references resolve regardless of file order.
+pub fn load_dir(root: &Path) -> Loaded {
+    let mut raw_docs: Vec<(String, Value)> = Vec::new();
+    let mut io_issues = Vec::new();
+    let mut files = Vec::new();
+    collect_yaml(root, &mut files);
+    files.sort();
+    for path in files {
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(err) => {
+                io_issues.push(LoadIssue {
+                    path: path.clone(),
+                    context: "io".into(),
+                    message: err.to_string(),
+                });
+                continue;
+            }
+        };
+        let name = path.to_string_lossy().to_string();
+        for de in serde_yaml::Deserializer::from_str(&text) {
+            match Value::deserialize(de) {
+                Ok(doc) if doc.is_mapping() => raw_docs.push((name.clone(), doc)),
+                Ok(_) => {}
+                Err(err) => {
+                    io_issues.push(LoadIssue {
+                        path: path.clone(),
+                        context: "yaml".into(),
+                        message: format!("parse failure: {err}"),
+                    });
+                    break;
+                }
+            }
+        }
+    }
+    let mut loaded = load_docs(&raw_docs);
+    // Prepend I/O and parse issues so they appear before registry issues
+    io_issues.extend(loaded.issues);
+    loaded.issues = io_issues;
+    loaded
 }

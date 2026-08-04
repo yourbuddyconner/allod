@@ -22,7 +22,7 @@ pub mod vocab;
 
 pub use canon::canonical_cbor;
 pub use hash::{hash_value, merkle_root, package_hash, sha256_hex};
-pub use loader::{load_dir, LoadIssue, Loaded};
+pub use loader::{load_dir, load_docs, LoadIssue, Loaded};
 pub use registry::{Package, Registry, Taxonomy};
 pub use typeexpr::type_expr_errors;
 
