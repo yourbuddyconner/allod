@@ -95,7 +95,10 @@ today and potentially in the browser later.
 6. **No behavior changes.** This is a refactor with one new delivery
    vehicle. The Appendix H vectors, `allod-lint` output, CLI output that
    tests depend on, and the on-disk format are all invariant. Anything
-   that would change behavior is out of scope and waits.
+   that would change behavior is out of scope and waits — specifically,
+   schema-as-object materialization is sub-project 2
+   (`2026-08-03-schema-materialization-design.md`) and lands on top of
+   this refactor.
 
 ## Exit criteria
 
