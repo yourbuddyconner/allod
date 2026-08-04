@@ -9,7 +9,9 @@
 //! proposal through ordinary admission.
 
 use allod_core::get_str;
+use allod_core::meta::is_meta_type;
 use allod_core::model::revision_hash;
+use allod_core::schemaops::project_schema;
 use allod_core::store::Graph;
 use serde_yaml::{Mapping, Value};
 use std::fs;
@@ -125,9 +127,15 @@ pub fn export_docs(graph: &Graph) -> Result<Vec<(String, String)>, AllodError> {
 
     let mut docs: Vec<(String, String)> = Vec::new();
 
-    // Node files.
+    // Node files (skip meta-typed nodes — schema is in .allod/schema/).
     for ((kind, id), obj) in &state.objects {
         if kind != "node" || obj.deleted || obj.redacted {
+            continue;
+        }
+        // Meta-typed nodes (EntityType, Policy, etc.) are exported as .allod/schema/*.yaml,
+        // not as individual markdown files.
+        let node_type_ref = get_str(&obj.content, "type").unwrap_or("");
+        if is_meta_type(node_type_ref) {
             continue;
         }
         let node_ref = format!("node:{id}");
@@ -208,8 +216,8 @@ pub fn export_docs(graph: &Graph) -> Result<Vec<(String, String)>, AllodError> {
         .map_err(|e| AllodError::Other(e.to_string()))?;
     docs.push((".allod/manifest.yaml".to_string(), manifest_text));
 
-    // Schema projection.
-    for (name, doc) in graph.schema_docs()? {
+    // Schema projection: project meta-node state back to .allod/schema/*.yaml.
+    for (name, doc) in project_schema(&state).map_err(AllodError::from)? {
         let schema_text = serde_yaml::to_string(&doc)
             .map_err(|e| AllodError::Other(e.to_string()))?;
         docs.push((format!(".allod/schema/{name}.yaml"), schema_text));

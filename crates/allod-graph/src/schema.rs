@@ -1,7 +1,11 @@
 //! Registry introspection: project the loaded ontology into a typed description.
 
+use allod_core::bare;
+use allod_core::get_str;
+use allod_core::meta::is_meta_type;
 use allod_core::store::Graph;
 use serde_yaml::Value;
+use std::collections::HashMap;
 
 use crate::AllodError;
 
@@ -50,8 +54,52 @@ pub struct SchemaDescription {
 }
 
 /// Produce a `SchemaDescription` by walking the registry of `graph`.
+///
+/// `version` and `status` fields on `EntityTypeView` and `TermView` are populated
+/// from the live meta-typed nodes in the folded state (closing sub-project-1 ledger
+/// note: previously these were always `None`).
 pub fn describe(graph: &Graph) -> Result<SchemaDescription, AllodError> {
     let reg = graph.registry().map_err(AllodError::from)?;
+    let state = graph.fold().map_err(AllodError::from)?;
+
+    // Build lookup maps from meta-node state: (package, name) → version for EntityType/EdgeType/Struct,
+    // and (term_name) → (version, status) for TaxonomyTerm.
+    let mut entity_type_version: HashMap<(String, String), Option<u64>> = HashMap::new();
+    let mut term_meta: HashMap<String, (Option<u64>, Option<String>)> = HashMap::new();
+
+    for ((kind, _), obj) in &state.objects {
+        if kind != "node" || obj.deleted {
+            continue;
+        }
+        let type_ref = match get_str(&obj.content, "type") {
+            Some(t) => t,
+            None => continue,
+        };
+        if !is_meta_type(type_ref) {
+            continue;
+        }
+        let bare_type = bare(type_ref);
+        let attrs = obj.content.get("attributes");
+        let get_attr = |key: &str| -> Option<&str> {
+            attrs.and_then(|a| get_str(a, key))
+        };
+
+        match bare_type {
+            "meta/EntityType" | "meta/EdgeType" | "meta/Struct" => {
+                let name = match get_attr("name") { Some(n) => n, None => continue };
+                let package = match get_attr("package") { Some(p) => p, None => continue };
+                let version = attrs.and_then(|a| a.get("version")).and_then(Value::as_u64);
+                entity_type_version.insert((package.to_string(), name.to_string()), version);
+            }
+            "meta/TaxonomyTerm" => {
+                let name = match get_attr("name") { Some(n) => n, None => continue };
+                let version = attrs.and_then(|a| a.get("version")).and_then(Value::as_u64);
+                let status = get_attr("status").map(String::from);
+                term_meta.insert(name.to_string(), (version, status));
+            }
+            _ => {}
+        }
+    }
 
     let mut entity_types = Vec::new();
     let mut edge_types = Vec::new();
@@ -73,11 +121,16 @@ pub fn describe(graph: &Graph) -> Result<SchemaDescription, AllodError> {
             type_names.sort();
             for tname in type_names {
                 let tdef = &map[tname];
-                let version = tdef.get("version").and_then(Value::as_u64);
                 let extends = tdef
                     .get("extends")
                     .and_then(Value::as_str)
                     .map(String::from);
+
+                // Version from meta node state (closes sub-project-1 ledger note).
+                let version = entity_type_version
+                    .get(&(pkg_name.clone(), tname.to_string()))
+                    .copied()
+                    .flatten();
 
                 // Collect inherited+own attributes from registry
                 let collected = reg.collected_attrs(pkg_name, tname);
@@ -116,7 +169,10 @@ pub fn describe(graph: &Graph) -> Result<SchemaDescription, AllodError> {
             edge_names.sort();
             for ename in edge_names {
                 let edef = &map[ename];
-                let version = edef.get("version").and_then(Value::as_u64);
+                let version = entity_type_version
+                    .get(&(pkg_name.clone(), ename.to_string()))
+                    .copied()
+                    .flatten();
                 let domain = value_to_str_list(edef.get("domain"));
                 let range = value_to_str_list(edef.get("range"));
                 let cardinality = edef
@@ -144,11 +200,16 @@ pub fn describe(graph: &Graph) -> Result<SchemaDescription, AllodError> {
         tterm_names.sort();
         for tname in tterm_names {
             let parents = taxonomy.terms[tname].clone();
+            // version and status from meta node state (closes sub-project-1 ledger note).
+            let (version, status) = term_meta
+                .get(tname.as_str())
+                .cloned()
+                .unwrap_or((None, None));
             terms.push(TermView {
                 name: tname.clone(),
-                version: None,
+                version,
                 parents,
-                status: None,
+                status,
             });
         }
     }
