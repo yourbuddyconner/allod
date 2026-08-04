@@ -170,7 +170,6 @@ pub fn compile_schema_ops(
                     if let Some(st) = status {
                         attrs.insert(s("status"), s(st));
                     }
-                    attrs.insert(s("definition"), s("{}"));
                     ops.push(create_node_op(&mint_id(), "meta/TaxonomyTerm@1", attrs));
                 }
             }
@@ -390,8 +389,11 @@ pub fn project_schema(state: &State) -> Result<Vec<(String, Value)>, String> {
     }
 
     // ── policy doc ───────────────────────────────────────────────────────────
-    // Sort by node id for stability; emit only the first
-    policies.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+    // A graph carries exactly one policy node. Error if more than one exists.
+    if policies.len() > 1 {
+        let ids: Vec<&str> = policies.iter().map(|(id, _, _)| id.as_str()).collect();
+        return Err(format!("multiple meta/Policy nodes: {} — a graph carries one policy", ids.join(", ")));
+    }
     if let Some((_, _policy_name, definition)) = policies.into_iter().next() {
         let policy_val: Value = serde_yaml::from_str(&definition)
             .map_err(|e| format!("policy definition not valid YAML: {e}"))?;
@@ -721,5 +723,47 @@ rules: []
 
         // Must have policy doc
         assert!(names.contains(&"policy"), "must have 'policy' doc");
+    }
+
+    /// project_schema must error when the state contains multiple meta/Policy nodes.
+    #[test]
+    fn project_schema_errors_on_multiple_policy_nodes() {
+        use crate::fold::Obj;
+        use crate::model::revision_hash;
+
+        let mut state = State::default();
+
+        // Create two policy nodes
+        for i in 0..2 {
+            let payload = mk(&[
+                ("kind", s("node")),
+                ("id", s(&format!("policy-{i}"))),
+                ("type", s("meta/Policy@1")),
+                ("attributes", mk(&[
+                    ("name", s(&format!("policy-{i}"))),
+                    ("definition", s("{ default_posture: restricted, roles: {}, rules: [] }")),
+                ])),
+            ]);
+            let rev = revision_hash(&payload).expect("revision hash");
+            state.objects.insert(
+                ("node".to_string(), format!("policy-{i}")),
+                Obj {
+                    content: payload,
+                    rev,
+                    deleted: false,
+                    redacted: false,
+                },
+            );
+        }
+
+        let result = project_schema(&state);
+        assert!(result.is_err(), "must error on multiple policy nodes");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("multiple meta/Policy nodes"),
+            "error message must mention multiple policy nodes, got: {err}"
+        );
+        assert!(err.contains("policy-0"), "error must name first policy node");
+        assert!(err.contains("policy-1"), "error must name second policy node");
     }
 }

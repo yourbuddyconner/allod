@@ -97,7 +97,7 @@ entity_types:
       version:  { type: int }
       parents:  { type: list<string> }
       status:   { type: "enum<active|deprecated>" }
-      definition: { type: string, required: true }
+      definition: { type: string }
 
   ValidationRule:
     attributes:
