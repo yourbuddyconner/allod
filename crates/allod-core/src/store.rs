@@ -388,18 +388,38 @@ impl Graph {
         // changeset validates strictly against the registry derived from
         // committed state — i.e. types must already be present before the
         // changeset that uses them.
+        //
+        // Registry cache (§2.5 reuse semantics): Registry::from_state() is
+        // O(schema-size) and the schema rarely changes.  We cache the last
+        // derived registry and reuse it across consecutive non-meta changesets,
+        // invalidating the cache whenever a changeset touches meta nodes (which
+        // would change the registry after it applies).
         let mut state = State::default();
         let mut is_genesis = true;
+        let mut reg_cache: Option<Registry> = None;
         for cs in &chain {
-            let effective_reg = if is_genesis && changeset_touches_meta(&state, cs) {
+            let touches_meta = changeset_touches_meta(&state, cs);
+            // Invalidate the cache whenever this changeset touches meta nodes —
+            // the registry will be different after the changeset applies.
+            if touches_meta {
+                reg_cache = None;
+            }
+            let effective_reg = if is_genesis && touches_meta {
                 // Genesis only: speculatively apply meta ops to derive the
                 // registry that governs validation of ALL ops in this CS.
                 speculative_registry_for_changeset(&state, cs)?
-            } else {
-                // Derive from committed state: if no meta nodes exist yet,
-                // from_state returns meta_registry(); once meta nodes are
-                // present it returns the full materialized registry.
+            } else if touches_meta {
+                // Post-genesis meta changeset: always re-derive from committed
+                // state (cache was already invalidated above).
                 Registry::from_state(&state)?
+            } else {
+                // Non-meta changeset: reuse the cached registry if available,
+                // otherwise derive and prime the cache.
+                if reg_cache.is_none() {
+                    reg_cache = Some(Registry::from_state(&state)?);
+                }
+                // SAFETY: we just ensured reg_cache is Some above.
+                reg_cache.as_ref().unwrap().clone()
             };
             is_genesis = false;
 
@@ -694,6 +714,59 @@ mod tests {
                     "error must mention schema resolution failure, got: {err}"
                 );
             }
+        }
+    }
+
+    /// Registry cache correctness: fold must succeed (and produce the right
+    /// live nodes) when a genesis schema changeset is followed by several
+    /// consecutive non-meta changesets that exercise the `reg_cache` fast path.
+    #[test]
+    fn fold_caches_registry_for_non_meta_chain() {
+        // Genesis: schema ops with policy (so the registry is non-trivial),
+        // plus a User node so the graph is fully valid.
+        let docs = memory_docs();
+        let policy = memory_policy();
+        let mut id_gen = seq_id();
+        let schema_ops = compile_schema_ops(&docs, Some(&policy), &mut id_gen)
+            .expect("compile_schema_ops");
+
+        let mut user_attrs = serde_yaml::Mapping::new();
+        user_attrs.insert(s("display_name"), s("owner"));
+        user_attrs.insert(s("keys"), Value::Sequence(vec![]));
+        let user_op = create_node_op("user-owner", "core/User@1", user_attrs);
+        let mut genesis_ops = schema_ops;
+        genesis_ops.push(user_op);
+        let (cs0, hash0) = raw_changeset(None, genesis_ops);
+
+        // Three non-meta changesets: each creates a memory/Note node.
+        // These exercise the reg_cache path: the registry is derived once
+        // after genesis and then reused for each subsequent changeset.
+        let mut parent = hash0.clone();
+        let mut hashes = vec![hash0.clone()];
+        let mut changesets = vec![cs0];
+        for i in 1..=3 {
+            let mut note_attrs = serde_yaml::Mapping::new();
+            note_attrs.insert(s("content"), s(&format!("note {i}")));
+            let note_op = create_node_op(&format!("note-{i}"), "memory/Note@1", note_attrs);
+            let (cs, hash) = raw_changeset(Some(&parent), vec![note_op]);
+            parent = hash.clone();
+            hashes.push(hash);
+            changesets.push(cs);
+        }
+
+        let graph = Graph::with_store(Box::new(MemStore::new()));
+        graph.write_meta("test-cache", &[]).unwrap();
+        for (cs, hash) in changesets.iter().zip(hashes.iter()) {
+            graph.append_changeset(cs, hash, None).unwrap();
+        }
+
+        // Full fold must succeed and all 3 notes must be live.
+        let state = graph.fold().expect("fold must succeed with reg cache");
+        for i in 1..=3 {
+            assert!(
+                state.get_live("node", &format!("note-{i}")).is_some(),
+                "note-{i} must be live after fold"
+            );
         }
     }
 

@@ -266,14 +266,16 @@ Part 4.
 **Materialized-log vectors (v0.4).** The vectors in `vectors/vectors.yaml`
 include two additional sections added with schema materialization:
 
-- `materialized_log`: the genesis changeset of a log whose schema
-  objects are materialized in-graph. The genesis carries all loaded
-  package nodes (entity types, edge types, structs, taxonomy terms,
-  validation rules, and a policy node) as `create` operations in a
-  single self-admitted changeset. Its `schema_context` is the all-zeros
-  genesis sentinel (§2.6), because no parent meta subgraph exists. The
-  vector records the changeset hash and the state hash after genesis,
-  including the meta-node contributions to the state tree.
+- `changesets[0]` (name: `cs1`): the genesis changeset of a log whose
+  schema objects are materialized in-graph. The genesis carries all
+  loaded package nodes (entity types, edge types, structs, taxonomy
+  terms, and validation rules — no policy node, since
+  `compile_schema_ops` is called with `policy: None` for the vector
+  generator) as `create` operations in a single self-admitted
+  changeset. Its `schema_context` is the all-zeros genesis sentinel
+  (§2.6), because no parent meta subgraph exists. The vector records
+  the changeset hash and the state hash after genesis, including the
+  meta-node contributions to the state tree.
 
 - `schema_mutation`: a changeset that adds a new entity type
   (`vectors/Annotation`) to a live graph. The vector records the
