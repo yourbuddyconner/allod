@@ -12,6 +12,7 @@ pub mod docstore;
 pub mod fold;
 pub mod hash;
 pub mod loader;
+pub mod meta;
 pub mod model;
 pub mod policy;
 pub mod registry;
