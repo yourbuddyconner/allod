@@ -35,7 +35,7 @@ pub struct ProposalResult {
     pub admission: Admission,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub enum DecisionOutcome {
     Rejected,
     StillUnmet { unmet: Vec<String> },
@@ -387,21 +387,8 @@ pub fn propose_preference(
         op_list,
     )?;
 
-    // Self-attesting envelope (§5.2): proves who signed, not what code ran.
-    let mut statement_map = serde_yaml::Mapping::new();
-    statement_map.insert(Value::String("changeset_hash".into()), Value::String(hash.clone()));
-    let mut envelope = serde_yaml::Mapping::new();
-    envelope.insert(Value::String("kind".into()), Value::String("attestation-envelope".into()));
-    envelope.insert(Value::String("statement".into()), Value::Mapping(statement_map));
-    envelope.insert(Value::String("attester".into()), Value::String(format!("principal:{agent}")));
-    envelope.insert(Value::String("evidence".into()), Value::String("none".into()));
-    envelope.insert(Value::String("evidence_type".into()), Value::String("none".into()));
-    let mut envelope = Value::Mapping(envelope);
-    let payload = policy::envelope_payload(&envelope).map_err(AllodError::from)?;
-    if let Some(map) = envelope.as_mapping_mut() {
-        map.insert(Value::String("signature".into()), Value::String(kp.sign(&payload)));
-    }
-
+    // Self-attesting envelope (§5.2) via the shared ops helper.
+    let envelope = ops::signed_envelope(graph, agent, &hash)?;
     let admission = ops::admit_or_hold(graph, agent, &cs, &hash, vec![envelope])?;
 
     Ok(ProposalResult { hash, admission })

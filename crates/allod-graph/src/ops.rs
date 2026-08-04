@@ -379,3 +379,50 @@ pub fn commit(
     let (cs, hash) = build_changeset(graph, &kp, intent, ops)?;
     admit_or_hold(graph, author_name, &cs, &hash, envelopes)
 }
+
+/// Build a self-attesting envelope (§5.2) for `cs_hash`, signed by `author_name`.
+///
+/// The envelope asserts: I, `author_name`, submitted this changeset.
+/// Evidence is "none" / "none" (identity claim only, no measurement chain).
+/// The signature covers `policy::envelope_payload(&envelope)`.
+pub fn signed_envelope(
+    graph: &Graph,
+    author_name: &str,
+    cs_hash: &str,
+) -> Result<Value, AllodError> {
+    let kp = graph.load_key(author_name)?;
+
+    let mut statement_map = serde_yaml::Mapping::new();
+    statement_map.insert(s("changeset_hash"), s(cs_hash));
+
+    let mut envelope_map = serde_yaml::Mapping::new();
+    envelope_map.insert(s("kind"), s("attestation-envelope"));
+    envelope_map.insert(s("statement"), Value::Mapping(statement_map));
+    envelope_map.insert(s("attester"), s(&format!("principal:{author_name}")));
+    envelope_map.insert(s("evidence"), s("none"));
+    envelope_map.insert(s("evidence_type"), s("none"));
+
+    let mut envelope = Value::Mapping(envelope_map);
+    let payload = policy::envelope_payload(&envelope).map_err(AllodError::from)?;
+    if let Some(map) = envelope.as_mapping_mut() {
+        map.insert(s("signature"), s(&kp.sign(&payload)));
+    }
+
+    Ok(envelope)
+}
+
+/// Build ops, sign, build a self-attesting envelope, and submit — all in one call.
+///
+/// Equivalent to `commit` but attaches a signed attestation envelope so the
+/// `model-assisted-needs-signed-envelope` rule is satisfied.
+pub fn commit_with_envelope(
+    graph: &Graph,
+    author_name: &str,
+    intent: &str,
+    ops: Vec<Value>,
+) -> Result<Admission, AllodError> {
+    let kp = graph.load_key(author_name)?;
+    let (cs, hash) = build_changeset(graph, &kp, intent, ops)?;
+    let envelope = signed_envelope(graph, author_name, &hash)?;
+    admit_or_hold(graph, author_name, &cs, &hash, vec![envelope])
+}
