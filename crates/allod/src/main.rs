@@ -385,7 +385,19 @@ fn cmd_verify(dir: &Path) -> Result<(), String> {
     let chain_len = report.changesets.len();
 
     for cs_entry in &report.changesets {
-        // Only print the happy path line for now; failures propagate as Err below
+        // Check for failures before printing — must not print ✓ on the failure path
+        match &cs_entry.integrity {
+            LevelResult::Failed(r) => return Err(r.clone()),
+            _ => {}
+        }
+        match &cs_entry.authorship {
+            LevelResult::Failed(r) => return Err(r.clone()),
+            _ => {}
+        }
+        match &cs_entry.governance {
+            LevelResult::Failed(r) => return Err(r.clone()),
+            _ => {}
+        }
         let author_ref = &cs_entry.author;
         let admitted_by = &cs_entry.admitted_by;
         println!(
@@ -395,6 +407,10 @@ fn cmd_verify(dir: &Path) -> Result<(), String> {
     }
     println!("  state hash {}", short(&report.state_hash));
     for cp in &report.checkpoints {
+        // Check cp.ok before printing — must not print ✓ on the failure path
+        if !cp.ok {
+            return Err(format!("checkpoint at {} disagrees with replay", short(&cp.revision)));
+        }
         println!(
             "  ✓ checkpoint {} verified against replay ({})",
             short(&cp.revision),
@@ -409,26 +425,6 @@ fn cmd_verify(dir: &Path) -> Result<(), String> {
         if report.degraded.is_empty() { "" } else { ", with degradations noted" }
     );
     if !report.ok {
-        // Find the first failure to surface as an error string
-        for cs_entry in &report.changesets {
-            match &cs_entry.governance {
-                LevelResult::Failed(r) => return Err(r.clone()),
-                _ => {}
-            }
-            match &cs_entry.integrity {
-                LevelResult::Failed(r) => return Err(r.clone()),
-                _ => {}
-            }
-            match &cs_entry.authorship {
-                LevelResult::Failed(r) => return Err(r.clone()),
-                _ => {}
-            }
-        }
-        for cp in &report.checkpoints {
-            if !cp.ok {
-                return Err(format!("checkpoint at {} disagrees with replay", short(&cp.revision)));
-            }
-        }
         return Err("verify failed".into());
     }
     Ok(())
