@@ -20,11 +20,14 @@
 
 use allod_core::fold::State as FoldState;
 use allod_core::hash::{hex_string, package_hash, plain_sha256, sha256_hex};
-use allod_core::sign::Keypair;
+use allod_core::meta::is_meta_type;
 use allod_core::model::{
     changeset_hash, changeset_hash_from_leaves, revision_hash, state_entry, state_root,
+    GENESIS_SCHEMA_CONTEXT,
 };
-use allod_core::get_str;
+use allod_core::schemaops::compile_schema_ops;
+use allod_core::sign::Keypair;
+use allod_core::{bare, get_str};
 use serde_yaml::{Mapping, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -52,6 +55,35 @@ fn load_ontology_docs(dir: &Path) -> Result<BTreeMap<String, Value>, String> {
             docs.insert(name.to_string(), doc.clone());
         }
     }
+    Ok(docs)
+}
+
+/// Load ontology docs AND taxonomy docs (for compile_schema_ops which handles both).
+fn load_all_schema_docs(dir: &Path) -> Result<Vec<(String, Value)>, String> {
+    let loaded = allod_core::load_dir(dir);
+    for issue in &loaded.issues {
+        return Err(format!(
+            "{}: {}: {}",
+            issue.path.display(),
+            issue.context,
+            issue.message
+        ));
+    }
+    let mut docs: Vec<(String, Value)> = Vec::new();
+    for (_, doc) in &loaded.docs {
+        if let Some(name) = get_str(doc, "ontology") {
+            docs.push((name.to_string(), doc.clone()));
+        } else if let Some(name) = get_str(doc, "taxonomy") {
+            docs.push((format!("{name}-taxonomy"), doc.clone()));
+        }
+    }
+    // Sort: ontologies before taxonomies, then alphabetically within each group.
+    // This ensures dependency order: core before memory, etc.
+    docs.sort_by(|(a, _), (b, _)| {
+        let a_tax = a.ends_with("-taxonomy") as u8;
+        let b_tax = b.ends_with("-taxonomy") as u8;
+        a_tax.cmp(&b_tax).then_with(|| a.cmp(b))
+    });
     Ok(docs)
 }
 
@@ -107,6 +139,37 @@ fn compute_package_hashes(
     Ok(hashes)
 }
 
+// ---------------- schema state tracking ----------------
+
+/// Tracks meta-typed node revisions so we can compute schema_state_hash
+/// without a full allod_core::fold::State.
+#[derive(Default)]
+struct SchemaState {
+    /// Sorted by (kind, id) — BTreeMap order matches fold::State order.
+    nodes: BTreeMap<(String, String), String>, // (kind, id) -> rev
+}
+
+impl SchemaState {
+    /// Apply a schema op (create of a meta-typed node).
+    fn apply_create(&mut self, kind: &str, id: &str, rev: &str) {
+        self.nodes.insert((kind.to_string(), id.to_string()), rev.to_string());
+    }
+
+    /// Compute the schema_state_hash: state_root over meta-node state_entries,
+    /// or GENESIS_SCHEMA_CONTEXT when empty.
+    fn schema_state_hash(&self) -> Result<String, String> {
+        if self.nodes.is_empty() {
+            return Ok(GENESIS_SCHEMA_CONTEXT.to_string());
+        }
+        let entries: Vec<Value> = self
+            .nodes
+            .iter()
+            .map(|((kind, id), rev)| state_entry(kind, id, rev, false))
+            .collect();
+        state_root(&entries)
+    }
+}
+
 // ---------------- fold-lite and the state tree ----------------
 
 /// Enough of §3.2.4 to materialize the vector log: apply operations,
@@ -119,19 +182,27 @@ struct State {
 }
 
 impl State {
-    fn apply(&mut self, op: &Value) -> Result<(), String> {
+    fn apply(&mut self, op: &Value, schema_state: &mut SchemaState) -> Result<(), String> {
         let map = op.as_mapping().ok_or("operation must be a map")?;
         let (verb, payload) = map.iter().next().ok_or("empty operation")?;
         let verb = verb.as_str().ok_or("operation verb must be a string")?;
         let kind = get_str(payload, "kind").ok_or("payload needs kind")?.to_string();
         let id = get_str(payload, "id").ok_or("payload needs id")?.to_string();
-        let key = (kind, id);
+        let key = (kind.clone(), id.clone());
         match verb {
             "create" => {
                 if self.objects.contains_key(&key) {
                     return Err(format!("create of existing object {key:?}"));
                 }
                 let rev = revision_hash(payload)?;
+                // Track meta-typed nodes for schema_state_hash computation.
+                if kind == "node" {
+                    if let Some(type_ref) = get_str(payload, "type") {
+                        if is_meta_type(bare(type_ref)) {
+                            schema_state.apply_create(&kind, &id, &rev);
+                        }
+                    }
+                }
                 self.objects.insert(key, (rev, false));
             }
             "update" => {
@@ -202,6 +273,7 @@ fn build_changeset(
     header: &str,
     ops: Vec<Value>,
     state: &mut State,
+    schema_state: &mut SchemaState,
     signer: &Keypair,
 ) -> Result<Built, String> {
     let mut cs = yaml(header);
@@ -218,7 +290,7 @@ fn build_changeset(
         map.insert(Value::String("hash".into()), Value::String(hash.clone()));
     }
     for op in &ops {
-        state.apply(op)?;
+        state.apply(op, schema_state)?;
     }
     let (state_hash, state_listing) = state.state_hash()?;
     Ok(Built {
@@ -236,45 +308,53 @@ fn build_changeset(
 fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
     let docs = load_ontology_docs(ontologies_dir)?;
     let packages = compute_package_hashes(&docs)?;
-    let core_hash = packages
-        .get("core")
-        .ok_or("core package not found")?
-        .clone();
 
     let doc_bytes = b"hello, vectors\n";
     let doc_hash = plain_sha256(doc_bytes);
     let owner = Keypair::from_secret_hex("vector-owner", OWNER_SECRET)?;
     let owner_key_id = owner.key_id();
     let mut state = State::default();
+    let mut schema_state = SchemaState::default();
 
-    // --- cs1: genesis ---
-    let ada = "00000000-0000-4000-8000-000000000001";
-    let grace = "00000000-0000-4000-8000-000000000002";
-    let cs1_ops = vec![
-        yaml(&format!(
-            "create: {{ kind: node, id: \"{ada}\", type: \"core/Person@1\", \
-             attributes: {{ name: \"Ada\" }} }}"
-        )),
-        yaml(&format!(
-            "create: {{ kind: node, id: \"{grace}\", type: \"core/Person@1\", \
-             attributes: {{ name: \"Grace\" }} }}"
-        )),
-        yaml(&format!(
-            "create: {{ kind: edge, id: \"00000000-0000-4000-8000-000000000003\", \
-             type: \"core/knows@1\", from: \"node:{ada}\", to: \"node:{grace}\", \
-             attributes: {{ since: \"2026-01-01\" }} }}"
-        )),
-        yaml(&format!(
-            "create: {{ kind: document, id: \"00000000-0000-4000-8000-000000000004\", \
-             content_hash: \"{doc_hash}\", media_type: \"text/plain\", storage: stored }}"
-        )),
-        yaml(&format!(
-            "create: {{ kind: classification, \
-             id: \"00000000-0000-4000-8000-000000000005\", subject: \"node:{ada}\", \
-             term: \"workspace/curated@1\", asserted_by: \"principal:vector-author\", \
-             basis: manual }}"
-        )),
-    ];
+    // --- compile schema ops for genesis ---
+    // Load all schema docs (ontologies + taxonomies) in dependency order and
+    // compile them to meta-node create operations with deterministic IDs.
+    let all_schema_docs = load_all_schema_docs(ontologies_dir)?;
+    let mut mint_counter: u32 = 0;
+    let mut mint_id = || -> String {
+        mint_counter += 1;
+        format!("00000000-0000-4000-8000-{mint_counter:012x}")
+    };
+    let schema_ops = compile_schema_ops(&all_schema_docs, None, &mut mint_id)?;
+
+    // --- cs1: genesis — contains schema ops + content ops ---
+    // schema_context = GENESIS_SCHEMA_CONTEXT (parent = empty state, no meta subgraph)
+    let ada = "00000000-1000-4000-8000-000000000001";
+    let grace = "00000000-1000-4000-8000-000000000002";
+    let mut cs1_ops = schema_ops.clone();
+    cs1_ops.push(yaml(&format!(
+        "create: {{ kind: node, id: \"{ada}\", type: \"core/Person@1\", \
+         attributes: {{ name: \"Ada\" }} }}"
+    )));
+    cs1_ops.push(yaml(&format!(
+        "create: {{ kind: node, id: \"{grace}\", type: \"core/Person@1\", \
+         attributes: {{ name: \"Grace\" }} }}"
+    )));
+    cs1_ops.push(yaml(&format!(
+        "create: {{ kind: edge, id: \"00000000-1000-4000-8000-000000000003\", \
+         type: \"core/knows@1\", from: \"node:{ada}\", to: \"node:{grace}\", \
+         attributes: {{ since: \"2026-01-01\" }} }}"
+    )));
+    cs1_ops.push(yaml(&format!(
+        "create: {{ kind: document, id: \"00000000-1000-4000-8000-000000000004\", \
+         content_hash: \"{doc_hash}\", media_type: \"text/plain\", storage: stored }}"
+    )));
+    cs1_ops.push(yaml(&format!(
+        "create: {{ kind: classification, \
+         id: \"00000000-1000-4000-8000-000000000005\", subject: \"node:{ada}\", \
+         term: \"workspace/curated@1\", asserted_by: \"principal:vector-author\", \
+         basis: manual }}"
+    )));
     let cs1 = build_changeset(
         "cs1",
         &format!(
@@ -282,13 +362,17 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
              author: {{ principal: \"principal:vector-author\", \
              key: \"{owner_key_id}\" }}, \
              timestamp: \"2026-08-02T00:00:00Z\", \
-             intent: \"Genesis: two people, an edge, a document, a label\", \
-             schema_context: \"{core_hash}\" }}"
+             intent: \"Genesis: schema, two people, an edge, a document, a label\", \
+             schema_context: \"{GENESIS_SCHEMA_CONTEXT}\" }}"
         ),
         cs1_ops,
         &mut state,
+        &mut schema_state,
         &owner,
     )?;
+
+    // schema_context for cs2 = schema_state_hash of state after cs1
+    let cs2_schema_context = schema_state.schema_state_hash()?;
 
     // --- cs2: update Ada, delete Grace. Its intent is the redaction
     // vector's target. ---
@@ -311,28 +395,32 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
              key: \"{owner_key_id}\" }}, \
              timestamp: \"2026-08-02T00:01:00Z\", \
              intent: \"Rename Ada; retire Grace\", \
-             schema_context: \"{core_hash}\" }}",
+             schema_context: \"{cs2_schema_context}\" }}",
             cs1.hash
         ),
         cs2_ops,
         &mut state,
+        &mut schema_state,
         &owner,
     )?;
 
+    // schema_context for cs3 = schema_state_hash of state after cs2
+    let cs3_schema_context = schema_state.schema_state_hash()?;
+
     // --- cs3: three operations, the middle one elided in the vector ---
-    let note = "00000000-0000-4000-8000-000000000006";
+    let note = "00000000-1000-4000-8000-000000000006";
     let cs3_ops = vec![
         yaml(&format!(
             "create: {{ kind: node, id: \"{note}\", type: \"memory/Note@1\", \
              attributes: {{ content: \"Vectors are the ground truth.\" }} }}"
         )),
         yaml(&format!(
-            "create: {{ kind: edge, id: \"00000000-0000-4000-8000-000000000007\", \
+            "create: {{ kind: edge, id: \"00000000-1000-4000-8000-000000000007\", \
              type: \"memory/about@1\", from: \"node:{note}\", to: \"node:{ada}\" }}"
         )),
         yaml(&format!(
             "create: {{ kind: classification, \
-             id: \"00000000-0000-4000-8000-000000000008\", subject: \"node:{note}\", \
+             id: \"00000000-1000-4000-8000-000000000008\", subject: \"node:{note}\", \
              term: \"workspace/curated@1\", asserted_by: \"principal:vector-author\", \
              basis: manual }}"
         )),
@@ -345,13 +433,49 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
              key: \"{owner_key_id}\" }}, \
              timestamp: \"2026-08-02T00:02:00Z\", \
              intent: \"A note about Ada, labeled\", \
-             schema_context: \"{core_hash}\" }}",
+             schema_context: \"{cs3_schema_context}\" }}",
             cs2.hash
         ),
         cs3_ops,
         &mut state,
+        &mut schema_state,
         &owner,
     )?;
+
+    // --- schema-mutation vector: add a new entity type to the schema ---
+    // schema_context before this changeset = schema_state_hash after cs3
+    let cs_schema_mut_context_before = schema_state.schema_state_hash()?;
+
+    // The new entity type: vec-specific "Annotation" in a "vectors" package.
+    // We use a deterministic id (next in the series after mint_counter).
+    mint_counter += 1;
+    let schema_mut_node_id = format!("00000000-0000-4000-8000-{mint_counter:012x}");
+    let annotation_def = "attributes:\n  body: {type: string, required: true}\n";
+    let schema_mut_op = yaml(&format!(
+        "create: {{ kind: node, id: \"{schema_mut_node_id}\", \
+         type: \"meta/EntityType@1\", attributes: {{ name: \"Annotation\", \
+         package: \"vectors\", definition: {:?} }} }}",
+        annotation_def
+    ));
+    let cs_schema_mut = build_changeset(
+        "cs_schema_mut",
+        &format!(
+            "{{ kind: changeset, parents: [\"{}\"], \
+             author: {{ principal: \"principal:vector-author\", \
+             key: \"{owner_key_id}\" }}, \
+             timestamp: \"2026-08-02T00:03:00Z\", \
+             intent: \"Schema mutation: add vectors/Annotation entity type\", \
+             schema_context: \"{cs_schema_mut_context_before}\" }}",
+            cs3.hash
+        ),
+        vec![schema_mut_op],
+        &mut state,
+        &mut schema_state,
+        &owner,
+    )?;
+
+    // schema_context after the mutation changeset
+    let cs_schema_mut_context_after = schema_state.schema_state_hash()?;
 
     // --- elision (§3.2.6): disclose ops 0 and 2, elide op 1, verify
     // the hash from the disclosed operations plus the retained leaf ---
@@ -381,6 +505,9 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
 
     // --- governance audit pair (Appendix H): one passing, one
     // failing audit of the same proposal under memory-local ---
+    // Governance changesets form their own independent graph (no parent
+    // from the main log). The governance genesis has an empty parent
+    // state, so schema_context = GENESIS_SCHEMA_CONTEXT.
     let loaded = allod_core::load_dir(ontologies_dir);
     let reg = loaded.registry;
     let mut policy: Value = serde_yaml::from_str(
@@ -404,10 +531,11 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
             kp.public_hex()
         )
     };
+    // Governance genesis: schema_context = GENESIS_SCHEMA_CONTEXT (empty parent).
     let g1 = yaml(&format!(
         "{{ kind: changeset, parents: [], author: {{ principal: \"principal:vector-owner\", \
          key: \"{}\" }}, timestamp: \"2026-08-02T01:00:00Z\", \
-         intent: \"Governance vectors: genesis\", schema_context: \"{core_hash}\", \
+         intent: \"Governance vectors: genesis\", schema_context: \"{GENESIS_SCHEMA_CONTEXT}\", \
          operations: [ {{ create: {{ kind: node, \
          id: \"00000000-0000-4000-8000-000000000010\", type: \"core/User@1\", \
          attributes: {{ display_name: \"vector-owner\", status: \"active\", \
@@ -421,11 +549,13 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         m.insert(Value::String("hash".into()), Value::String(g1_hash.clone()));
         m.insert(Value::String("signature".into()), Value::String(owner.sign(&g1_hash)));
     }
+    // g2: schema_context = GENESIS_SCHEMA_CONTEXT (g1 contains no meta nodes,
+    // so schema subgraph of parent state is still empty).
     let g2 = yaml(&format!(
         "{{ kind: changeset, parents: [\"{g1_hash}\"], author: {{ \
          principal: \"principal:vector-owner\", key: \"{}\" }}, \
          timestamp: \"2026-08-02T01:01:00Z\", \
-         intent: \"Governance vectors: register agent\", schema_context: \"{core_hash}\", \
+         intent: \"Governance vectors: register agent\", schema_context: \"{GENESIS_SCHEMA_CONTEXT}\", \
          operations: [ {{ create: {{ kind: node, \
          id: \"00000000-0000-4000-8000-000000000011\", type: \"core/Agent@1\", \
          attributes: {{ display_name: \"vector-agent\", status: \"active\", \
@@ -444,12 +574,13 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
     audit_state.apply_changeset(&reg, &g1)?;
     audit_state.apply_changeset(&reg, &g2)?;
 
+    // proposal: schema_context = GENESIS_SCHEMA_CONTEXT (g2 still no meta nodes)
     let proposal = yaml(&format!(
         "{{ kind: changeset, parents: [\"{g2_hash}\"], author: {{ \
          principal: \"principal:vector-agent\", key: \"{}\" }}, \
          timestamp: \"2026-08-02T01:02:00Z\", \
          intent: \"Governance vectors: agent write needing owner review\", \
-         schema_context: \"{core_hash}\", operations: [ \
+         schema_context: \"{GENESIS_SCHEMA_CONTEXT}\", operations: [ \
          {{ create: {{ kind: node, id: \"00000000-0000-4000-8000-000000000012\", \
          type: \"memory/Note@1\", attributes: {{ content: \"audited note\" }}, \
          provenance: {{ derived_by: \"principal:vector-agent\", method: \"manual\" }} }} }}, \
@@ -567,6 +698,39 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         cs2.hash
     ));
     vectors.insert(Value::String("redaction".into()), redaction);
+
+    // --- schema_mutation section ---
+    let mut schema_mutation = Mapping::new();
+    schema_mutation.insert(
+        Value::String("description".into()),
+        Value::String(
+            "A changeset that adds a new entity type (vectors/Annotation) to the schema. \
+             The schema_context before is the schema_state_hash of cs3's state; \
+             after this changeset it changes because a new meta node was added."
+                .into(),
+        ),
+    );
+    schema_mutation.insert(
+        Value::String("changeset_name".into()),
+        Value::String("cs_schema_mut".into()),
+    );
+    schema_mutation.insert(
+        Value::String("hash".into()),
+        Value::String(cs_schema_mut.hash.clone()),
+    );
+    schema_mutation.insert(
+        Value::String("schema_context_before".into()),
+        Value::String(cs_schema_mut_context_before.clone()),
+    );
+    schema_mutation.insert(
+        Value::String("schema_context_after".into()),
+        Value::String(cs_schema_mut_context_after.clone()),
+    );
+    // Verify that schema_context actually changed
+    if cs_schema_mut_context_before == cs_schema_mut_context_after {
+        return Err("schema-mutation vector: schema_context did not change after adding entity type".into());
+    }
+    vectors.insert(Value::String("schema_mutation".into()), Value::Mapping(schema_mutation));
 
     let mut signing = Mapping::new();
     signing.insert(Value::String("note".into()), Value::String(

@@ -8,97 +8,3186 @@ author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:00:00Z
-intent: 'Genesis: two people, an edge, a document, a label'
-schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
+intent: 'Genesis: schema, two people, an edge, a document, a label'
+schema_context: sha256:0000000000000000000000000000000000000000000000000000000000000000
 operations:
 - create:
     kind: node
     id: 00000000-0000-4000-8000-000000000001
+    type: meta/EntityType@1
+    attributes:
+      name: Repository
+      package: code
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          origin:
+            type: string
+          default_branch:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000002
+    type: meta/EntityType@1
+    attributes:
+      name: SourceFile
+      package: code
+      definition: |
+        attributes:
+          path:
+            type: string
+            required: true
+          language:
+            type: string
+          blob:
+            type: external-ref
+            required: true
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000003
+    type: meta/EntityType@1
+    attributes:
+      name: Module
+      package: code
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          path:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000004
+    type: meta/EntityType@1
+    attributes:
+      name: Function
+      package: code
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          signature:
+            type: string
+          span:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000005
+    type: meta/EntityType@1
+    attributes:
+      name: Type
+      package: code
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          kind:
+            type: enum<struct|class|enum|interface|alias>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000006
+    type: meta/EdgeType@1
+    attributes:
+      name: in_repo
+      package: code
+      definition: |
+        domain: SourceFile
+        range: Repository
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000007
+    type: meta/EdgeType@1
+    attributes:
+      name: in_module
+      package: code
+      definition: |
+        domain: SourceFile
+        range: Module
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000008
+    type: meta/EdgeType@1
+    attributes:
+      name: declares
+      package: code
+      definition: |
+        domain: SourceFile
+        range:
+        - Function
+        - Type
+        cardinality: one-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000009
+    type: meta/EdgeType@1
+    attributes:
+      name: imports
+      package: code
+      definition: |
+        domain:
+        - SourceFile
+        - Module
+        range:
+        - SourceFile
+        - Module
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000000a
+    type: meta/EdgeType@1
+    attributes:
+      name: calls
+      package: code
+      definition: |
+        domain: Function
+        range: Function
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000000b
+    type: meta/EdgeType@1
+    attributes:
+      name: references
+      package: code
+      definition: |
+        domain:
+        - Function
+        - Type
+        range:
+        - Function
+        - Type
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000000c
+    type: meta/EdgeType@1
+    attributes:
+      name: implements
+      package: code
+      definition: |
+        domain: Type
+        range: Type
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000000d
+    type: meta/EntityType@1
+    attributes:
+      name: Person
+      package: core
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          emails:
+            type: list<string>
+          affiliation:
+            type: node-ref
+            target: Company
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000000e
+    type: meta/EntityType@1
+    attributes:
+      name: Company
+      package: core
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          domains:
+            type: list<string>
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000000f
+    type: meta/EntityType@1
+    attributes:
+      name: User
+      package: core
+      definition: |
+        attributes:
+          display_name:
+            type: string
+            required: true
+          keys:
+            type: list<KeyRecord>
+            required: true
+          status:
+            type: enum<active|suspended>
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000010
+    type: meta/EntityType@1
+    attributes:
+      name: Service
+      package: core
+      definition: |
+        attributes:
+          display_name:
+            type: string
+            required: true
+          keys:
+            type: list<KeyRecord>
+            required: true
+          status:
+            type: enum<active|suspended>
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000011
+    type: meta/EntityType@1
+    attributes:
+      name: Agent
+      package: core
+      definition: |
+        attributes:
+          display_name:
+            type: string
+            required: true
+          keys:
+            type: list<KeyRecord>
+            required: true
+          status:
+            type: enum<active|suspended>
+          delegated_by:
+            type: node-ref
+            target: User
+            required: true
+          scope:
+            type: selector
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000012
+    type: meta/EntityType@1
+    attributes:
+      name: Peer
+      package: core
+      definition: |
+        attributes:
+          graph_id:
+            type: string
+            required: true
+          root_keys:
+            type: list<string>
+            required: true
+          locators:
+            type: list<string>
+          trust_basis:
+            type: enum<out-of-band|tofu|attested>
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000013
+    type: meta/EntityType@1
+    attributes:
+      name: Grant
+      package: core
+      definition: |
+        attributes:
+          audience:
+            type: string
+            required: true
+          scope:
+            type: selector
+            required: true
+          rights:
+            type: list<enum<state|history|subscribe>>
+            required: true
+          valid_from:
+            type: timestamp
+          valid_until:
+            type: timestamp
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000014
+    type: meta/EdgeType@1
+    attributes:
+      name: employs
+      package: core
+      definition: |
+        domain: Company
+        range: Person
+        cardinality: one-to-many
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000015
+    type: meta/EdgeType@1
+    attributes:
+      name: knows
+      package: core
+      definition: |
+        domain: Person
+        range: Person
+        cardinality: many-to-many
+        attributes:
+          since:
+            type: date
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000016
+    type: meta/Struct@1
+    attributes:
+      name: KeyRecord
+      package: core
+      definition: |
+        key_id:
+          type: string
+          required: true
+        algorithm:
+          type: string
+          required: true
+        public:
+          type: string
+          required: true
+        valid_from:
+          type: timestamp
+        valid_until:
+          type: timestamp
+        status:
+          type: enum<active|rotated|revoked>
+          required: true
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000017
+    type: meta/EntityType@1
+    attributes:
+      name: Employee
+      package: corp
+      definition: |
+        extends: core/Person
+        attributes:
+          title:
+            type: string
+            required: true
+          employment_type:
+            type: enum<full-time|part-time|contractor>
+          hired_on:
+            type: date
+            required: true
+          terminated_on:
+            type: date
+          location:
+            type: string
+          cost_center:
+            type: string
+        constraints:
+        - terminated_on >= hired_on
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000018
+    type: meta/EntityType@1
+    attributes:
+      name: OrgUnit
+      package: corp
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          unit_type:
+            type: enum<team|department|division|subsidiary>
+            required: true
+          charter:
+            type: string
+          cost_center:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000019
+    type: meta/EntityType@1
+    attributes:
+      name: Contact
+      package: corp
+      definition: |
+        extends: core/Person
+        attributes:
+          organization:
+            type: node-ref
+            target: core/Company
+          preferred_channel:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000001a
+    type: meta/EntityType@1
+    attributes:
+      name: Customer
+      package: corp
+      definition: |
+        extends: core/Company
+        attributes:
+          tier:
+            type: string
+          arr_usd:
+            type: decimal
+          renewal_on:
+            type: date
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000001b
+    type: meta/EntityType@1
+    attributes:
+      name: Vendor
+      package: corp
+      definition: |
+        extends: core/Company
+        attributes:
+          category:
+            type: string
+          criticality:
+            type: enum<low|medium|high>
+          renewal_on:
+            type: date
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000001c
+    type: meta/EntityType@1
+    attributes:
+      name: Partner
+      package: corp
+      definition: |
+        extends: core/Company
+        attributes:
+          partnership_type:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000001d
+    type: meta/EntityType@1
+    attributes:
+      name: Contract
+      package: corp
+      definition: |
+        attributes:
+          title:
+            type: string
+            required: true
+          effective:
+            type: date
+            required: true
+          expires:
+            type: date
+          value_usd:
+            type: decimal
+          auto_renews:
+            type: bool
+          signed_copy:
+            type: document-ref
+            required: true
+        constraints:
+        - expires >= effective
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000001e
+    type: meta/EntityType@1
+    attributes:
+      name: Deal
+      package: corp
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          stage:
+            type: string
+          amount_usd:
+            type: decimal
+          close_on:
+            type: date
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000001f
+    type: meta/EntityType@1
+    attributes:
+      name: Project
+      package: corp
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          status:
+            type: enum<proposed|active|done|dropped>
+          starts_on:
+            type: date
+          ends_on:
+            type: date
+          brief:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000020
+    type: meta/EntityType@1
+    attributes:
+      name: Objective
+      package: corp
+      definition: |
+        attributes:
+          statement:
+            type: string
+            required: true
+          period:
+            type: string
+          status:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000021
+    type: meta/EntityType@1
+    attributes:
+      name: Meeting
+      package: corp
+      definition: |
+        attributes:
+          title:
+            type: string
+            required: true
+          held_at:
+            type: timestamp
+            required: true
+          transcript:
+            type: document-ref
+          notes:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000022
+    type: meta/EntityType@1
+    attributes:
+      name: Decision
+      package: corp
+      definition: |
+        attributes:
+          summary:
+            type: string
+            required: true
+          rationale:
+            type: string
+          status:
+            type: enum<proposed|approved|reversed>
+          decided_on:
+            type: date
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000023
+    type: meta/EntityType@1
+    attributes:
+      name: Risk
+      package: corp
+      definition: |
+        attributes:
+          description:
+            type: string
+            required: true
+          severity:
+            type: string
+          likelihood:
+            type: string
+          mitigation:
+            type: string
+          status:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000024
+    type: meta/EdgeType@1
+    attributes:
+      name: member_of
+      package: corp
+      definition: |
+        domain: Employee
+        range: OrgUnit
+        cardinality: many-to-many
+        attributes:
+          role:
+            type: string
+          from:
+            type: date
+          until:
+            type: date
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000025
+    type: meta/EdgeType@1
+    attributes:
+      name: reports_to
+      package: corp
+      definition: |
+        domain: Employee
+        range: Employee
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000026
+    type: meta/EdgeType@1
+    attributes:
+      name: leads
+      package: corp
+      definition: |
+        domain: Employee
+        range: OrgUnit
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000027
+    type: meta/EdgeType@1
+    attributes:
+      name: part_of
+      package: corp
+      definition: |
+        domain: OrgUnit
+        range: OrgUnit
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000028
+    type: meta/EdgeType@1
+    attributes:
+      name: owns_account
+      package: corp
+      definition: |
+        domain: Employee
+        range: core/Company
+        cardinality: one-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000029
+    type: meta/EdgeType@1
+    attributes:
+      name: party_to
+      package: corp
+      definition: |
+        domain: core/Company
+        range: Contract
+        cardinality: many-to-many
+        attributes:
+          role:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000002a
+    type: meta/EdgeType@1
+    attributes:
+      name: works_on
+      package: corp
+      definition: |
+        domain: Employee
+        range: Project
+        cardinality: many-to-many
+        attributes:
+          role:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000002b
+    type: meta/EdgeType@1
+    attributes:
+      name: pursues
+      package: corp
+      definition: |
+        domain:
+        - Deal
+        - Project
+        range: Objective
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000002c
+    type: meta/EdgeType@1
+    attributes:
+      name: attended
+      package: corp
+      definition: |
+        domain: core/Person
+        range: Meeting
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000002d
+    type: meta/EdgeType@1
+    attributes:
+      name: decided_in
+      package: corp
+      definition: |
+        domain: Decision
+        range: Meeting
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000002e
+    type: meta/EdgeType@1
+    attributes:
+      name: decided_by
+      package: corp
+      definition: |
+        domain: Decision
+        range: core/Person
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000002f
+    type: meta/EdgeType@1
+    attributes:
+      name: supersedes
+      package: corp
+      definition: |
+        domain: Decision
+        range: Decision
+        cardinality: one-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000030
+    type: meta/EdgeType@1
+    attributes:
+      name: affects
+      package: corp
+      definition: |
+        domain: Decision
+        range:
+        - Project
+        - Contract
+        - OrgUnit
+        - core/Company
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000031
+    type: meta/EdgeType@1
+    attributes:
+      name: threatens
+      package: corp
+      definition: |
+        domain: Risk
+        range:
+        - Project
+        - Contract
+        - Objective
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000032
+    type: meta/ValidationRule@1
+    attributes:
+      name: contract-has-parties
+      package: corp
+      definition: |
+        name: contract-has-parties
+        on:
+          type: Contract
+          operation:
+          - create
+        require:
+          edge:
+            type: party_to
+            direction: in
+            min: 1
+            within: changeset
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000033
+    type: meta/ValidationRule@1
+    attributes:
+      name: approved-decision-has-decider
+      package: corp
+      definition: |
+        name: approved-decision-has-decider
+        on:
+          type: Decision
+          where:
+            attr: status
+            equals: approved
+        require:
+          edge:
+            type: decided_by
+            direction: out
+            min: 1
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000034
+    type: meta/EntityType@1
+    attributes:
+      name: Service
+      package: eng
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          description:
+            type: string
+          tier:
+            type: enum<0|1|2>
+          status:
+            type: enum<active|deprecated|retired>
+          runbook:
+            type: document-ref
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000035
+    type: meta/EntityType@1
+    attributes:
+      name: Environment
+      package: eng
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          region:
+            type: string
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000036
+    type: meta/EntityType@1
+    attributes:
+      name: Release
+      package: eng
+      definition: |
+        attributes:
+          version:
+            type: string
+            required: true
+          released_at:
+            type: timestamp
+          artifact:
+            type: external-ref
+          notes:
+            type: string
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000037
+    type: meta/EntityType@1
+    attributes:
+      name: Deployment
+      package: eng
+      definition: |
+        attributes:
+          deployed_at:
+            type: timestamp
+            required: true
+          status:
+            type: enum<in-progress|healthy|rolled-back>
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000038
+    type: meta/EntityType@1
+    attributes:
+      name: ChangeRequest
+      package: eng
+      definition: |
+        attributes:
+          title:
+            type: string
+            required: true
+          summary:
+            type: string
+          risk:
+            type: enum<standard|high|emergency>
+            required: true
+          status:
+            type: enum<draft|proposed|approved|applied|rolled-back|rejected>
+          window_start:
+            type: timestamp
+          window_end:
+            type: timestamp
+          rollback_plan:
+            type: string
+        constraints:
+        - window_end >= window_start
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000039
+    type: meta/EntityType@1
+    attributes:
+      name: DesignDoc
+      package: eng
+      definition: |
+        attributes:
+          title:
+            type: string
+            required: true
+          status:
+            type: enum<draft|review|accepted|superseded>
+          doc:
+            type: document-ref
+            required: true
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000003a
+    type: meta/EntityType@1
+    attributes:
+      name: Incident
+      package: eng
+      definition: |
+        attributes:
+          title:
+            type: string
+            required: true
+          severity:
+            type: enum<sev1|sev2|sev3|sev4>
+            required: true
+          status:
+            type: enum<open|mitigated|resolved>
+          opened_at:
+            type: timestamp
+            required: true
+          resolved_at:
+            type: timestamp
+          timeline:
+            type: string
+        constraints:
+        - resolved_at >= opened_at
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000003b
+    type: meta/EntityType@1
+    attributes:
+      name: Postmortem
+      package: eng
+      definition: |
+        attributes:
+          doc:
+            type: document-ref
+            required: true
+          status:
+            type: enum<draft|reviewed>
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000003c
+    type: meta/EntityType@1
+    attributes:
+      name: ActionItem
+      package: eng
+      definition: |
+        attributes:
+          description:
+            type: string
+            required: true
+          due_on:
+            type: date
+          status:
+            type: enum<open|done|dropped>
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000003d
+    type: meta/EntityType@1
+    attributes:
+      name: Slo
+      package: eng
+      definition: |
+        attributes:
+          objective:
+            type: string
+            required: true
+          target:
+            type: decimal
+          window:
+            type: duration
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000003e
+    type: meta/EdgeType@1
+    attributes:
+      name: owns
+      package: eng
+      definition: |
+        domain: corp/OrgUnit
+        range:
+        - Service
+        - code/Repository
+        cardinality: many-to-many
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000003f
+    type: meta/EdgeType@1
+    attributes:
+      name: on_call_for
+      package: eng
+      definition: |
+        domain: corp/Employee
+        range: Service
+        cardinality: many-to-many
+        attributes:
+          from:
+            type: date
+          until:
+            type: date
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000040
+    type: meta/EdgeType@1
+    attributes:
+      name: built_from
+      package: eng
+      definition: |
+        domain: Service
+        range: code/Repository
+        cardinality: many-to-many
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000041
+    type: meta/EdgeType@1
+    attributes:
+      name: depends_on
+      package: eng
+      definition: |
+        domain: Service
+        range: Service
+        cardinality: many-to-many
+        attributes:
+          nature:
+            type: enum<sync|async|data>
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000042
+    type: meta/EdgeType@1
+    attributes:
+      name: of_service
+      package: eng
+      definition: |
+        domain: Release
+        range: Service
+        cardinality: many-to-one
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000043
+    type: meta/EdgeType@1
+    attributes:
+      name: deploys
+      package: eng
+      definition: |
+        domain: Deployment
+        range: Release
+        cardinality: many-to-one
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000044
+    type: meta/EdgeType@1
+    attributes:
+      name: runs_in
+      package: eng
+      definition: |
+        domain: Deployment
+        range: Environment
+        cardinality: many-to-one
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000045
+    type: meta/EdgeType@1
+    attributes:
+      name: measures
+      package: eng
+      definition: |
+        domain: Slo
+        range: Service
+        cardinality: many-to-one
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000046
+    type: meta/EdgeType@1
+    attributes:
+      name: fulfills
+      package: eng
+      definition: |
+        domain: Deployment
+        range: ChangeRequest
+        cardinality: many-to-one
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000047
+    type: meta/EdgeType@1
+    attributes:
+      name: targets
+      package: eng
+      definition: |
+        domain: ChangeRequest
+        range:
+        - Service
+        - Environment
+        - code/Repository
+        cardinality: many-to-many
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000048
+    type: meta/EdgeType@1
+    attributes:
+      name: informs
+      package: eng
+      definition: |
+        domain: DesignDoc
+        range:
+        - ChangeRequest
+        - Service
+        cardinality: many-to-many
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000049
+    type: meta/EdgeType@1
+    attributes:
+      name: impacts
+      package: eng
+      definition: |
+        domain: Incident
+        range: Service
+        cardinality: many-to-many
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000004a
+    type: meta/EdgeType@1
+    attributes:
+      name: caused_by
+      package: eng
+      definition: |
+        domain: Incident
+        range:
+        - Deployment
+        - ChangeRequest
+        cardinality: many-to-many
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000004b
+    type: meta/EdgeType@1
+    attributes:
+      name: analyzed_by
+      package: eng
+      definition: |
+        domain: Incident
+        range: Postmortem
+        cardinality: one-to-one
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000004c
+    type: meta/EdgeType@1
+    attributes:
+      name: yields
+      package: eng
+      definition: |
+        domain: Postmortem
+        range: ActionItem
+        cardinality: one-to-many
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000004d
+    type: meta/EdgeType@1
+    attributes:
+      name: assigned_to
+      package: eng
+      definition: |
+        domain: ActionItem
+        range: corp/Employee
+        cardinality: many-to-one
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000004e
+    type: meta/ValidationRule@1
+    attributes:
+      name: high-risk-has-rollback-plan
+      package: eng
+      definition: |
+        name: high-risk-has-rollback-plan
+        on:
+          type: ChangeRequest
+          where:
+            attr: risk
+            in:
+            - high
+            - emergency
+        require:
+          attr: rollback_plan
+          present: true
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000004f
+    type: meta/ValidationRule@1
+    attributes:
+      name: production-deploys-fulfill-changes
+      package: eng
+      definition: |
+        name: production-deploys-fulfill-changes
+        on:
+          type: Deployment
+          operation:
+          - create
+          where:
+            edge:
+              type: runs_in
+              direction: out
+              target_where:
+                attr: name
+                equals: production
+        require:
+          edge:
+            type: fulfills
+            direction: out
+            min: 1
+            within: changeset
+            target_where:
+              attr: status
+              equals: approved
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000050
+    type: meta/ValidationRule@1
+    attributes:
+      name: resolved-incidents-have-timestamps
+      package: eng
+      definition: |
+        name: resolved-incidents-have-timestamps
+        on:
+          type: Incident
+          where:
+            attr: status
+            equals: resolved
+        require:
+          attr: resolved_at
+          present: true
+      imports:
+      - corp
+      - code
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000051
+    type: meta/EntityType@1
+    attributes:
+      name: Framework
+      package: grc
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          version:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000052
+    type: meta/EntityType@1
+    attributes:
+      name: Control
+      package: grc
+      definition: |
+        attributes:
+          identifier:
+            type: string
+            required: true
+          statement:
+            type: string
+            required: true
+          frequency:
+            type: enum<continuous|daily|weekly|monthly|quarterly|annual>
+          status:
+            type: enum<active|retired>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000053
+    type: meta/EntityType@1
+    attributes:
+      name: Evidence
+      package: grc
+      definition: |
+        attributes:
+          description:
+            type: string
+            required: true
+          collected_at:
+            type: timestamp
+            required: true
+          artifact:
+            type: document-ref
+            required: true
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000054
+    type: meta/EntityType@1
+    attributes:
+      name: Assessment
+      package: grc
+      definition: |
+        attributes:
+          period:
+            type: string
+            required: true
+          status:
+            type: enum<planned|fieldwork|complete>
+          report:
+            type: document-ref
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000055
+    type: meta/EntityType@1
+    attributes:
+      name: Finding
+      package: grc
+      definition: |
+        attributes:
+          description:
+            type: string
+            required: true
+          severity:
+            type: enum<low|medium|high>
+          status:
+            type: enum<open|remediated|accepted>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000056
+    type: meta/EntityType@1
+    attributes:
+      name: Exception
+      package: grc
+      definition: |
+        attributes:
+          justification:
+            type: string
+            required: true
+          expires_on:
+            type: date
+            required: true
+          status:
+            type: enum<active|expired|withdrawn>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000057
+    type: meta/EdgeType@1
+    attributes:
+      name: part_of
+      package: grc
+      definition: |
+        domain: Control
+        range: Framework
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000058
+    type: meta/EdgeType@1
+    attributes:
+      name: satisfies
+      package: grc
+      definition: |
+        domain: Evidence
+        range: Control
+        cardinality: many-to-many
+        attributes:
+          period:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000059
+    type: meta/EdgeType@1
+    attributes:
+      name: owned_by
+      package: grc
+      definition: |
+        domain: Control
+        range: core/Person
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000005a
+    type: meta/EdgeType@1
+    attributes:
+      name: assessed
+      package: grc
+      definition: |
+        domain: Assessment
+        range: Control
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000005b
+    type: meta/EdgeType@1
+    attributes:
+      name: raised_in
+      package: grc
+      definition: |
+        domain: Finding
+        range: Assessment
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000005c
+    type: meta/EdgeType@1
+    attributes:
+      name: against
+      package: grc
+      definition: |
+        domain: Finding
+        range: Control
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000005d
+    type: meta/EdgeType@1
+    attributes:
+      name: excepts
+      package: grc
+      definition: |
+        domain: Exception
+        range: Control
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000005e
+    type: meta/ValidationRule@1
+    attributes:
+      name: findings-name-their-control
+      package: grc
+      definition: |
+        name: findings-name-their-control
+        on:
+          type: Finding
+          operation:
+          - create
+        require:
+          edge:
+            type: against
+            direction: out
+            min: 1
+            within: changeset
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000005f
+    type: meta/EntityType@1
+    attributes:
+      name: Note
+      package: memory
+      definition: |
+        attributes:
+          title:
+            type: string
+          content:
+            type: string
+            required: true
+            long_text: true
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000060
+    type: meta/EntityType@1
+    attributes:
+      name: Preference
+      package: memory
+      definition: |
+        attributes:
+          statement:
+            type: string
+            required: true
+          strength:
+            type: enum<hard|soft>
+          context:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000061
+    type: meta/EntityType@1
+    attributes:
+      name: Routine
+      package: memory
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          cadence:
+            type: string
+          description:
+            type: string
+            long_text: true
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000062
+    type: meta/EntityType@1
+    attributes:
+      name: Commitment
+      package: memory
+      definition: |
+        attributes:
+          description:
+            type: string
+            required: true
+          due_at:
+            type: timestamp
+          status:
+            type: enum<open|done|dropped>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000063
+    type: meta/EntityType@1
+    attributes:
+      name: Interest
+      package: memory
+      definition: |
+        attributes:
+          topic:
+            type: string
+            required: true
+          affinity:
+            type: enum<growing|steady|fading>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000064
+    type: meta/EdgeType@1
+    attributes:
+      name: about
+      package: memory
+      definition: |
+        domain:
+        - Note
+        - Preference
+        - Commitment
+        - Routine
+        range:
+        - core/Person
+        - core/Company
+        - Interest
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000065
+    type: meta/EdgeType@1
+    attributes:
+      name: owed_to
+      package: memory
+      definition: |
+        domain: Commitment
+        range: core/Person
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000066
+    type: meta/EdgeType@1
+    attributes:
+      name: supersedes
+      package: memory
+      definition: |
+        domain: Preference
+        range: Preference
+        cardinality: one-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000067
+    type: meta/EdgeType@1
+    attributes:
+      name: relates_to
+      package: memory
+      definition: |
+        domain:
+        - Note
+        - Preference
+        - Routine
+        - Commitment
+        range:
+        - Note
+        - Preference
+        - Routine
+        - Commitment
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000068
+    type: meta/EntityType@1
+    attributes:
+      name: Question
+      package: research
+      definition: |
+        attributes:
+          statement:
+            type: string
+            required: true
+          status:
+            type: enum<open|answered>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000069
+    type: meta/EntityType@1
+    attributes:
+      name: Claim
+      package: research
+      definition: |
+        attributes:
+          statement:
+            type: string
+            required: true
+          confidence:
+            type: decimal
+          status:
+            type: enum<asserted|contested|retracted>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000006a
+    type: meta/EntityType@1
+    attributes:
+      name: Source
+      package: research
+      definition: |
+        attributes:
+          title:
+            type: string
+            required: true
+          kind:
+            type: enum<paper|article|dataset|webpage|transcript>
+          published_on:
+            type: date
+          content:
+            type: document-ref
+            required: true
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000006b
+    type: meta/EntityType@1
+    attributes:
+      name: Quotation
+      package: research
+      definition: |
+        attributes:
+          text:
+            type: string
+            required: true
+          location:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000006c
+    type: meta/EntityType@1
+    attributes:
+      name: Dataset
+      package: research
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          format:
+            type: string
+          content:
+            type: document-ref
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000006d
+    type: meta/EdgeType@1
+    attributes:
+      name: quotes
+      package: research
+      definition: |
+        domain: Quotation
+        range: Source
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000006e
+    type: meta/EdgeType@1
+    attributes:
+      name: cites
+      package: research
+      definition: |
+        domain: Claim
+        range:
+        - Source
+        - Quotation
+        - Dataset
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000006f
+    type: meta/EdgeType@1
+    attributes:
+      name: supports
+      package: research
+      definition: |
+        domain:
+        - Claim
+        - Quotation
+        - Dataset
+        range: Claim
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000070
+    type: meta/EdgeType@1
+    attributes:
+      name: contradicts
+      package: research
+      definition: |
+        domain:
+        - Claim
+        - Quotation
+        - Dataset
+        range: Claim
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000071
+    type: meta/EdgeType@1
+    attributes:
+      name: answers
+      package: research
+      definition: |
+        domain: Claim
+        range: Question
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000072
+    type: meta/EdgeType@1
+    attributes:
+      name: supersedes
+      package: research
+      definition: |
+        domain: Claim
+        range: Claim
+        cardinality: one-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000073
+    type: meta/EdgeType@1
+    attributes:
+      name: authored_by
+      package: research
+      definition: |
+        domain: Source
+        range: core/Person
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000074
+    type: meta/ValidationRule@1
+    attributes:
+      name: claims-cite-evidence
+      package: research
+      definition: |
+        name: claims-cite-evidence
+        on:
+          type: Claim
+          operation:
+          - create
+        require:
+          any:
+          - edge:
+              type: cites
+              direction: out
+              min: 1
+              within: changeset
+          - edge:
+              type: supports
+              direction: in
+              min: 1
+              within: changeset
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000075
+    type: meta/ValidationRule@1
+    attributes:
+      name: contested-claims-show-the-conflict
+      package: research
+      definition: |
+        name: contested-claims-show-the-conflict
+        on:
+          type: Claim
+          where:
+            attr: status
+            equals: contested
+        require:
+          edge:
+            type: contradicts
+            direction: in
+            min: 1
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000076
+    type: meta/EntityType@1
+    attributes:
+      name: SpecPart
+      package: spec
+      definition: |
+        attributes:
+          number:
+            type: string
+            required: true
+          title:
+            type: string
+            required: true
+          conformance:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000077
+    type: meta/EntityType@1
+    attributes:
+      name: Section
+      package: spec
+      definition: |
+        attributes:
+          number:
+            type: string
+            required: true
+          title:
+            type: string
+            required: true
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000078
+    type: meta/EntityType@1
+    attributes:
+      name: Requirement
+      package: spec
+      definition: |
+        attributes:
+          keyword:
+            type: enum<MUST|MUST-NOT|SHOULD|SHOULD-NOT|MAY>
+            required: true
+          statement:
+            type: string
+            required: true
+          level:
+            type: enum<L0|L1|L2|L3|F>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000079
+    type: meta/EntityType@1
+    attributes:
+      name: DesignDecision
+      package: spec
+      definition: |
+        attributes:
+          summary:
+            type: string
+            required: true
+          rationale:
+            type: string
+          status:
+            type: enum<open|adopted|superseded>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007a
+    type: meta/EntityType@1
+    attributes:
+      name: Issue
+      package: spec
+      definition: |
+        attributes:
+          description:
+            type: string
+            required: true
+          status:
+            type: enum<open|resolved|rejected>
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007b
+    type: meta/EntityType@1
+    attributes:
+      name: TestVector
+      package: spec
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          artifact:
+            type: document-ref
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007c
+    type: meta/EdgeType@1
+    attributes:
+      name: in_part
+      package: spec
+      definition: |
+        domain: Section
+        range: SpecPart
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007d
+    type: meta/EdgeType@1
+    attributes:
+      name: states
+      package: spec
+      definition: |
+        domain: Section
+        range: Requirement
+        cardinality: one-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007e
+    type: meta/EdgeType@1
+    attributes:
+      name: depends_on
+      package: spec
+      definition: |
+        domain: Requirement
+        range: Requirement
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007f
+    type: meta/EdgeType@1
+    attributes:
+      name: resolved_by
+      package: spec
+      definition: |
+        domain: Issue
+        range: DesignDecision
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000080
+    type: meta/EdgeType@1
+    attributes:
+      name: affects
+      package: spec
+      definition: |
+        domain: DesignDecision
+        range:
+        - SpecPart
+        - Section
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000081
+    type: meta/EdgeType@1
+    attributes:
+      name: supersedes
+      package: spec
+      definition: |
+        domain: DesignDecision
+        range: DesignDecision
+        cardinality: one-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000082
+    type: meta/EdgeType@1
+    attributes:
+      name: verifies
+      package: spec
+      definition: |
+        domain: TestVector
+        range: Requirement
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000083
+    type: meta/ValidationRule@1
+    attributes:
+      name: adopted-decisions-touch-the-spec
+      package: spec
+      definition: |
+        name: adopted-decisions-touch-the-spec
+        on:
+          type: DesignDecision
+          where:
+            attr: status
+            equals: adopted
+        require:
+          edge:
+            type: affects
+            direction: out
+            min: 1
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000084
+    type: meta/EntityType@1
+    attributes:
+      name: Part
+      package: supply
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          sku:
+            type: string
+          description:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000085
+    type: meta/EntityType@1
+    attributes:
+      name: Batch
+      package: supply
+      definition: |
+        attributes:
+          lot:
+            type: string
+            required: true
+          produced_on:
+            type: date
+          quantity:
+            type: int
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000086
+    type: meta/EntityType@1
+    attributes:
+      name: Facility
+      package: supply
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          location:
+            type: string
+          operator:
+            type: node-ref
+            target: core/Company
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000087
+    type: meta/EntityType@1
+    attributes:
+      name: Certification
+      package: supply
+      definition: |
+        attributes:
+          standard:
+            type: string
+            required: true
+          issued_on:
+            type: date
+            required: true
+          expires_on:
+            type: date
+          certificate:
+            type: document-ref
+            required: true
+        constraints:
+        - expires_on >= issued_on
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000088
+    type: meta/EntityType@1
+    attributes:
+      name: Shipment
+      package: supply
+      definition: |
+        attributes:
+          shipped_on:
+            type: date
+            required: true
+          received_on:
+            type: date
+          quantity:
+            type: int
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000089
+    type: meta/EntityType@1
+    attributes:
+      name: Inspection
+      package: supply
+      definition: |
+        attributes:
+          performed_on:
+            type: date
+            required: true
+          result:
+            type: enum<pass|fail>
+          report:
+            type: document-ref
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000008a
+    type: meta/EdgeType@1
+    attributes:
+      name: makes
+      package: supply
+      definition: |
+        domain: Facility
+        range: Part
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000008b
+    type: meta/EdgeType@1
+    attributes:
+      name: of_part
+      package: supply
+      definition: |
+        domain: Batch
+        range: Part
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000008c
+    type: meta/EdgeType@1
+    attributes:
+      name: produced_at
+      package: supply
+      definition: |
+        domain: Batch
+        range: Facility
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000008d
+    type: meta/EdgeType@1
+    attributes:
+      name: component_of
+      package: supply
+      definition: |
+        domain: Part
+        range: Part
+        cardinality: many-to-many
+        attributes:
+          quantity:
+            type: int
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000008e
+    type: meta/EdgeType@1
+    attributes:
+      name: contains
+      package: supply
+      definition: |
+        domain: Shipment
+        range: Batch
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000008f
+    type: meta/EdgeType@1
+    attributes:
+      name: from_facility
+      package: supply
+      definition: |
+        domain: Shipment
+        range: Facility
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000090
+    type: meta/EdgeType@1
+    attributes:
+      name: to_facility
+      package: supply
+      definition: |
+        domain: Shipment
+        range: Facility
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000091
+    type: meta/EdgeType@1
+    attributes:
+      name: certifies
+      package: supply
+      definition: |
+        domain: Certification
+        range:
+        - Facility
+        - Part
+        - Batch
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000092
+    type: meta/EdgeType@1
+    attributes:
+      name: issued_by
+      package: supply
+      definition: |
+        domain: Certification
+        range: core/Company
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000093
+    type: meta/EdgeType@1
+    attributes:
+      name: inspected
+      package: supply
+      definition: |
+        domain: Inspection
+        range:
+        - Batch
+        - Facility
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000094
+    type: meta/ValidationRule@1
+    attributes:
+      name: shipments-have-contents
+      package: supply
+      definition: |
+        name: shipments-have-contents
+        on:
+          type: Shipment
+          operation:
+          - create
+        require:
+          edge:
+            type: contains
+            direction: out
+            min: 1
+            within: changeset
+      imports:
+      - core
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000095
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: org/sales
+      taxonomy: acme
+      parents:
+      - org
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000096
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: org/engineering
+      taxonomy: acme
+      parents:
+      - org
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000097
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: org
+      taxonomy: corp
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000098
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: sensitivity
+      taxonomy: corp
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000099
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: sensitivity/public
+      taxonomy: corp
+      parents:
+      - sensitivity
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000009a
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: sensitivity/internal
+      taxonomy: corp
+      parents:
+      - sensitivity
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000009b
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: sensitivity/confidential
+      taxonomy: corp
+      parents:
+      - sensitivity/internal
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000009c
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: sensitivity/restricted
+      taxonomy: corp
+      parents:
+      - sensitivity/confidential
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000009d
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: compliance
+      taxonomy: corp
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000009e
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: compliance/pii
+      taxonomy: corp
+      parents:
+      - compliance
+      - sensitivity/confidential
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000009f
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: compliance/financial-record
+      taxonomy: corp
+      parents:
+      - compliance
+      - sensitivity/confidential
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a0
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: compliance/contract-record
+      taxonomy: corp
+      parents:
+      - compliance
+      - sensitivity/internal
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a1
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: compliance/export-controlled
+      taxonomy: corp
+      parents:
+      - compliance
+      - sensitivity/restricted
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a2
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: lifecycle
+      taxonomy: corp
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a3
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: lifecycle/draft
+      taxonomy: corp
+      parents:
+      - lifecycle
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a4
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: lifecycle/active
+      taxonomy: corp
+      parents:
+      - lifecycle
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a5
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: lifecycle/superseded
+      taxonomy: corp
+      parents:
+      - lifecycle
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a6
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: lifecycle/archived
+      taxonomy: corp
+      parents:
+      - lifecycle
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a7
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: workspace
+      taxonomy: corp
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a8
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: workspace/scratch
+      taxonomy: corp
+      parents:
+      - workspace
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000a9
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: change
+      taxonomy: eng
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000aa
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: change/standard
+      taxonomy: eng
+      parents:
+      - change
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000ab
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: change/high-risk
+      taxonomy: eng
+      parents:
+      - change
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000ac
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: change/emergency
+      taxonomy: eng
+      parents:
+      - change
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000ad
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: security
+      taxonomy: eng
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000ae
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: security/critical
+      taxonomy: eng
+      parents:
+      - security
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000af
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: reliability
+      taxonomy: eng
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b0
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: reliability/tier-0
+      taxonomy: eng
+      parents:
+      - reliability
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b1
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: reliability/tier-1
+      taxonomy: eng
+      parents:
+      - reliability
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b2
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: ops
+      taxonomy: eng
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b3
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: ops/incident
+      taxonomy: eng
+      parents:
+      - ops
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b4
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: ops/postmortem
+      taxonomy: eng
+      parents:
+      - ops
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b5
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: framework
+      taxonomy: grc
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b6
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: framework/soc2
+      taxonomy: grc
+      parents:
+      - framework
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b7
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: framework/iso27001
+      taxonomy: grc
+      parents:
+      - framework
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b8
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: audit
+      taxonomy: grc
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000b9
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: audit/evidence
+      taxonomy: grc
+      parents:
+      - audit
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000ba
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: audit/finding
+      taxonomy: grc
+      parents:
+      - audit
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000bb
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: audit/exception
+      taxonomy: grc
+      parents:
+      - audit
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000bc
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: sensitivity
+      taxonomy: memory
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000bd
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: sensitivity/private
+      taxonomy: memory
+      parents:
+      - sensitivity
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000be
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: life
+      taxonomy: memory
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000bf
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: life/family
+      taxonomy: memory
+      parents:
+      - life
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c0
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: life/health
+      taxonomy: memory
+      parents:
+      - life
+      - sensitivity/private
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c1
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: life/finances
+      taxonomy: memory
+      parents:
+      - life
+      - sensitivity/private
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c2
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: work
+      taxonomy: memory
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c3
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: workspace
+      taxonomy: memory
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c4
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: workspace/scratch
+      taxonomy: memory
+      parents:
+      - workspace
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c5
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: workspace/curated
+      taxonomy: memory
+      parents:
+      - workspace
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c6
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: review
+      taxonomy: research
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c7
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: review/unverified
+      taxonomy: research
+      parents:
+      - review
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c8
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: review/verified
+      taxonomy: research
+      parents:
+      - review
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000c9
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: review/published
+      taxonomy: research
+      parents:
+      - review/verified
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000ca
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: spec
+      taxonomy: spec
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000cb
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: spec/normative
+      taxonomy: spec
+      parents:
+      - spec
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000cc
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: spec/informative
+      taxonomy: spec
+      parents:
+      - spec
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000cd
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: stability
+      taxonomy: spec
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000ce
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: stability/draft
+      taxonomy: spec
+      parents:
+      - stability
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000cf
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: stability/stable
+      taxonomy: spec
+      parents:
+      - stability
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000d0
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: disclosure
+      taxonomy: supply
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000d1
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: disclosure/customer
+      taxonomy: supply
+      parents:
+      - disclosure
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000d2
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: disclosure/auditor
+      taxonomy: supply
+      parents:
+      - disclosure
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000d3
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: compliance
+      taxonomy: supply
+      parents: []
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000d4
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: compliance/conflict-minerals
+      taxonomy: supply
+      parents:
+      - compliance
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000d5
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: compliance/export-controlled
+      taxonomy: supply
+      parents:
+      - compliance
+- create:
+    kind: node
+    id: 00000000-1000-4000-8000-000000000001
     type: core/Person@1
     attributes:
       name: Ada
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000002
+    id: 00000000-1000-4000-8000-000000000002
     type: core/Person@1
     attributes:
       name: Grace
 - create:
     kind: edge
-    id: 00000000-0000-4000-8000-000000000003
+    id: 00000000-1000-4000-8000-000000000003
     type: core/knows@1
-    from: node:00000000-0000-4000-8000-000000000001
-    to: node:00000000-0000-4000-8000-000000000002
+    from: node:00000000-1000-4000-8000-000000000001
+    to: node:00000000-1000-4000-8000-000000000002
     attributes:
       since: 2026-01-01
 - create:
     kind: document
-    id: 00000000-0000-4000-8000-000000000004
+    id: 00000000-1000-4000-8000-000000000004
     content_hash: sha256:df1896fca5c7d2117072c0a803741f69144136afd388d0964f9f728f4fe71211
     media_type: text/plain
     storage: stored
 - create:
     kind: classification
-    id: 00000000-0000-4000-8000-000000000005
-    subject: node:00000000-0000-4000-8000-000000000001
+    id: 00000000-1000-4000-8000-000000000005
+    subject: node:00000000-1000-4000-8000-000000000001
     term: workspace/curated@1
     asserted_by: principal:vector-author
     basis: manual
-signature: sig:ed25519:4db959d74d76caac6420b477bc444d375a1889876a03637dfa9e565ac0181c7646df5d2c92cc0c555a5fd91920941c73dc8460d0940f361d198f7684f1de9200
-hash: sha256:54b342dcbae8d06c223e741db6c7012c0665ab2043762ee751b4c9b2bf7f9dd5
+signature: sig:ed25519:c6aa76ece5645a5ad5040ecbd3f75491288df52e1c48fa71e69b68ca64ae6bac45a5c9cb4ccfef089e3c3a65c993a82601b6a155b8080af2a76962436d864204
+hash: sha256:784e690c4b9707f33be07451a7b0cb093bf203d80b083cc285af2ec00af09d91
 ---
 kind: changeset
 parents:
-- sha256:54b342dcbae8d06c223e741db6c7012c0665ab2043762ee751b4c9b2bf7f9dd5
+- sha256:784e690c4b9707f33be07451a7b0cb093bf203d80b083cc285af2ec00af09d91
 author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:01:00Z
 intent: Rename Ada; retire Grace
-schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
+schema_context: sha256:d8600ba935e290fa2adccc3a0fb957a0478dfc737c0102ebdb6e32eaaaf6d06b
 operations:
 - update:
     kind: node
-    id: 00000000-0000-4000-8000-000000000001
-    prior: sha256:25cabc8d72fe6b261546008ee90589d4d49eebb3da9a36e2ba8dc1e838160bdd
+    id: 00000000-1000-4000-8000-000000000001
+    prior: sha256:108f1ceec8eabb5032ab6dae1a2906f255da503fcca0c445b8a35ccb62cafe84
     type: core/Person@1
     attributes:
       name: Ada Lovelace
 - delete:
     kind: node
-    id: 00000000-0000-4000-8000-000000000002
-    prior: sha256:c859b489e0a106a74e967e939f671e8418374541f44565d9285cb5e61bd9ff85
-signature: sig:ed25519:23475dea757dd86201a273c8721e665e414fdceeb46cc71673fa0cf7c041435c5a31d0e04bb7ca24c5947091772c22c5d23d61fdd1d3fd15174072cc09a8b703
-hash: sha256:0669380bc7a20b5e544dca455bbcc57007296bdcfeb33b85b8e0a7d7bc602d87
+    id: 00000000-1000-4000-8000-000000000002
+    prior: sha256:5c982e87bccc0cba99f7c65b0a9190259bb1009f2f7630b0b052147f635990de
+signature: sig:ed25519:80deeca12c750068c2994f42c71855c90907ada7077313470ed838adc4d0159d601f8b4a6663e6920f4cab78d7fe3a0a143b003c2815e04d876c0d4a702e6001
+hash: sha256:8a7106ce34e67fbca261fcf87b3d891b07f9ec0687c2c64e51ee048d5c089a40
 ---
 kind: changeset
 parents:
-- sha256:0669380bc7a20b5e544dca455bbcc57007296bdcfeb33b85b8e0a7d7bc602d87
+- sha256:8a7106ce34e67fbca261fcf87b3d891b07f9ec0687c2c64e51ee048d5c089a40
 author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:02:00Z
 intent: A note about Ada, labeled
-schema_context: sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087
+schema_context: sha256:d8600ba935e290fa2adccc3a0fb957a0478dfc737c0102ebdb6e32eaaaf6d06b
 operations:
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000006
+    id: 00000000-1000-4000-8000-000000000006
     type: memory/Note@1
     attributes:
       content: Vectors are the ground truth.
 - create:
     kind: edge
-    id: 00000000-0000-4000-8000-000000000007
+    id: 00000000-1000-4000-8000-000000000007
     type: memory/about@1
-    from: node:00000000-0000-4000-8000-000000000006
-    to: node:00000000-0000-4000-8000-000000000001
+    from: node:00000000-1000-4000-8000-000000000006
+    to: node:00000000-1000-4000-8000-000000000001
 - create:
     kind: classification
-    id: 00000000-0000-4000-8000-000000000008
-    subject: node:00000000-0000-4000-8000-000000000006
+    id: 00000000-1000-4000-8000-000000000008
+    subject: node:00000000-1000-4000-8000-000000000006
     term: workspace/curated@1
     asserted_by: principal:vector-author
     basis: manual
-signature: sig:ed25519:bee4e5843b10894e905a9de3dfd780bab84a04145b23a0d9c1a812c06cf09aa96c134f85c83e99ffc451cca8e8603ed40601f23f511575ce984e5735e6fae207
-hash: sha256:6fd8d2de5077e00b0bf362231d076dde29c550b71ff27c2f48f90d5c46755f66
+signature: sig:ed25519:35e44e6cbd52a9263b9cdae44cf6c9fec2d3d00b8b1ea2867e2da1cd86b84091fe2af05d51a4f3098a08cb66a8e6b1ed38c2adcb81b54659805a528c1664000d
+hash: sha256:0c4a5a44d533b94c540a035e22885f2842c8bc9f68b232350171a4ef72ef7590
