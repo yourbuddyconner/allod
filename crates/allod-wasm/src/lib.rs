@@ -22,6 +22,59 @@ fn to_js<T: serde::Serialize>(v: &T) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(v).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Recursively convert a `serde_yaml::Value` to a `serde_json::Value`.
+///
+/// Allod changesets use only JSON-compatible YAML types (strings, numbers,
+/// booleans, sequences, and string-keyed mappings). Non-string keys are
+/// stringified as a fallback.
+fn yaml_value_to_json(v: &serde_yaml::Value) -> serde_json::Value {
+    match v {
+        serde_yaml::Value::Null => serde_json::Value::Null,
+        serde_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
+        serde_yaml::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                serde_json::Value::Number(serde_json::Number::from(i))
+            } else if let Some(u) = n.as_u64() {
+                serde_json::Value::Number(serde_json::Number::from(u))
+            } else if let Some(f) = n.as_f64() {
+                serde_json::Number::from_f64(f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else {
+                serde_json::Value::Null
+            }
+        }
+        serde_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
+        serde_yaml::Value::Sequence(seq) => {
+            serde_json::Value::Array(seq.iter().map(yaml_value_to_json).collect())
+        }
+        serde_yaml::Value::Mapping(map) => {
+            let mut obj = serde_json::Map::new();
+            for (k, v) in map {
+                let key = match k {
+                    serde_yaml::Value::String(s) => s.clone(),
+                    other => format!("{other:?}"),
+                };
+                obj.insert(key, yaml_value_to_json(v));
+            }
+            serde_json::Value::Object(obj)
+        }
+        serde_yaml::Value::Tagged(tagged) => yaml_value_to_json(&tagged.value),
+    }
+}
+
+/// Convert a `serde_yaml::Value` to a plain JS object.
+///
+/// Goes: serde_yaml::Value → serde_json::Value → JSON string → JS.parse().
+/// Using js_sys::JSON::parse avoids serde-wasm-bindgen's enum-tagging behaviour
+/// for serde_json::Value.
+fn yaml_to_js(v: &serde_yaml::Value) -> Result<JsValue, JsValue> {
+    let json_val = yaml_value_to_json(v);
+    let json_str =
+        serde_json::to_string(&json_val).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    js_sys::JSON::parse(&json_str)
+}
+
 /// Convert a JsValue (JS array or object) to `serde_yaml::Value`.
 ///
 /// serde-wasm-bindgen deserialises into serde_json-style values so we go:
@@ -273,6 +326,83 @@ impl AllodGraph {
             _ => Ok(JsValue::NULL),
         }
     }
+
+    /// Return the full proposal changeset for `hash` (the value stored in
+    /// proposals/<short>.yaml), serialised as a plain JS object, or an error
+    /// if the proposal does not exist.
+    pub fn proposal_get(&self, hash: String) -> Result<JsValue, JsValue> {
+        let cs = self.graph.read_proposal(&hash).map_err(err)?;
+        yaml_to_js(&cs)
+    }
+
+    /// Return the live object `{ content, rev, deleted }` from fold state for
+    /// (`kind`, `id`), or `null` if absent. `kind` is "node", "edge", or
+    /// "classification".
+    pub fn object_get(&self, kind: String, id: String) -> Result<JsValue, JsValue> {
+        let state = self.graph.fold().map_err(err)?;
+        let key = (kind, id);
+        match state.objects.get(&key) {
+            None => Ok(JsValue::NULL),
+            Some(obj) => {
+                // Build a serde_yaml::Value mapping {content, rev, deleted} then
+                // convert to plain JS via yaml_to_js (YAML→text→serde_json→JsValue).
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(
+                    serde_yaml::Value::String("content".into()),
+                    obj.content.clone(),
+                );
+                map.insert(
+                    serde_yaml::Value::String("rev".into()),
+                    serde_yaml::Value::String(obj.rev.clone()),
+                );
+                map.insert(
+                    serde_yaml::Value::String("deleted".into()),
+                    serde_yaml::Value::Bool(obj.deleted),
+                );
+                yaml_to_js(&serde_yaml::Value::Mapping(map))
+            }
+        }
+    }
+
+    /// Re-evaluate the admission policy for the proposal identified by `hash`
+    /// and return the matched rule names from the checklist. Returns an empty
+    /// array if the proposal does not exist or policy evaluation fails.
+    pub fn proposal_checklist(&self, hash: String) -> Result<JsValue, JsValue> {
+        use allod_core::{get_str, policy};
+
+        let cs = match self.graph.read_proposal(&hash) {
+            Ok(cs) => cs,
+            Err(_) => return to_js(&Vec::<String>::new()),
+        };
+        let reg = match self.graph.registry() {
+            Ok(r) => r,
+            Err(_) => return to_js(&Vec::<String>::new()),
+        };
+        let policy_doc = match self.graph.policy() {
+            Ok(p) => p,
+            Err(_) => return to_js(&Vec::<String>::new()),
+        };
+        let state = match self.graph.fold() {
+            Ok(s) => s,
+            Err(_) => return to_js(&Vec::<String>::new()),
+        };
+        let author_ref = get_str(
+            cs.get("author").unwrap_or(&serde_yaml::Value::Null),
+            "principal",
+        )
+        .unwrap_or("?")
+        .to_string();
+        let author_kind = state
+            .find_principal(&author_ref)
+            .map(|(kind, _)| kind.to_string())
+            .unwrap_or_else(|| "agent".to_string());
+        let checklist = match policy::evaluate(&reg, &policy_doc, &state, &cs, &author_kind) {
+            Ok(c) => c,
+            Err(_) => return to_js(&Vec::<String>::new()),
+        };
+        let rules: Vec<String> = checklist.matched_rules.into_iter().collect();
+        to_js(&rules)
+    }
 }
 
 // ---- Shared MemStore bridge -------------------------------------------------
@@ -322,3 +452,4 @@ struct ProposalResultJs {
     hash: String,
     admission: allod_graph::ops::Admission,
 }
+

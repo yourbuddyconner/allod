@@ -154,3 +154,50 @@ test("generic commit: memory/Note@1 admitted, memory/Preference@1 held", async (
   // Preference proposals are held for owner review
   expect(prefResult.Held).toBeDefined();
 });
+
+test("proposal_get returns the full changeset for a held proposal", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "allod-wasm-proposal-get-"));
+  const backend = fsBackend(dir);
+  const g = new AllodGraph([], backend.persist);
+
+  await g.init("conner", "memory");
+  await g.principal_add("jarvis", "agent", "conner");
+
+  const pref = await g.propose_preference("jarvis", "tea over coffee", "hard", undefined);
+  expect(pref.admission.Held).toBeDefined();
+  const hash = pref.hash as string;
+
+  const cs = g.proposal_get(hash) as Record<string, unknown>;
+  expect(cs).toBeDefined();
+  expect(cs).not.toBeNull();
+  // The changeset must have a hash and an author (principal field) from storage.
+  const csKeys = Object.keys(cs);
+  expect(csKeys.length).toBeGreaterThan(0);
+  expect(cs.hash).toBeDefined();
+  expect(cs.author).toBeDefined();
+});
+
+test("object_get returns content+rev+deleted for a live node, null for unknown", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "allod-wasm-object-get-"));
+  const backend = fsBackend(dir);
+  const g = new AllodGraph([], backend.persist);
+
+  await g.init("conner", "memory");
+  await g.principal_add("jarvis", "agent", "conner");
+
+  const note = await g.note("jarvis", "hello world");
+  expect(note.admission.Admitted).toBeDefined();
+  const noteId = note.note_id as string;
+
+  // Live node must be returned
+  const obj = g.object_get("node", noteId) as { content: unknown; rev: string; deleted: boolean } | null;
+  expect(obj).not.toBeNull();
+  expect(typeof obj!.rev).toBe("string");
+  expect(obj!.rev.length).toBeGreaterThan(0);
+  expect(obj!.deleted).toBe(false);
+  expect(obj!.content).toBeDefined();
+
+  // Unknown id must return null
+  const missing = g.object_get("node", "00000000-0000-0000-0000-000000000000");
+  expect(missing).toBeNull();
+});
