@@ -442,3 +442,71 @@ fn verify_reports_ok_on_graph_with_schema() {
     let report = flows::verify(&graph).expect("verify");
     assert!(report.ok, "verify should report ok after init and principal_add");
 }
+
+// ---- EC2: entity type governance end-to-end flow ----
+
+#[test]
+fn ec2_entity_type_governance_flow() {
+    use allod_graph::flows::{self, DecisionOutcome};
+    use allod_graph::ops::{self, Admission};
+
+    // 1. Init graph with memory profile
+    let graph = common::init_memory_graph();
+
+    // 2. Add agent principal
+    flows::principal_add(&graph, "worker", "agent", "o").expect("add worker agent");
+
+    // 3. Agent proposes install_package with a new entity type — should be Held
+    // because "worker" is an agent and schema changes require owner quorum.
+    let schema_doc: serde_yaml::Value = serde_yaml::from_str(
+        "ontology: memory\nentity_types:\n  TaskItem:\n    attributes:\n      title: {type: string, required: true}\n      status: {type: string}\n"
+    ).expect("schema doc");
+    let docs = vec![("memory".to_string(), schema_doc)];
+
+    let proposal = flows::install_package(&graph, &docs, None, "worker")
+        .expect("install_package proposal");
+    let proposal_hash = match &proposal {
+        Admission::Held { hash, .. } => hash.clone(),
+        Admission::Admitted { .. } => panic!("schema proposal should be Held, not Admitted"),
+    };
+
+    // 4. Owner approves → Admitted
+    let outcome = flows::decide(&graph, &proposal_hash, "o", "approve")
+        .expect("decide");
+    assert!(
+        matches!(outcome, DecisionOutcome::Admitted { .. }),
+        "owner approval should admit schema changeset, got: {:?}", std::mem::discriminant(&outcome)
+    );
+
+    // 5. Owner creates an instance of the new type using ops::commit directly
+    let mut title_attrs = serde_yaml::Mapping::new();
+    title_attrs.insert(
+        serde_yaml::Value::String("title".to_string()),
+        serde_yaml::Value::String("First task".to_string()),
+    );
+    title_attrs.insert(
+        serde_yaml::Value::String("status".to_string()),
+        serde_yaml::Value::String("open".to_string()),
+    );
+    let task_node_op = ops::create_node_op(
+        &ops::uuid4(),
+        "memory/TaskItem@1",
+        serde_yaml::Value::Mapping(title_attrs),
+        None,
+    );
+    let _instance_admission = ops::commit(
+        &graph,
+        "o",
+        "Create TaskItem instance",
+        vec![task_node_op],
+        vec![],
+    ).expect("owner creates TaskItem instance");
+
+    // 6. verify reports ok
+    let report = flows::verify(&graph).expect("verify");
+    let failed_hashes: Vec<&str> = report.changesets.iter()
+        .filter(|e| !matches!(e.integrity, allod_graph::flows::LevelResult::Verified))
+        .map(|e| e.hash.as_str())
+        .collect();
+    assert!(report.ok, "verify should be ok after EC2 flow; failed changesets: {:?}", failed_hashes);
+}
