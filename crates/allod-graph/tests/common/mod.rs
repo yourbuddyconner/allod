@@ -14,11 +14,16 @@ fn schema_dir() -> PathBuf {
 }
 
 pub fn init_memory_graph() -> Graph {
+    init_memory_graph_owner("o")
+}
+
+/// Initialize a MemStore memory graph with a custom owner name.
+pub fn init_memory_graph_owner(owner: &str) -> Graph {
     let store = Box::new(MemStore::new());
     let graph = Graph::with_store(store);
     let profile = allod_graph::flows::profile_from_dir("memory", &schema_dir())
         .expect("profile_from_dir");
-    allod_graph::flows::init(&graph, "o", profile).expect("flows::init");
+    allod_graph::flows::init(&graph, owner, profile).expect("flows::init");
     graph
 }
 
