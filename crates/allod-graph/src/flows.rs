@@ -793,6 +793,12 @@ pub fn state(graph: &Graph) -> Result<StateView, AllodError> {
 pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
     use allod_core::{fold::State, get_str, policy};
 
+    // FIXME(tip-registry): verify replays history against the tip registry and
+    // policy. If a schema mutation or policy update was admitted mid-chain, the
+    // tip registry/policy may differ from what was in effect at admission time,
+    // making legitimately-admitted history appear to fail governance. A correct
+    // implementation would derive the effective registry/policy per-changeset
+    // during replay, matching fold()'s incremental approach.
     let reg = graph.registry().map_err(AllodError::from)?;
     let policy_doc = graph.policy().map_err(AllodError::from)?;
     let roots = graph.roots().map_err(AllodError::from)?;
