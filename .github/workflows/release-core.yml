@@ -54,9 +54,14 @@ jobs:
         working-directory: crates/allod-wasm
         run: pnpm run build
 
+      - name: Build allod CLI (for the interop tests)
+        run: cargo build -p allod --release
+
       - name: Test
         working-directory: crates/allod-wasm
         run: pnpm test
+        env:
+          ALLOD_BIN: ${{ github.workspace }}/target/release/allod
 
       - name: Pack
         working-directory: crates/allod-wasm
