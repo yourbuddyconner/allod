@@ -496,6 +496,41 @@ impl AllodGraph {
         let rules: Vec<String> = checklist.matched_rules.into_iter().collect();
         to_js(&rules)
     }
+
+    /// Return the graph's active policy as a plain JS object, or `null` if no
+    /// policy node is installed.
+    ///
+    /// `Graph::policy()` returns `Result<serde_yaml::Value, String>`. We map
+    /// the error case (no policy) to `null` rather than throwing, so callers
+    /// can do `const p = graph.get_policy(); if (p) { ... }`.
+    pub fn get_policy(&self) -> Result<JsValue, JsValue> {
+        match self.graph.policy() {
+            Ok(policy) => yaml_to_js(&policy),
+            Err(_) => Ok(JsValue::NULL),
+        }
+    }
+
+    /// Install a new policy into the graph by parsing `policy_yaml` and calling
+    /// `install_package` with an empty doc set and `Some(policy)`.
+    ///
+    /// Under the reference memory policy, policy changes require the owner's
+    /// `decide` record, so agent-signed calls return `Held`.  Owner-signed calls
+    /// may also be held if `schema-changes-are-serious` is active.
+    ///
+    /// `by` is the principal name whose keypair signs the changeset.
+    pub async fn install_policy(
+        &mut self,
+        policy_yaml: String,
+        by: String,
+    ) -> Result<JsValue, JsValue> {
+        let policy: serde_yaml::Value =
+            serde_yaml::from_str(&policy_yaml).map_err(|e| err(e))?;
+        let res =
+            allod_graph::flows::install_package(&self.graph, &[], Some(&policy), &by)
+                .map_err(err)?;
+        self.do_persist().await?;
+        to_js(&res)
+    }
 }
 
 // ---- Shared MemStore bridge -------------------------------------------------
