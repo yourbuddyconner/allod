@@ -117,6 +117,16 @@ fn op_contexts(reg: &Registry, parent: &State, cs: &Value) -> Result<Vec<OpConte
         let kind = get_str(payload, "kind").unwrap_or("").to_string();
         let id = get_str(payload, "id").unwrap_or("").to_string();
         let type_ref = get_str(payload, "type").unwrap_or("").to_string();
+        // For delete ops on nodes: resolve the type from parent state so that
+        // type: and operation: selectors match deletes of meta nodes (§3.2.2).
+        let type_ref = if verb == "delete" && kind == "node" && type_ref.is_empty() {
+            parent
+                .get_live("node", &id)
+                .and_then(|obj| get_str(&obj.content, "type").map(String::from))
+                .unwrap_or(type_ref)
+        } else {
+            type_ref
+        };
         let basis = get_str(payload, "basis")
             .or_else(|| {
                 payload
@@ -866,6 +876,52 @@ rules:
         assert!(
             checklist.matched_rules.contains("schema-changes-are-serious"),
             "schema-changes-are-serious must have fired; matched rules: {:?}",
+            checklist.matched_rules
+        );
+    }
+
+    /// A delete op targeting a live meta/EntityType node must match
+    /// `operation: define-type` by resolving the type from parent state (§3.2.2).
+    #[test]
+    fn delete_meta_entity_type_matches_define_type() {
+        let reg = meta_registry();
+        let policy = policy_with_define_type_rule();
+
+        // Build a state that has a live meta/EntityType node.
+        let mut state = state_with_owner();
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(s("name"), s("Widget"));
+        attrs.insert(s("package"), s("myapp"));
+        attrs.insert(s("definition"), s("attributes: {}"));
+        let et_content = mk(&[
+            ("kind", s("node")),
+            ("id", s("meta-widget-1")),
+            ("type", s("meta/EntityType@1")),
+            ("attributes", Value::Mapping(attrs)),
+        ]);
+        let et_rev = revision_hash(&et_content).unwrap();
+        state.objects.insert(
+            ("node".to_string(), "meta-widget-1".to_string()),
+            crate::fold::Obj {
+                content: et_content,
+                rev: et_rev.clone(),
+                deleted: false,
+                redacted: false,
+            },
+        );
+
+        // Delete op carries no `type:` field — only kind + id + prior.
+        let delete_op = mk(&[("delete", mk(&[
+            ("kind", s("node")),
+            ("id", s("meta-widget-1")),
+            ("prior", s(&et_rev)),
+        ]))]);
+        let cs = raw_cs(vec![delete_op]);
+
+        let checklist = evaluate(&reg, &policy, &state, &cs, "user").unwrap();
+        assert!(
+            checklist.matched_rules.contains("schema-changes-gated"),
+            "delete of meta/EntityType must match the define-type rule; matched: {:?}",
             checklist.matched_rules
         );
     }
