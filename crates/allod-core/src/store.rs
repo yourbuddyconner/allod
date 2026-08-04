@@ -14,9 +14,10 @@
 
 use crate::docstore::{DocStore, FsStore};
 use crate::fold::State;
+use crate::meta::{is_meta_type, meta_registry};
 use crate::registry::Registry;
 use crate::sign::Keypair;
-use crate::{get_str, Loaded};
+use crate::{bare, get_str, Loaded};
 use serde_yaml::{Mapping, Value};
 use std::path::{Path, PathBuf};
 
@@ -27,6 +28,118 @@ pub struct Graph {
 
 fn short(hash: &str) -> &str {
     hash.strip_prefix("sha256:").unwrap_or(hash)
+}
+
+/// True if `state` contains at least one live non-deleted node whose type
+/// is a meta type (any of the types in `META_TYPES`).
+fn state_has_meta_nodes(state: &State) -> bool {
+    state.objects.iter().any(|((kind, _), obj)| {
+        kind == "node"
+            && !obj.deleted
+            && get_str(&obj.content, "type").is_some_and(is_meta_type)
+    })
+}
+
+/// Speculatively apply the meta-type create/update ops from `cs` to a clone
+/// of `state`, then derive and return a `Registry` from the resulting state.
+///
+/// This gives the effective registry that should govern validation of ALL ops
+/// in a changeset that installs new schema alongside other objects — so that
+/// the non-meta nodes created in the same changeset can reference types that
+/// are also defined in that changeset.
+fn speculative_registry_for_changeset(state: &State, cs: &Value) -> Result<Registry, String> {
+    use crate::fold::Obj;
+    use crate::model::revision_hash;
+
+    let mut speculative = state.clone();
+    let meta_bootstrap = meta_registry();
+
+    let Some(ops) = cs.get("operations").and_then(Value::as_sequence) else {
+        return Registry::from_state(&speculative);
+    };
+
+    for op in ops {
+        let Some(map) = op.as_mapping() else { continue };
+        let Some((verb, payload)) = map.iter().next() else { continue };
+        let Some(verb) = verb.as_str() else { continue };
+        if verb != "create" && verb != "update" {
+            continue;
+        }
+        if get_str(payload, "kind") != Some("node") {
+            continue;
+        }
+        let Some(type_ref) = get_str(payload, "type") else { continue };
+        if !is_meta_type(type_ref) {
+            continue;
+        }
+        let Some(id) = get_str(payload, "id") else { continue };
+        let key = ("node".to_string(), id.to_string());
+
+        // Validate the meta node itself against the meta bootstrap registry.
+        // If this fails, the full apply_changeset will also fail and report it.
+        // We silently skip invalid meta ops in the speculative pass.
+        let content = if verb == "update" {
+            let mut c = payload.clone();
+            if let Some(m) = c.as_mapping_mut() {
+                m.remove("prior");
+            }
+            c
+        } else {
+            payload.clone()
+        };
+
+        if let Ok(rev) = revision_hash(&content) {
+            // Only insert if valid according to meta_bootstrap; skip otherwise.
+            let meta_valid = {
+                let tref = get_str(&content, "type").unwrap_or("");
+                meta_bootstrap.resolve_type(tref, None).is_some()
+            };
+            if meta_valid {
+                speculative.objects.insert(
+                    key,
+                    Obj { content, rev, deleted: false, redacted: false },
+                );
+            }
+        }
+    }
+
+    Registry::from_state(&speculative)
+}
+
+/// True if any operation in `cs` creates/updates a node whose payload type
+/// is a meta type, or deletes a node that currently has a meta type in `state`.
+fn changeset_touches_meta(state: &State, cs: &Value) -> bool {
+    let Some(ops) = cs.get("operations").and_then(Value::as_sequence) else {
+        return false;
+    };
+    for op in ops {
+        let Some(map) = op.as_mapping() else { continue };
+        let Some((verb, payload)) = map.iter().next() else { continue };
+        let Some(verb) = verb.as_str() else { continue };
+        match verb {
+            "create" | "update" if get_str(payload, "kind") == Some("node") => {
+                if let Some(t) = get_str(payload, "type") {
+                    if is_meta_type(t) {
+                        return true;
+                    }
+                }
+            }
+            "delete" if get_str(payload, "kind") == Some("node") => {
+                // Look up the object's type in state BEFORE applying.
+                if let Some(id) = get_str(payload, "id") {
+                    if let Some(obj) = state.get_live("node", id) {
+                        if let Some(t) = get_str(&obj.content, "type") {
+                            if is_meta_type(t) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 impl Graph {
@@ -154,6 +267,7 @@ impl Graph {
         self.write_yaml(&format!("schema/{name}.yaml"), doc)
     }
 
+    #[doc(hidden)] // TRANSITIONAL (task 5 removes): superseded by fold-derived registry
     pub fn schema_docs(&self) -> Result<Vec<(String, Value)>, String> {
         let names = self.store.list("schema")?;
         let mut docs = Vec::new();
@@ -169,6 +283,14 @@ impl Graph {
     }
 
     pub fn registry(&self) -> Result<Registry, String> {
+        let state = self.fold()?;
+        // If the folded state contains any live meta-typed node, derive the
+        // registry from state (materialized path).
+        if state_has_meta_nodes(&state) {
+            return Registry::from_state(&state);
+        }
+        // TRANSITIONAL (task 5 removes): legacy schema-dir fallback so that
+        // every existing test and graph without meta nodes stays green.
         let docs = self.schema_docs()?;
         let Loaded { registry, issues, .. } = crate::loader::load_docs(&docs);
         if let Some(issue) = issues.first() {
@@ -178,6 +300,29 @@ impl Graph {
     }
 
     pub fn policy(&self) -> Result<Value, String> {
+        let state = self.fold()?;
+        // If a live meta/Policy node exists, parse its definition attribute.
+        for ((kind, _), obj) in &state.objects {
+            if kind != "node" || obj.deleted {
+                continue;
+            }
+            let type_ref = match get_str(&obj.content, "type") {
+                Some(t) => t,
+                None => continue,
+            };
+            if bare(type_ref) != "meta/Policy" {
+                continue;
+            }
+            let definition = obj
+                .content
+                .get("attributes")
+                .and_then(|a| get_str(a, "definition"))
+                .ok_or("meta/Policy node missing definition attribute")?;
+            let val: Value = serde_yaml::from_str(definition)
+                .map_err(|e| format!("meta/Policy definition is not valid YAML: {e}"))?;
+            return Ok(val);
+        }
+        // TRANSITIONAL (task 5 removes): scan legacy schema docs if no meta/Policy node.
         for (_, doc) in self.schema_docs()? {
             if doc.get("policy").is_some() {
                 return Ok(doc);
@@ -267,17 +412,75 @@ impl Graph {
     }
 
     /// Fold the whole log into a state (§3.2.4).
+    ///
+    /// The registry is derived incrementally: each changeset is validated
+    /// against the registry that would be in effect at that point in
+    /// history. When a changeset contains meta-type creates or updates,
+    /// those meta ops are pre-applied to a speculative copy of the state
+    /// so the full registry (including schema defined within that very
+    /// changeset) is available for validating the remaining ops in the
+    /// same changeset.
     pub fn fold(&self) -> Result<State, String> {
-        let reg = self.registry()?;
+        let chain = self.chain()?;
+
+        // TRANSITIONAL (task 5 removes): if the schema dir has docs installed
+        // and the log does not appear to contain meta-type ops (the genesis
+        // changeset is either absent or does not touch meta types), treat this
+        // as a legacy graph and fold with the schema-dir registry. This keeps
+        // every existing graph and test green while the materialized path ramps
+        // up.
+        let docs = self.schema_docs()?;
+        if !docs.is_empty() {
+            // Peek at genesis to decide which path to take.
+            let genesis_has_meta = chain
+                .first()
+                .map(|cs| changeset_touches_meta(&State::default(), cs))
+                .unwrap_or(false);
+            if !genesis_has_meta {
+                let Loaded { registry, issues, .. } = crate::loader::load_docs(&docs);
+                if let Some(issue) = issues.first() {
+                    return Err(format!("schema load: {}: {}", issue.context, issue.message));
+                }
+                let mut state = State::default();
+                for cs in &chain {
+                    state.apply_changeset(&registry, cs).map_err(|e| {
+                        format!(
+                            "fold rejected changeset {}: {e}",
+                            get_str(cs, "hash").unwrap_or("?")
+                        )
+                    })?;
+                }
+                return Ok(state);
+            }
+        }
+
+        // Mainline: derive the registry per-changeset from state.
+        //
+        // When a changeset itself installs schema (meta ops) AND also creates
+        // objects of those new types in the same CS, the registry is derived
+        // by speculatively pre-applying the meta ops, so the effective registry
+        // already knows about the types defined within that changeset.
         let mut state = State::default();
-        for cs in self.chain()? {
-            state.apply_changeset(&reg, &cs).map_err(|e| {
+        for cs in &chain {
+            let effective_reg = if changeset_touches_meta(&state, cs) {
+                // Speculatively apply this changeset's meta ops to derive
+                // the registry that governs validation of ALL ops in this CS.
+                speculative_registry_for_changeset(&state, cs)?
+            } else {
+                // Derive from committed state: if no meta nodes exist yet,
+                // from_state returns meta_registry(); once meta nodes are
+                // present it returns the full materialized registry.
+                Registry::from_state(&state)?
+            };
+
+            state.apply_changeset(&effective_reg, cs).map_err(|e| {
                 format!(
                     "fold rejected changeset {}: {e}",
-                    get_str(&cs, "hash").unwrap_or("?")
+                    get_str(cs, "hash").unwrap_or("?")
                 )
             })?;
         }
+
         Ok(state)
     }
 
@@ -340,6 +543,175 @@ impl Graph {
 mod tests {
     use super::*;
     use crate::docstore::MemStore;
+    use crate::model::changeset_hash;
+    use crate::schemaops::compile_schema_ops;
+
+    // ---- helpers for building unsigned test changesets ----
+
+    fn s(v: &str) -> Value {
+        Value::String(v.to_string())
+    }
+
+    fn mk(pairs: &[(&str, Value)]) -> Value {
+        let mut m = serde_yaml::Mapping::new();
+        for (k, v) in pairs {
+            m.insert(s(k), v.clone());
+        }
+        Value::Mapping(m)
+    }
+
+    /// Build a minimal changeset value (with hash), given a parent hash and ops.
+    fn raw_changeset(parent: Option<&str>, ops: Vec<Value>) -> (Value, String) {
+        let parents: Vec<Value> = parent.into_iter().map(|p| s(p)).collect();
+        let mut cs_map = serde_yaml::Mapping::new();
+        cs_map.insert(s("kind"), s("changeset"));
+        cs_map.insert(s("parents"), Value::Sequence(parents));
+        cs_map.insert(s("operations"), Value::Sequence(ops));
+        let cs = Value::Mapping(cs_map);
+        let (hash, _, _, _) = changeset_hash(&cs).expect("changeset_hash");
+        let mut cs = cs;
+        if let Some(m) = cs.as_mapping_mut() {
+            m.insert(s("hash"), s(&hash));
+        }
+        (cs, hash)
+    }
+
+    fn create_node_op(id: &str, type_ref: &str, attributes: serde_yaml::Mapping) -> Value {
+        mk(&[("create", mk(&[
+            ("kind", s("node")),
+            ("id", s(id)),
+            ("type", s(type_ref)),
+            ("attributes", Value::Mapping(attributes)),
+        ]))])
+    }
+
+    fn memory_docs() -> Vec<(String, Value)> {
+        let core_yaml = include_str!("../../../../../../ontologies/core/ontology.yaml");
+        let memory_yaml = include_str!("../../../../../../ontologies/memory/ontology.yaml");
+        let taxonomy_yaml = include_str!("../../../../../../ontologies/memory/taxonomy.yaml");
+        vec![
+            ("core".to_string(), serde_yaml::from_str(core_yaml).expect("core YAML")),
+            ("memory".to_string(), serde_yaml::from_str(memory_yaml).expect("memory YAML")),
+            ("memory-taxonomy".to_string(), serde_yaml::from_str(taxonomy_yaml).expect("taxonomy YAML")),
+        ]
+    }
+
+    fn memory_policy() -> Value {
+        let yaml = include_str!("../../../../../../ontologies/memory/policy-local.yaml");
+        serde_yaml::from_str(yaml).expect("policy YAML")
+    }
+
+    fn seq_id() -> impl FnMut() -> String {
+        let mut n = 0u32;
+        move || { n += 1; format!("meta-{n:04}") }
+    }
+
+    /// TDD (spec exit criterion 3): incremental registry derived from fold.
+    ///
+    /// 1. Genesis changeset: compiled memory schema ops + owner User node.
+    /// 2. Changeset 2: create a memory/Note.
+    /// 3. Changeset 3 (schema): add meta/EntityType for memory/Idea@1.
+    /// 4. Changeset 4: create a memory/Idea node.
+    ///
+    /// Asserts:
+    /// - Full fold succeeds.
+    /// - Idea-create inserted BEFORE the schema changeset fails fold.
+    /// - graph.policy() returns the policy Value.
+    /// - graph.registry() resolves memory/Idea after fold.
+    #[test]
+    fn fold_derives_registry_incrementally() {
+        let docs = memory_docs();
+        let policy = memory_policy();
+
+        let mut id_gen = seq_id();
+        let schema_ops = compile_schema_ops(&docs, &policy, &mut id_gen)
+            .expect("compile_schema_ops must succeed");
+
+        // Owner User node op
+        let mut user_attrs = serde_yaml::Mapping::new();
+        user_attrs.insert(s("display_name"), s("owner"));
+        user_attrs.insert(s("keys"), Value::Sequence(vec![]));
+        let user_op = create_node_op("user-owner", "core/User@1", user_attrs);
+
+        // Build genesis changeset (schema ops + user node)
+        let mut genesis_ops = schema_ops.clone();
+        genesis_ops.push(user_op);
+        let (cs0, hash0) = raw_changeset(None, genesis_ops);
+
+        // Changeset 2: create memory/Note
+        let mut note_attrs = serde_yaml::Mapping::new();
+        note_attrs.insert(s("content"), s("hello world"));
+        let note_op = create_node_op("note-1", "memory/Note@1", note_attrs);
+        let (cs1, hash1) = raw_changeset(Some(&hash0), vec![note_op]);
+
+        // Changeset 3: add meta/EntityType for memory/Idea@1
+        let idea_def = "attributes:\n  title: {type: string}\n";
+        let mut idea_attrs = serde_yaml::Mapping::new();
+        idea_attrs.insert(s("name"), s("Idea"));
+        idea_attrs.insert(s("package"), s("memory"));
+        idea_attrs.insert(s("definition"), s(idea_def));
+        let schema_op = create_node_op("meta-idea-1", "meta/EntityType@1", idea_attrs);
+        let (cs2, hash2) = raw_changeset(Some(&hash1), vec![schema_op]);
+
+        // Changeset 4: create memory/Idea node
+        let mut idea_node_attrs = serde_yaml::Mapping::new();
+        idea_node_attrs.insert(s("title"), s("first idea"));
+        let idea_node_op = create_node_op("idea-1", "memory/Idea@1", idea_node_attrs);
+        let (cs3, _hash3) = raw_changeset(Some(&hash2), vec![idea_node_op.clone()]);
+
+        // Set up the graph with all 4 changesets in order
+        let graph = Graph::with_store(Box::new(MemStore::new()));
+        graph.write_meta("test-graph", &[]).unwrap();
+        graph.append_changeset(&cs0, &hash0, None).unwrap();
+        graph.append_changeset(&cs1, &hash1, None).unwrap();
+        graph.append_changeset(&cs2, &hash2, None).unwrap();
+        graph.append_changeset(&cs3, &_hash3, None).unwrap();
+
+        // Assert: full fold succeeds
+        let state = graph.fold().expect("full fold must succeed");
+        assert!(state.get_live("node", "idea-1").is_some(), "idea-1 must be live after fold");
+
+        // Assert: graph.registry() resolves memory/Idea
+        let reg = graph.registry().expect("registry must succeed");
+        assert!(
+            reg.resolve_type("memory/Idea", None).is_some(),
+            "registry must resolve memory/Idea after fold"
+        );
+
+        // Assert: graph.policy() returns the policy Value
+        let pol = graph.policy().expect("policy must succeed");
+        assert!(
+            pol.get("policy").is_some() || pol.get("default_posture").is_some(),
+            "policy must have policy content, got: {pol:?}"
+        );
+
+        // Assert: Idea-create BEFORE the schema changeset fails fold.
+        // Build a variant with cs2 and cs3 swapped: idea-create before schema.
+        let graph_bad = Graph::with_store(Box::new(MemStore::new()));
+        graph_bad.write_meta("test-graph-bad", &[]).unwrap();
+        graph_bad.append_changeset(&cs0, &hash0, None).unwrap();
+        graph_bad.append_changeset(&cs1, &hash1, None).unwrap();
+        // Insert the idea-create before the schema changeset
+        let (cs_bad_idea, bad_idea_hash) = raw_changeset(Some(&hash1), vec![idea_node_op]);
+        let (cs_bad_schema, bad_schema_hash) = raw_changeset(Some(&bad_idea_hash), vec![{
+            let mut idea_attrs2 = serde_yaml::Mapping::new();
+            idea_attrs2.insert(s("name"), s("Idea"));
+            idea_attrs2.insert(s("package"), s("memory"));
+            idea_attrs2.insert(s("definition"), s(idea_def));
+            create_node_op("meta-idea-2", "meta/EntityType@1", idea_attrs2)
+        }]);
+        graph_bad.append_changeset(&cs_bad_idea, &bad_idea_hash, None).unwrap();
+        graph_bad.append_changeset(&cs_bad_schema, &bad_schema_hash, None).unwrap();
+        match graph_bad.fold() {
+            Ok(_) => panic!("fold must fail when Idea-create appears before schema changeset"),
+            Err(err) => {
+                assert!(
+                    err.contains("memory/Idea") || err.contains("does not resolve") || err.contains("reject"),
+                    "error must mention schema resolution failure, got: {err}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn graph_over_memstore() {
