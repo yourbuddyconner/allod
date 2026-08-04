@@ -39,3 +39,34 @@ Task 4 is complete. `schema_context` in `build_changeset` is now pinned to the M
 - The double-fold (once in `build_changeset`, again in `admit_or_hold`) is accepted per the task brief with a comment pointing to the existing FIXME in `store.rs`. Task 5 can collapse both into a single fold.
 - `schema_state_hash` returns `Err` on an empty meta subgraph (no meta objects at all). The TRANSITIONAL fallback in `build_changeset` handles this gracefully for legacy graphs with no meta-typed nodes.
 - The `state_root_filtered` helper is private (module-internal) — `state_root` remains the public entry point for full-state hashing, preserving the Appendix H vector compatibility contract.
+
+---
+
+## Post-Review Fixes (2026-08-03)
+
+Two review findings were addressed:
+
+### Fix 1: Normalize `is_meta_type` call sites
+
+**Issue:** `crates/allod-core/src/model.rs:128` used `is_meta_type(bare(t))` while `crates/allod-graph/src/ops.rs:101` passed raw versioned ref. Although `is_meta_type` is version-agnostic, call sites were inconsistent.
+
+**Solution:**
+- Updated `crates/allod-graph/src/ops.rs:101` to call `is_meta_type(alloc_core::bare(t))` for consistency.
+- Enhanced doc comment in `crates/allod-core/src/meta.rs` to explicitly state: "Accepts refs with or without `@version` suffix; the version is ignored."
+- Removed unused `bare` import from test module in ops.rs.
+
+### Fix 2: Consolidate filtering in `schema_state_hash`
+
+**Issue:** `crates/allod-core/src/model.rs:132` pre-filtered entries (extracting only meta-typed nodes), then called `state_root_filtered` with an always-true filter — awkward dual filtering.
+
+**Solution:**
+- Moved all filtering logic into `schema_state_hash` itself (inline Merkle leaf computation).
+- `schema_state_hash` now directly builds leaves, checking `kind == "node"` and `is_meta_type(bare(t))` inline.
+- Calls `merkle_root` directly instead of delegating to `state_root_filtered` with a trivial filter.
+- Single filtering site eliminates conceptual confusion.
+
+### Test Results Post-Fix
+
+- `cargo test --workspace`: **89 tests pass, zero failures, zero warnings**.
+- All existing tests (including the 3 schema_state_hash TDD tests) pass without hash divergence.
+- Appendix H vector compatibility maintained (hashes identical before and after refactor).
