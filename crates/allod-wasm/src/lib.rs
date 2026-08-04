@@ -16,9 +16,6 @@ fn err(e: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
 
-fn graph_err(e: String) -> JsValue {
-    JsValue::from_str(&e)
-}
 
 /// Serialise a Rust value via serde-wasm-bindgen (no JSON round-trip).
 fn to_js<T: serde::Serialize>(v: &T) -> Result<JsValue, JsValue> {
@@ -204,16 +201,33 @@ impl AllodGraph {
         to_js(&res)
     }
 
-    pub async fn install_schema(
+    /// Install a schema package into the graph as meta-typed nodes.
+    ///
+    /// `docs_yaml` is a YAML mapping of `{name: doc}` pairs (one entry per
+    /// ontology / taxonomy document). `by` is the principal name performing
+    /// the installation. Returns the admission outcome as a JsValue.
+    pub async fn install_package(
         &mut self,
-        name: String,
-        doc_yaml: String,
-    ) -> Result<(), JsValue> {
-        let doc: serde_yaml::Value =
-            serde_yaml::from_str(&doc_yaml).map_err(|e| err(e))?;
-        self.graph.install_schema(&name, &doc).map_err(graph_err)?;
+        docs_yaml: String,
+        by: String,
+    ) -> Result<JsValue, JsValue> {
+        let raw: serde_yaml::Value =
+            serde_yaml::from_str(&docs_yaml).map_err(|e| err(e))?;
+        let map = raw
+            .as_mapping()
+            .ok_or_else(|| err("docs_yaml must be a YAML mapping {name: doc}"))?;
+        let docs: Vec<(String, serde_yaml::Value)> = map
+            .iter()
+            .map(|(k, v)| {
+                let name = k.as_str().unwrap_or("unknown").to_string();
+                (name, v.clone())
+            })
+            .collect();
+        let res =
+            allod_graph::flows::install_package(&self.graph, &docs, None, &by)
+                .map_err(err)?;
         self.do_persist().await?;
-        Ok(())
+        to_js(&res)
     }
 
     // ---- Read-only methods --------------------------------------------------
