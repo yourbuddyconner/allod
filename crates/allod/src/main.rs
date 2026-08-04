@@ -168,26 +168,6 @@ fn cmd_agent_add(dir: &Path, name: &str, by: &str) -> Result<(), String> {
     cmd_principal_add(dir, name, "agent", by)
 }
 
-fn provenance(agent: &str, tool: &str) -> Value {
-    let mut prov = Mapping::new();
-    prov.insert(s("derived_by"), s(&format!("principal:{agent}")));
-    prov.insert(s("method"), s("model-assisted"));
-    prov.insert(s("tool"), s(tool));
-    Value::Mapping(prov)
-}
-
-fn classification_op(subject: &str, term: &str, agent: &str) -> Value {
-    let mut cls = Mapping::new();
-    cls.insert(s("kind"), s("classification"));
-    cls.insert(s("id"), s(&uuid4()));
-    cls.insert(s("subject"), s(subject));
-    cls.insert(s("term"), s(term));
-    cls.insert(s("asserted_by"), s(&format!("principal:{agent}")));
-    cls.insert(s("basis"), s("model-assisted"));
-    let mut op = Mapping::new();
-    op.insert(s("create"), Value::Mapping(cls));
-    Value::Mapping(op)
-}
 
 fn cmd_note(dir: &Path, agent: &str, content: &str) -> Result<(String, bool), String> {
     use allod_graph::ops::Admission;
