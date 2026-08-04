@@ -89,23 +89,10 @@ pub fn state_entry(kind: &str, id: &str, rev: &str, deleted: bool) -> Value {
 }
 
 /// State hash (§1.7) over entries already ordered by kind then
-/// logical ID.
+/// logical ID. This is the single site for leaf hashing.
 pub fn state_root(entries: &[Value]) -> Result<String, String> {
-    state_root_filtered(entries, |_| true)
-}
-
-/// State hash restricted to entries that pass `filter`. Same Merkle
-/// construction as `state_root`; shares the `state-leaf`/`state-node`
-/// domain-separation so the hash space is identical.
-fn state_root_filtered(
-    entries: &[Value],
-    filter: impl Fn(&Value) -> bool,
-) -> Result<String, String> {
     let mut leaves = Vec::with_capacity(entries.len());
     for entry in entries {
-        if !filter(entry) {
-            continue;
-        }
         leaves.push(sha256_hex("state-leaf", &canonical_cbor(entry)?));
     }
     merkle_root(&leaves, "state-node").ok_or_else(|| "empty state".into())
@@ -119,18 +106,15 @@ fn state_root_filtered(
 /// Returns `Err` only when the meta subgraph is empty (no meta-typed
 /// objects at all — not even tombstones).
 pub fn schema_state_hash(state: &State) -> Result<String, String> {
-    let mut leaves = Vec::new();
-    for ((kind, id), obj) in &state.objects {
-        if kind == "node"
+    let entries = state.entries_filtered(|kind, obj| {
+        kind == "node"
             && get_str(&obj.content, "type")
                 .is_some_and(|t| is_meta_type(bare(t)))
-        {
-            let entry = state_entry(kind, id, &obj.rev, obj.deleted);
-            leaves.push(sha256_hex("state-leaf", &canonical_cbor(&entry)?));
-        }
+    });
+    if entries.is_empty() {
+        return Err("empty meta-subgraph state".into());
     }
-    merkle_root(&leaves, "state-node")
-        .ok_or_else(|| "empty meta-subgraph state".into())
+    state_root(&entries)
 }
 
 /// The schema context a changeset pins (§3.2.1): a content hash over

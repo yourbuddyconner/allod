@@ -101,11 +101,21 @@ impl State {
         None
     }
 
-    pub fn entries(&self) -> Vec<Value> {
+    /// Entries (state-tree form) filtered by a predicate on (kind, obj).
+    pub fn entries_filtered(
+        &self,
+        filter: impl Fn(&str, &Obj) -> bool,
+    ) -> Vec<Value> {
         self.objects
             .iter()
+            .filter(|((kind, _), obj)| filter(kind, obj))
             .map(|((kind, id), obj)| state_entry(kind, id, &obj.rev, obj.deleted))
             .collect()
+    }
+
+    /// All entries (state-tree form) in BTreeMap order (kind, then logical ID).
+    pub fn entries(&self) -> Vec<Value> {
+        self.entries_filtered(|_, _| true)
     }
 
     pub fn state_hash(&self) -> Result<String, String> {
