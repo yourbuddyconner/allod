@@ -58,3 +58,9 @@ jobs:
         env:
           ALLOD_BIN: ${{ github.workspace }}/target/release/allod
         run: pnpm test
+
+      - name: Pack sanity check (dist/index.js must be in tarball)
+        working-directory: crates/allod-wasm
+        run: |
+          pnpm pack --dry-run 2>&1 | tee /tmp/pack-list.txt
+          grep -q "dist/index.js" /tmp/pack-list.txt
