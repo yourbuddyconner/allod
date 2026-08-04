@@ -385,16 +385,17 @@ fn cmd_verify(dir: &Path) -> Result<(), String> {
     let chain_len = report.changesets.len();
 
     for cs_entry in &report.changesets {
-        // Check for failures before printing — must not print ✓ on the failure path
+        // Check for failures before printing — must not print ✓ on the failure path.
+        // Check governance first to surface real failure reasons (not "not reached" sentinels).
+        match &cs_entry.governance {
+            LevelResult::Failed(r) => return Err(r.clone()),
+            _ => {}
+        }
         match &cs_entry.integrity {
             LevelResult::Failed(r) => return Err(r.clone()),
             _ => {}
         }
         match &cs_entry.authorship {
-            LevelResult::Failed(r) => return Err(r.clone()),
-            _ => {}
-        }
-        match &cs_entry.governance {
             LevelResult::Failed(r) => return Err(r.clone()),
             _ => {}
         }
