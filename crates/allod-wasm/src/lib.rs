@@ -261,6 +261,18 @@ impl AllodGraph {
         let res = allod_graph::md::export_docs(&self.graph).map_err(err)?;
         Ok(pairs_to_array(&res))
     }
+
+    /// Return the current revision hash (`rev`) for a live node, or `null`
+    /// if the node is not found. The rev is needed as the `prior` field
+    /// in update operations.
+    pub fn node_rev(&self, node_id: String) -> Result<JsValue, JsValue> {
+        let state = self.graph.fold().map_err(err)?;
+        let key = ("node".to_string(), node_id);
+        match state.objects.get(&key) {
+            Some(obj) if !obj.deleted => Ok(JsValue::from_str(&obj.rev)),
+            _ => Ok(JsValue::NULL),
+        }
+    }
 }
 
 // ---- Shared MemStore bridge -------------------------------------------------
