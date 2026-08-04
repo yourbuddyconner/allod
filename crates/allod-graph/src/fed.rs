@@ -11,6 +11,7 @@
 
 use allod_core::get_str;
 use allod_core::hash::{sha256_hex, verify_merkle_path};
+use allod_core::meta::is_meta_type;
 use allod_core::model::revision_hash;
 use allod_core::store::Graph;
 use allod_core::{canonical_cbor, sign};
@@ -202,6 +203,19 @@ pub fn make_bundle(graph: &Graph, grant_id: &str, by: &str) -> Result<Value, All
     for id in &disclosed_nodes {
         disclose("node", id)?;
     }
+    // Include meta-typed nodes (schema) unconditionally — schema travels as
+    // governed objects with Merkle proofs so the receiver can verify provenance.
+    for ((kind, id), obj) in &state.objects {
+        if obj.deleted {
+            continue;
+        }
+        if kind == "node" {
+            let type_ref = get_str(&obj.content, "type").unwrap_or("");
+            if is_meta_type(type_ref) && !disclosed_nodes.contains(id) {
+                disclose("node", id)?;
+            }
+        }
+    }
     for ((kind, id), obj) in &state.objects {
         if obj.deleted {
             continue;
@@ -252,11 +266,8 @@ pub fn make_bundle(graph: &Graph, grant_id: &str, by: &str) -> Result<Value, All
     doc.insert(s("grant"), grant_ref);
     doc.insert(s("checkpoint"), checkpoint);
     doc.insert(s("objects"), Value::Sequence(objects));
-    let mut schema = Mapping::new();
-    for (name, sdoc) in graph.schema_docs()? {
-        schema.insert(s(&name), sdoc);
-    }
-    doc.insert(s("schema"), Value::Mapping(schema));
+    // Schema travels as meta-node objects in the objects list (above), not as
+    // a separate schema: map. The schema: field is intentionally omitted.
 
     Ok(Value::Mapping(doc))
 }
