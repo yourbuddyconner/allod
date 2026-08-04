@@ -119,6 +119,10 @@ impl MemStore {
     }
 
     /// Bulk-load documents from a vector of (path, text) pairs.
+    ///
+    /// Documents are merged into the store (not replaced): existing paths
+    /// whose keys are absent from `docs` are preserved. Duplicate keys in
+    /// `docs` are last-write-wins in iteration order.
     pub fn load(&self, docs: Vec<(String, String)>) {
         let mut store = self.docs.lock().unwrap();
         for (path, text) in docs {

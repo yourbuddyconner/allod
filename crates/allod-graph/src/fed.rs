@@ -281,9 +281,8 @@ pub struct BundleVerification {
 /// Returns a `BundleVerification` summary on success. The CLI shim uses
 /// this on the verify-only path (no `import_id` given).
 pub fn verify_bundle(graph: &Graph, bundle: &Value) -> Result<BundleVerification, AllodError> {
-    let (peer_key, source_graph, state_hash, object_count) =
+    let (_, source_graph, state_hash, object_count) =
         verify_bundle_inner(graph, bundle)?;
-    let _ = peer_key;
     Ok(BundleVerification {
         source_graph_id: source_graph.to_string(),
         state_hash: state_hash.to_string(),
