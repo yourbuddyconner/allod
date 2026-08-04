@@ -344,7 +344,6 @@ pub fn propose_preference(
     strength: &str,
     from_note: Option<&str>,
 ) -> Result<ProposalResult, AllodError> {
-    use allod_core::policy;
     use crate::ops;
 
     let kp = graph.load_key(agent).map_err(AllodError::from)?;

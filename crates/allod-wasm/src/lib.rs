@@ -190,11 +190,17 @@ impl AllodGraph {
         intent: String,
         ops: JsValue,
         envelopes: JsValue,
+        sign_envelope: Option<bool>,
     ) -> Result<JsValue, JsValue> {
         let ops_vec = js_array_to_yaml_vec(ops)?;
         let envelopes_vec = js_array_to_yaml_vec(envelopes)?;
-        let res = allod_graph::ops::commit(&self.graph, &author, &intent, ops_vec, envelopes_vec)
-            .map_err(err)?;
+        let res = if sign_envelope == Some(true) {
+            allod_graph::ops::commit_with_envelope(&self.graph, &author, &intent, ops_vec)
+                .map_err(err)?
+        } else {
+            allod_graph::ops::commit(&self.graph, &author, &intent, ops_vec, envelopes_vec)
+                .map_err(err)?
+        };
         self.do_persist().await?;
         to_js(&res)
     }

@@ -278,3 +278,46 @@ test("entity_context returns classifications and edges for a node", async () => 
   // unknown node returns null
   expect(g.entity_context("00000000-0000-0000-0000-000000000000")).toBeNull();
 });
+
+test("commit with sign_envelope=true → Held; decide approve → Admitted", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "allod-wasm-envelope-"));
+  const backend = fsBackend(dir);
+  const g = new AllodGraph([], backend.persist);
+
+  await g.init("owner", "memory");
+  await g.principal_add("agent", "agent", "owner");
+
+  const prefId = uuid4();
+
+  // commit with sign_envelope=true builds and attaches an attestation envelope
+  const admission = await g.commit(
+    "agent",
+    "Create memory/Preference@1",
+    [
+      {
+        create: {
+          kind: "node",
+          id: prefId,
+          type: "memory/Preference@1",
+          attributes: { statement: "prefers dark mode", strength: "soft" },
+          provenance: {
+            derived_by: "principal:agent",
+            method: "model-assisted",
+            tool: "freehold@0.1",
+          },
+        },
+      },
+    ],
+    [],
+    true  // sign_envelope
+  );
+
+  // Preference without scratch classification → Held
+  expect(admission.Held).toBeDefined();
+  const hash: string = (admission as { Held: { hash: string } }).Held.hash;
+
+  // Owner approves — signed envelope satisfies model-assisted-needs-signed-envelope → Admitted
+  const outcome = await g.decide(hash, "owner", "approve");
+  expect((outcome as { Admitted?: { degraded: string[] } }).Admitted).toBeDefined();
+  expect(Array.isArray((outcome as { Admitted: { degraded: string[] } }).Admitted.degraded)).toBe(true);
+});
