@@ -344,62 +344,14 @@ fn cmd_trust(dir: &Path, measurement: &str) -> Result<(), String> {
 /// changeset (Appendix A step 8). Evidence is a simulated
 /// measurement; the verification code path is the real one.
 fn cmd_envelope(dir: &Path, cs_hash: &str, by: &str, tool: &str) -> Result<(), String> {
+    use allod_graph::flows::EnvelopeOutcome;
     let graph = Graph::open(dir)?;
-    let kp = graph.load_key(by)?;
-    let measurement = allod_core::hash::plain_sha256(tool.as_bytes());
-    let mut statement = Mapping::new();
-    statement.insert(s("changeset_hash"), s(cs_hash));
-    let mut evidence = Mapping::new();
-    evidence.insert(s("measurement"), s(&measurement));
-    evidence.insert(s("claimed_identity"), s(tool));
-    let mut envelope = Mapping::new();
-    envelope.insert(s("kind"), s("attestation-envelope"));
-    envelope.insert(s("statement"), Value::Mapping(statement));
-    envelope.insert(s("attester"), s(&format!("principal:{by}")));
-    envelope.insert(s("evidence"), Value::Mapping(evidence));
-    envelope.insert(s("evidence_type"), s("simulated"));
-    let mut envelope = Value::Mapping(envelope);
-    let payload = policy::envelope_payload(&envelope)?;
-    if let Some(map) = envelope.as_mapping_mut() {
-        map.insert(s("signature"), s(&kp.sign(&payload)));
+    let outcome = allod_graph::flows::envelope(&graph, cs_hash, by, tool)
+        .map_err(|e| e.to_string())?;
+    match outcome {
+        EnvelopeOutcome::Verified(note) => println!("  ✓ envelope verified: {note}"),
+        EnvelopeOutcome::Degraded(note) => println!("  ⚠ envelope degraded: {note}"),
     }
-    // Verify: signature against the attester's registered key, then
-    // the evidence chain against the trusted measurements.
-    let state = graph.fold()?;
-    let attester_ref = format!("principal:{by}");
-    let public = state
-        .find_principal(&attester_ref)
-        .and_then(|(_, obj)| {
-            obj.content
-                .get("attributes")?
-                .get("keys")?
-                .as_sequence()?
-                .iter()
-                .find_map(|r| get_str(r, "public").map(String::from))
-        })
-        .ok_or("attester has no registered key")?;
-    allod_core::sign::verify(&public, &payload, get_str(&envelope, "signature").unwrap())?;
-    match policy::verify_evidence(&envelope, &graph.trusted_measurements()?) {
-        policy::EvidenceResult::Verified(note) => {
-            println!("  ✓ envelope verified: {note}");
-        }
-        policy::EvidenceResult::Degraded(note) => println!("  ⚠ envelope degraded: {note}"),
-        policy::EvidenceResult::Failed(reason) => {
-            return Err(format!("envelope failed: {reason}"))
-        }
-    }
-    // Attach it to the changeset's evidence for the audit trail.
-    let mut evidence_file = graph
-        .read_evidence(cs_hash)?
-        .unwrap_or_else(|| evidence_doc(&[], &[]));
-    if let Some(list) = evidence_file
-        .as_mapping_mut()
-        .and_then(|m| m.get_mut("envelopes"))
-        .and_then(Value::as_sequence_mut)
-    {
-        list.push(envelope);
-    }
-    graph.write_evidence(cs_hash, &evidence_file)?;
     Ok(())
 }
 

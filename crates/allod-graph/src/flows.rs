@@ -418,6 +418,7 @@ pub fn classify(
 
 // ---- Result types for task 4b ----
 
+#[derive(Debug)]
 pub enum EnvelopeOutcome {
     Verified(String),
     Degraded(String),
