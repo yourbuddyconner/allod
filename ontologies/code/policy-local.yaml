@@ -12,6 +12,12 @@ roles:
   security: [ "principal:…" ]
 rules:
 
+  - name: schema-changes-are-serious
+    select:
+      operation: [define-type, set-policy, deprecate-term]
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
   # A matching rule replaces the restricted default (§4.1), so this
   # is a broad authorization: any service asserting deterministic
   # basis writes without review, and basis is author-asserted below

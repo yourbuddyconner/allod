@@ -15,6 +15,12 @@ roles:
   owner: [ "principal:…" ]
 rules:
 
+  - name: schema-changes-are-serious
+    select:
+      operation: [define-type, set-policy, deprecate-term]
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
   # Scratch must be positively authorized (§4.1): under the
   # restricted default a matching rule is what admits non-root
   # writes, and the carve-outs below only exempt scratch from other

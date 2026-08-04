@@ -780,4 +780,93 @@ rules:
             checklist.matched_rules
         );
     }
+
+    /// A schema change (define-type op) targeting workspace/scratch must NOT be
+    /// exempted by scratch-is-free: the schema-changes-are-serious rule fires
+    /// first and the requirements union means reviewers is still non-empty.
+    ///
+    /// This is the "scratch carve-out schema smuggle" attack: an agent smuggles a
+    /// meta/EntityType create into the scratch region hoping the scratch-is-free
+    /// carve-out drops the reviewer gate. The `evaluate()` loop unions all matched
+    /// rules, so the schema rule's reviewer requirement survives even when
+    /// scratch-is-free also matches and contributes only `schema_valid: true`.
+    #[test]
+    fn scratch_schema_smuggle_is_held() {
+        let reg = meta_registry();
+        let state = State::default();
+
+        // Policy mirrors the memory-local structure: schema rule first,
+        // then scratch-is-free (restricted carve-out for agents in scratch),
+        // then the general agent-writes-are-proposals rule.
+        let policy: Value = serde_yaml::from_str(r#"
+policy: test-smuggle
+version: 1
+default_posture: restricted
+roles:
+  owner: ["principal:owner-1"]
+rules:
+  - name: schema-changes-are-serious
+    select:
+      operation: [define-type, set-policy, deprecate-term]
+    require:
+      reviewers: { role: owner, quorum: 1 }
+
+  - name: scratch-is-free
+    select:
+      all:
+        - { author_kind: agent }
+        - { region: "workspace/scratch" }
+    require: { schema_valid: true }
+
+  - name: agent-writes-are-proposals
+    select:
+      all:
+        - { author_kind: agent }
+        - { not: { region: "workspace/scratch" } }
+    require:
+      reviewers: { role: owner, quorum: 1 }
+"#).unwrap();
+
+        // A changeset with:
+        //  1. A meta/EntityType create op (schema change, sugar-verb: define-type)
+        //  2. A classification op targeting workspace/scratch for that same entity
+        //
+        // The attacker hopes that the scratch classification causes scratch-is-free
+        // to match and the reviewer requirement to be dropped. But evaluate() unions
+        // all matched rules, so schema-changes-are-serious still contributes its
+        // reviewer requirement.
+        let mut entity_attrs = serde_yaml::Mapping::new();
+        entity_attrs.insert(s("name"), s("ScratchWidget"));
+        entity_attrs.insert(s("package"), s("smuggle"));
+        entity_attrs.insert(s("definition"), s("attributes: {}"));
+        let entity_create_op = mk(&[("create", mk(&[
+            ("kind", s("node")),
+            ("id", s("meta-scratch-widget")),
+            ("type", s("meta/EntityType@1")),
+            ("attributes", Value::Mapping(entity_attrs)),
+        ]))]);
+
+        // Classification op puts the new entity into workspace/scratch.
+        let classify_op = mk(&[("create", mk(&[
+            ("kind", s("classification")),
+            ("id", s("classify-scratch-widget")),
+            ("subject", s("node:meta-scratch-widget")),
+            ("term", s("workspace/scratch")),
+        ]))]);
+
+        let cs = raw_cs(vec![entity_create_op, classify_op]);
+
+        let checklist = evaluate(&reg, &policy, &state, &cs, "agent").unwrap();
+
+        assert!(
+            !checklist.reviewers.is_empty(),
+            "schema smuggle via scratch must still require reviewers; checklist: {:?}",
+            checklist
+        );
+        assert!(
+            checklist.matched_rules.contains("schema-changes-are-serious"),
+            "schema-changes-are-serious must have fired; matched rules: {:?}",
+            checklist.matched_rules
+        );
+    }
 }
