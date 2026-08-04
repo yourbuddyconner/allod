@@ -98,7 +98,7 @@ pub fn build_changeset(
             kind == "node"
                 && !obj.deleted
                 && allod_core::get_str(&obj.content, "type")
-                    .is_some_and(allod_core::meta::is_meta_type)
+                    .is_some_and(|t| allod_core::meta::is_meta_type(allod_core::bare(t)))
         });
         if has_meta {
             // Materialized path: pin the meta-subgraph state hash.
@@ -277,7 +277,7 @@ mod tests {
     use allod_core::model::{changeset_hash as cs_hash, schema_state_hash};
     use allod_core::sign::Keypair;
     use allod_core::store::Graph;
-    use allod_core::{bare, get_str};
+    use allod_core::get_str;
     use serde_yaml::Value;
 
     fn s(v: &str) -> Value {

@@ -108,7 +108,7 @@ fn state_root_filtered(
         }
         leaves.push(sha256_hex("state-leaf", &canonical_cbor(entry)?));
     }
-    merkle_root(&leaves, "state-node").ok_or_else(|| "empty meta-subgraph state".into())
+    merkle_root(&leaves, "state-node").ok_or_else(|| "empty state".into())
 }
 
 /// State hash over the meta subgraph only (§3.2.1 schema pinning):
@@ -119,17 +119,18 @@ fn state_root_filtered(
 /// Returns `Err` only when the meta subgraph is empty (no meta-typed
 /// objects at all — not even tombstones).
 pub fn schema_state_hash(state: &State) -> Result<String, String> {
-    let entries: Vec<Value> = state
-        .objects
-        .iter()
-        .filter(|((kind, _), obj)| {
-            kind == "node"
-                && get_str(&obj.content, "type")
-                    .is_some_and(|t| is_meta_type(bare(t)))
-        })
-        .map(|((kind, id), obj)| state_entry(kind, id, &obj.rev, obj.deleted))
-        .collect();
-    state_root_filtered(&entries, |_| true)
+    let mut leaves = Vec::new();
+    for ((kind, id), obj) in &state.objects {
+        if kind == "node"
+            && get_str(&obj.content, "type")
+                .is_some_and(|t| is_meta_type(bare(t)))
+        {
+            let entry = state_entry(kind, id, &obj.rev, obj.deleted);
+            leaves.push(sha256_hex("state-leaf", &canonical_cbor(&entry)?));
+        }
+    }
+    merkle_root(&leaves, "state-node")
+        .ok_or_else(|| "empty meta-subgraph state".into())
 }
 
 /// The schema context a changeset pins (§3.2.1): a content hash over

@@ -23,7 +23,9 @@ pub const META_TYPES: &[&str] = &[
     "meta/Policy",
 ];
 
-/// True when the type ref (version suffix allowed) is a meta type.
+/// True when the type ref is a meta type.
+///
+/// Accepts refs with or without `@version` suffix; the version is ignored.
 pub fn is_meta_type(type_ref: &str) -> bool {
     let b = bare(type_ref);
     META_TYPES.contains(&b)
