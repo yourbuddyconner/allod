@@ -49,6 +49,9 @@ fn describe_lists_workspace_scratch_term_with_workspace_parent() {
         "workspace/scratch should have parent 'workspace', got: {:?}",
         scratch.parents
     );
+    // Assert that version and status round-trip correctly when None
+    assert_eq!(scratch.version, None, "workspace/scratch version should be None");
+    assert_eq!(scratch.status, None, "workspace/scratch status should be None");
 }
 
 #[test]
@@ -66,6 +69,7 @@ fn describe_includes_edge_types() {
 // ---- profiles::embedded_profile tests ----
 
 #[test]
+#[cfg(feature = "native")]
 fn embedded_profile_memory_equals_profile_from_dir() {
     let embedded = allod_graph::profiles::embedded_profile("memory")
         .expect("embedded_profile(memory)");
@@ -89,6 +93,7 @@ fn embedded_profile_memory_equals_profile_from_dir() {
 }
 
 #[test]
+#[cfg(feature = "native")]
 fn embedded_profile_code_equals_profile_from_dir() {
     let embedded = allod_graph::profiles::embedded_profile("code")
         .expect("embedded_profile(code)");

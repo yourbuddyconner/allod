@@ -26,6 +26,7 @@ pub struct EntityTypeView {
 #[derive(Debug, serde::Serialize)]
 pub struct EdgeTypeView {
     pub name: String,
+    pub version: Option<u64>,
     pub domain: Vec<String>,
     pub range: Vec<String>,
     pub cardinality: Option<String>,
@@ -35,7 +36,9 @@ pub struct EdgeTypeView {
 #[derive(Debug, serde::Serialize)]
 pub struct TermView {
     pub name: String,
+    pub version: Option<u64>,
     pub parents: Vec<String>,
+    pub status: Option<String>,
 }
 
 /// The complete description of the schema loaded in a graph.
@@ -113,6 +116,7 @@ pub fn describe(graph: &Graph) -> Result<SchemaDescription, AllodError> {
             edge_names.sort();
             for ename in edge_names {
                 let edef = &map[ename];
+                let version = edef.get("version").and_then(Value::as_u64);
                 let domain = value_to_str_list(edef.get("domain"));
                 let range = value_to_str_list(edef.get("range"));
                 let cardinality = edef
@@ -121,6 +125,7 @@ pub fn describe(graph: &Graph) -> Result<SchemaDescription, AllodError> {
                     .map(String::from);
                 edge_types.push(EdgeTypeView {
                     name: format!("{pkg_name}/{ename}"),
+                    version,
                     domain,
                     range,
                     cardinality,
@@ -141,7 +146,9 @@ pub fn describe(graph: &Graph) -> Result<SchemaDescription, AllodError> {
             let parents = taxonomy.terms[tname].clone();
             terms.push(TermView {
                 name: tname.clone(),
+                version: None,
                 parents,
+                status: None,
             });
         }
     }
