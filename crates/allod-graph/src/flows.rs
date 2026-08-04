@@ -390,8 +390,30 @@ pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<Deci
     Ok(DecisionOutcome::Admitted { degraded: sat.degraded })
 }
 
-pub fn classify(_graph: &Graph, _node_id: &str, _term: &str, _by: &str, _basis: &str) -> Result<Admission, AllodError> {
-    Err(AllodError::Other("not implemented".into()))
+/// Add a classification term to `node_id` as `term`, authored by `by` with given `basis`.
+pub fn classify(
+    graph: &Graph,
+    node_id: &str,
+    term: &str,
+    by: &str,
+    basis: &str,
+) -> Result<Admission, AllodError> {
+    use crate::ops;
+
+    let kp = graph.load_key(by).map_err(AllodError::from)?;
+    let cls_op = ops::classification_op(
+        &format!("node:{node_id}"),
+        term,
+        &format!("principal:{by}"),
+        basis,
+    );
+    let (cs, hash) = ops::build_changeset(
+        graph,
+        &kp,
+        &format!("Classify node:{node_id} as {term}"),
+        vec![cls_op],
+    )?;
+    ops::admit_or_hold(graph, by, &cs, &hash, vec![])
 }
 
 pub fn checkpoint(_graph: &Graph, _by: &str) -> Result<CheckpointResult, AllodError> {

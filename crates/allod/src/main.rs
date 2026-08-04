@@ -300,25 +300,35 @@ fn cmd_classify(
     by: &str,
     basis: &str,
 ) -> Result<Option<String>, String> {
+    use allod_graph::ops::Admission;
     let graph = Graph::open(dir)?;
-    let kp = graph.load_key(by)?;
-    let mut cls = Mapping::new();
-    cls.insert(s("kind"), s("classification"));
-    cls.insert(s("id"), s(&uuid4()));
-    cls.insert(s("subject"), s(&format!("node:{node_id}")));
-    cls.insert(s("term"), s(term));
-    cls.insert(s("asserted_by"), s(&format!("principal:{by}")));
-    cls.insert(s("basis"), s(basis));
-    let mut op = Mapping::new();
-    op.insert(s("create"), Value::Mapping(cls));
-    let (cs, hash) = build_changeset(
-        &graph,
-        &kp,
-        &format!("Classify node:{node_id} as {term}"),
-        vec![Value::Mapping(op)],
-    )?;
-    let admitted = admit_or_hold(&graph, by, &cs, &hash, vec![], false)?;
-    Ok(if admitted { None } else { Some(hash) })
+    let admission = allod_graph::flows::classify(&graph, node_id, term, by, basis)
+        .map_err(|e| e.to_string())?;
+    match admission {
+        Admission::Admitted { hash: h, matched_rules } => {
+            let basis_str = if matched_rules.is_empty() {
+                "root authority, default posture".to_string()
+            } else {
+                format!("rules: {}", matched_rules.join(", "))
+            };
+            println!("  ✓ admitted {} ({basis_str})", allod_graph::ops::short(&h));
+            Ok(None)
+        }
+        Admission::Held { hash: h, checklist } => {
+            println!("  ⧗ held as proposal {}", allod_graph::ops::short(&h));
+            println!("      matched rules: {}", checklist.matched_rules.join(", "));
+            for (role, quorum) in &checklist.reviewers {
+                println!("      requires: reviewers role {role} (quorum {quorum})");
+            }
+            for class in &checklist.attestations {
+                println!("      requires: attestation from class {class}");
+            }
+            if checklist.root_required {
+                println!("      requires: root authority (default posture)");
+            }
+            Ok(Some(h))
+        }
+    }
 }
 
 fn cmd_checkpoint(dir: &Path, by: &str) -> Result<(), String> {
