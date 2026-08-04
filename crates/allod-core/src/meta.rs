@@ -157,6 +157,17 @@ impl Registry {
                 Some(t) => t,
                 None => continue,
             };
+            // Guard: non-meta nodes cannot claim the "meta" package or taxonomy
+            if !is_meta_type(type_ref) {
+                let attrs = obj.content.get("attributes");
+                let pkg = attrs.and_then(|a| get_str(a, "package"));
+                let tax = attrs.and_then(|a| get_str(a, "taxonomy"));
+                if pkg == Some("meta") || tax == Some("meta") {
+                    return Err(format!(
+                        "node {id}: meta package is spec-defined and cannot be stored"
+                    ));
+                }
+            }
             if !is_meta_type(type_ref) {
                 continue;
             }
@@ -675,6 +686,34 @@ attributes:
             pkg.imports,
             vec!["base".to_string(), "common".to_string()],
             "imports must round-trip and be sorted"
+        );
+    }
+
+    #[test]
+    fn from_state_errors_on_meta_package_claim() {
+        let mut state = State::default();
+        // A non-meta node claiming package == "meta"
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(Value::String("display_name".into()), Value::String("alice".into()));
+        attrs.insert(Value::String("keys".into()), Value::Sequence(vec![]));
+        attrs.insert(Value::String("status".into()), Value::String("active".into()));
+        attrs.insert(Value::String("package".into()), Value::String("meta".into())); // the claim
+
+        state.objects.insert(
+            ("node".into(), "bad-user-1".into()),
+            make_node("bad-user-1", "core/User@1", attrs),
+        );
+
+        let result = Registry::from_state(&state);
+        assert!(result.is_err(), "must return Err when non-meta node claims package=meta");
+        let msg = result.err().unwrap();
+        assert!(
+            msg.contains("bad-user-1"),
+            "error must name the offending node id, got: {msg}"
+        );
+        assert!(
+            msg.contains("meta"),
+            "error must mention meta, got: {msg}"
         );
     }
 
