@@ -21,6 +21,19 @@ fn proposals_lists_pending() {
     assert_eq!(list[0].intent, "Propose preference: prefer tea");
 }
 
+// ---- log ----
+
+#[test]
+fn log_lists_changesets() {
+    let graph = common::init_memory_graph();
+    let entries = flows::log(&graph).expect("log");
+    // After init, at least 1 changeset (genesis)
+    assert!(!entries.is_empty());
+    assert!(!entries[0].hash.is_empty());
+    assert!(!entries[0].author.is_empty());
+    assert!(entries[0].op_count > 0);
+}
+
 // ---- Task 4b stubs (will be implemented one by one) ----
 
 // ---- trust ----

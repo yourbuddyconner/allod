@@ -369,20 +369,15 @@ fn cmd_proposals(dir: &Path) -> Result<(), String> {
 
 fn cmd_log(dir: &Path) -> Result<(), String> {
     let graph = Graph::open(dir)?;
-    for cs in graph.chain()? {
-        let hash = get_str(&cs, "hash").unwrap_or("?");
-        let author = get_str(cs.get("author").unwrap_or(&Value::Null), "principal").unwrap_or("?");
-        let ops = cs
-            .get("operations")
-            .and_then(Value::as_sequence)
-            .map(|o| o.len())
-            .unwrap_or(0);
+    let entries = allod_graph::flows::log(&graph).map_err(|e| e.to_string())?;
+    for e in &entries {
         println!(
-            "  {}  {}  [{ops} op{}]  {}",
-            short(hash),
-            author,
-            if ops == 1 { "" } else { "s" },
-            get_str(&cs, "intent").unwrap_or("")
+            "  {}  {}  [{} op{}]  {}",
+            short(&e.hash),
+            e.author,
+            e.op_count,
+            if e.op_count == 1 { "" } else { "s" },
+            e.intent
         );
     }
     Ok(())
