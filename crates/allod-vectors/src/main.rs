@@ -635,7 +635,7 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
 
     // --- write the files ---
     std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
-    let log: Vec<&Built> = vec![&cs1, &cs2, &cs3];
+    let log: Vec<&Built> = vec![&cs1, &cs2, &cs3, &cs_schema_mut];
 
     let mut log_out = String::from(
         "# The Appendix H vector log: three changesets in stored form.\n\

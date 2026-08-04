@@ -3191,3 +3191,26 @@ operations:
     basis: manual
 signature: sig:ed25519:35e44e6cbd52a9263b9cdae44cf6c9fec2d3d00b8b1ea2867e2da1cd86b84091fe2af05d51a4f3098a08cb66a8e6b1ed38c2adcb81b54659805a528c1664000d
 hash: sha256:0c4a5a44d533b94c540a035e22885f2842c8bc9f68b232350171a4ef72ef7590
+---
+kind: changeset
+parents:
+- sha256:0c4a5a44d533b94c540a035e22885f2842c8bc9f68b232350171a4ef72ef7590
+author:
+  principal: principal:vector-author
+  key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
+timestamp: 2026-08-02T00:03:00Z
+intent: 'Schema mutation: add vectors/Annotation entity type'
+schema_context: sha256:d8600ba935e290fa2adccc3a0fb957a0478dfc737c0102ebdb6e32eaaaf6d06b
+operations:
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-0000000000d6
+    type: meta/EntityType@1
+    attributes:
+      name: Annotation
+      package: vectors
+      definition: |
+        attributes:
+          body: {type: string, required: true}
+signature: sig:ed25519:b9660c7eaaee35e94a275d5cc76090832c0aad2f166cce0b7b255b8123a0ae3c1e02392bdafedd4415e1bfd4583a2cbd36685181e43a8dd1921c37f056110604
+hash: sha256:0f89b812ab8a733f042a31291f671bc9c4a66c90fdeb516e0023ec5c5c4c1aa8

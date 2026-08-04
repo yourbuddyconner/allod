@@ -15,12 +15,13 @@ pub struct Package {
 }
 
 /// A loaded taxonomy: term name to parent terms.
+#[derive(Clone)]
 pub struct Taxonomy {
     pub terms: HashMap<String, Vec<String>>,
 }
 
 /// Everything loaded from a set of packages, with resolution over it.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Registry {
     pub packages: HashMap<String, Package>,
     pub taxonomies: HashMap<String, Taxonomy>,
