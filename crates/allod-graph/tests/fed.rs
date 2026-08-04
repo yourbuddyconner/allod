@@ -6,6 +6,7 @@
 
 use allod_graph::fed;
 use allod_graph::ops::Admission;
+use allod_graph::AllodError;
 
 mod common;
 
@@ -126,5 +127,75 @@ fn federation_grant_bundle_import_revoke() {
     assert!(
         err.to_string().contains("revoked") || err.to_string().contains("no live grant"),
         "expected revocation error, got: {err}"
+    );
+}
+
+/// An intact bundle passes `verify_bundle`; a tampered bundle (one byte
+/// flipped in a signed section) fails with a typed hash or signature error.
+#[test]
+fn verify_bundle_intact_and_tampered() {
+    // ---- Setup: Graph A grants region "work" to Graph B ----
+    let graph_a = common::init_memory_graph();
+    common::add_agent(&graph_a, "jarvis", "o");
+
+    let note_r = allod_graph::flows::note(&graph_a, "jarvis", "verify-bundle test note")
+        .expect("note");
+    let prop_r = allod_graph::flows::propose_preference(
+        &graph_a,
+        "jarvis",
+        "verify-bundle test note",
+        "soft",
+        Some(&note_r.note_id),
+    )
+    .expect("propose_preference");
+    allod_graph::flows::decide(&graph_a, &prop_r.hash, "o", "approve")
+        .expect("decide approve");
+
+    let graph_b = common::init_memory_graph_owner("dana");
+
+    let a_meta = graph_a.meta().expect("graph_a meta");
+    let a_graph_id = allod_core::get_str(&a_meta, "graph_id").expect("graph_id").to_string();
+    let a_key = graph_a.load_key("o").expect("load_key o").public_hex();
+    fed::peer_add(&graph_b, "conner-verify", &a_graph_id, &a_key, "dana").expect("peer_add");
+
+    let b_meta = graph_b.meta().expect("graph_b meta");
+    let b_graph_id = allod_core::get_str(&b_meta, "graph_id").expect("graph_id").to_string();
+
+    let grant_id = fed::grant(&graph_a, &b_graph_id, "work", "o").expect("grant");
+    let bundle = fed::make_bundle(&graph_a, &grant_id, "o").expect("make_bundle");
+
+    // Intact bundle verifies without error.
+    let vr = fed::verify_bundle(&graph_b, &bundle).expect("verify_bundle intact");
+    assert_eq!(vr.source_graph_id, a_graph_id);
+    assert!(!vr.state_hash.is_empty());
+    assert!(vr.object_count > 0);
+
+    // Tamper with the bundle: flip one byte in the checkpoint's state_hash.
+    let mut tampered = bundle.clone();
+    if let Some(cp) = tampered.get_mut("checkpoint") {
+        if let Some(sh) = cp.get_mut("state_hash") {
+            if let Some(s) = sh.as_str() {
+                // Replace the first char to invalidate the hash.
+                let mut corrupted = s.to_string();
+                if corrupted.starts_with('a') {
+                    corrupted.replace_range(..1, "b");
+                } else {
+                    corrupted.replace_range(..1, "a");
+                }
+                *sh = serde_yaml::Value::String(corrupted);
+            }
+        }
+    }
+
+    // Tampered bundle must fail with a signature or hash error.
+    let err = fed::verify_bundle(&graph_b, &tampered)
+        .expect_err("tampered bundle should fail verify_bundle");
+    let is_typed_error = matches!(
+        &err,
+        AllodError::SignatureInvalid(_) | AllodError::HashMismatch(_)
+    );
+    assert!(
+        is_typed_error,
+        "expected SignatureInvalid or HashMismatch, got: {err:?}"
     );
 }

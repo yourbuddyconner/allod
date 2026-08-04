@@ -261,17 +261,42 @@ pub fn make_bundle(graph: &Graph, grant_id: &str, by: &str) -> Result<Value, All
     Ok(Value::Mapping(doc))
 }
 
-/// Verify a bundle against the peer's keys and import one object
-/// through local admission (§9.6). Returns the `Admission` outcomes
-/// for the imported object — the CLI shim prints them.
+/// Outcome of a successful `verify_bundle` call. Carries the
+/// information the CLI's verify-only output line needs.
+#[derive(Debug)]
+pub struct BundleVerification {
+    /// The source graph id from the bundle.
+    pub source_graph_id: String,
+    /// The state hash from the checkpoint.
+    pub state_hash: String,
+    /// Number of disclosed objects whose hashes and Merkle proofs checked out.
+    pub object_count: usize,
+}
+
+/// Verify a bundle against the registered peer's keys, without importing
+/// anything. Checks: peer lookup, checkpoint signature, grant audience,
+/// every object's revision hash, and every object's Merkle membership
+/// proof against the checkpoint state hash (§9.6, §5.4).
 ///
-/// `import_id` is the node id to import from the bundle.
-pub fn import(
+/// Returns a `BundleVerification` summary on success. The CLI shim uses
+/// this on the verify-only path (no `import_id` given).
+pub fn verify_bundle(graph: &Graph, bundle: &Value) -> Result<BundleVerification, AllodError> {
+    let (peer_key, source_graph, state_hash, object_count) =
+        verify_bundle_inner(graph, bundle)?;
+    let _ = peer_key;
+    Ok(BundleVerification {
+        source_graph_id: source_graph.to_string(),
+        state_hash: state_hash.to_string(),
+        object_count,
+    })
+}
+
+/// Shared verification logic used by both `verify_bundle` and `import`.
+/// Returns `(peer_key, source_graph_id, state_hash, object_count)`.
+fn verify_bundle_inner<'b>(
     graph: &Graph,
-    bundle: &Value,
-    by: &str,
-    import_id: &str,
-) -> Result<Vec<Admission>, AllodError> {
+    bundle: &'b Value,
+) -> Result<(String, &'b str, &'b str, usize), AllodError> {
     let state = graph.fold()?;
     let source_graph = get_str(bundle, "graph_id")
         .ok_or_else(|| AllodError::Other("bundle needs graph_id".into()))?;
@@ -372,6 +397,28 @@ pub fn import(
             )));
         }
     }
+
+    Ok((peer_key, source_graph, state_hash, objects.len()))
+}
+
+/// Verify a bundle against the peer's keys and import one object
+/// through local admission (§9.6). Returns the `Admission` outcomes
+/// for the imported object — the CLI shim prints them.
+///
+/// `import_id` is the node id to import from the bundle.
+pub fn import(
+    graph: &Graph,
+    bundle: &Value,
+    by: &str,
+    import_id: &str,
+) -> Result<Vec<Admission>, AllodError> {
+    // Run the shared verification (signature, hashes, proofs, audience).
+    let (_, source_graph, _, _) = verify_bundle_inner(graph, bundle)?;
+
+    let objects = bundle
+        .get("objects")
+        .and_then(Value::as_sequence)
+        .ok_or_else(|| AllodError::Other("bundle needs objects".into()))?;
 
     // Find the target object in the bundle.
     let (entry, content) = objects

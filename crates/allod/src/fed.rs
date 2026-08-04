@@ -106,53 +106,16 @@ pub fn import(
         .unwrap_or(0);
 
     let Some(import_id) = import_id else {
-        // Verify-only path: call import with a dummy id that won't match anything,
-        // but we need the verification to run. Better: replicate the verification
-        // path without the import step.
-        // The library's import() always imports; for verify-only we rely on the
-        // fact that the old CLI returned Ok(None) when no import_id was given.
-        // We replicate that: verify by doing a no-op import (call with a sentinel
-        // that will error at "import target not in bundle" — but we need the
-        // verify steps to run first).
-        // Simplest correct approach: call into the library with a known-absent id,
-        // which will verify successfully then fail at "import target not in bundle".
-        // Instead: re-implement the verify-only path using the same library internals.
-        // For now, parse + verify by attempting to import a known-absent sentinel.
-        // The library verifies ALL objects before looking for the import_id, so
-        // a NotFound after successful verification is fine — but we'd surface an
-        // error to the caller. We need to distinguish "bundle invalid" from
-        // "target not found".
-        //
-        // Simplest: expose a `verify_bundle` function, OR handle it here by
-        // catching the specific "import target not in bundle" error.
-        //
-        // To keep the library API minimal, we use the latter approach.
-        let sentinel = "\x00not-a-real-id\x00";
-        let result = allod_graph::fed::import(&graph, &bundle, by, sentinel)
-            .map_err(|e| e.to_string());
-        match result {
-            Err(ref e) if e.contains("import target not in bundle") => {
-                // Verification passed; only the import step was skipped.
-                println!(
-                    "  ✓ bundle verified: {} objects prove membership in state {} of peer {}",
-                    obj_count,
-                    short(&state_hash),
-                    short(&source_graph)
-                );
-                return Ok(None);
-            }
-            Err(e) => return Err(e),
-            Ok(_) => {
-                // Sentinel matched something (shouldn't happen) — treat as verified.
-                println!(
-                    "  ✓ bundle verified: {} objects prove membership in state {} of peer {}",
-                    obj_count,
-                    short(&state_hash),
-                    short(&source_graph)
-                );
-                return Ok(None);
-            }
-        }
+        // Verify-only path: run all verification steps (signature, hashes,
+        // Merkle proofs, audience) without creating any proposal.
+        allod_graph::fed::verify_bundle(&graph, &bundle).map_err(|e| e.to_string())?;
+        println!(
+            "  ✓ bundle verified: {} objects prove membership in state {} of peer {}",
+            obj_count,
+            short(&state_hash),
+            short(&source_graph)
+        );
+        return Ok(None);
     };
 
     // Import path.
@@ -180,8 +143,9 @@ pub fn import(
         .unwrap_or_default();
 
     println!(
-        "      lineage: derived_from allod:{}/{import_id}@{}",
+        "      lineage: derived_from allod:{}/{}@{}",
         short(&source_graph),
+        short(import_id),
         short(&rev)
     );
 
