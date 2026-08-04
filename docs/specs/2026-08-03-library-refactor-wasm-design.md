@@ -31,8 +31,16 @@ today and potentially in the browser later.
    - `allod-core` — the pure domain. Loses direct filesystem access:
      storage moves behind a `LogStore` trait. No other semantic changes.
    - `allod-graph` (new) — the operations API. A `Graph` handle owning a
-     `Box<dyn LogStore>`, with methods for every current command flow plus
-     the markdown bundle, repo import + semantic diff, and federation.
+     `Box<dyn LogStore>`, with two layers: **generic operations** —
+     atomic changeset building over arbitrary installed types (create,
+     update, delete of nodes, edges, classifications, and documents),
+     propose/decide, registry introspection (entity types with attribute
+     schemas and inheritance, edge types with domain/range, the taxonomy
+     DAG), and schema-document install — and the **current command
+     flows** (init, note, propose-preference, verify, checkpoint, and
+     the rest) reimplemented on top of them, plus the markdown bundle,
+     repo import + semantic diff, and federation. Clients like Freehold
+     build on the generic layer; the CLI and demos use the flows.
      Methods return typed values (serde-serializable structs); nothing in
      the library prints.
    - `allod` — the CLI, thinned to argument parsing, calls into
@@ -74,12 +82,15 @@ today and potentially in the browser later.
 5. **Native-only features stay native.** Repo import shells out to git,
    so `allod-graph` gates it (and anything else process-spawning) behind a
    `native` cargo feature excluded from the WASM build. The WASM surface
-   for v1 of the package is the memory-product flow: graph lifecycle,
-   principals, notes, proposals, decisions, classifications, checkpoints,
-   verification, markdown bundle export/import, and federation
+   for v1 of the package is the generic layer plus the flows built on it:
+   graph lifecycle, principals, generic object operations over arbitrary
+   installed types, proposals and decisions, checkpoints, verification,
+   registry introspection, schema-document install, the memory flows as
+   reference sugar, markdown bundle export/import, and federation
    bundle/import (pure data, no network). The package also bundles the
    reference ontology packages (`core`, `memory`, and their policies) as
-   data, so clients need no copy of the allod repo.
+   data, so clients need no copy of the allod repo; additional packages
+   install from caller-supplied documents.
 
 6. **No behavior changes.** This is a refactor with one new delivery
    vehicle. The Appendix H vectors, `allod-lint` output, CLI output that
