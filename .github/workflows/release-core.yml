@@ -79,4 +79,6 @@ jobs:
 
           \`\`\`json
           \"@allod/core\": \"https://github.com/yourbuddyconner/allod/releases/download/${GITHUB_REF_NAME}/allod-core-${VERSION}.tgz\"
-          \`\`\`"
+          \`\`\`" \
+          || gh release upload "${GITHUB_REF_NAME}" \
+            "crates/allod-wasm/allod-core-${VERSION}.tgz" --clobber
