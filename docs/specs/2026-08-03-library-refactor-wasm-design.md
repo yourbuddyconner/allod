@@ -84,13 +84,12 @@ today and potentially in the browser later.
    `native` cargo feature excluded from the WASM build. The WASM surface
    for v1 of the package is the generic layer plus the flows built on it:
    graph lifecycle, principals, generic object operations over arbitrary
-   installed types, proposals and decisions, checkpoints, verification,
-   registry introspection, schema-document install, the memory flows as
-   reference sugar, markdown bundle export/import, and federation
-   bundle/import (pure data, no network). The package also bundles the
-   reference ontology packages (`core`, `memory`, and their policies) as
-   data, so clients need no copy of the allod repo; additional packages
-   install from caller-supplied documents.
+   installed types, proposals and decisions, and verification. The package
+   also bundles the reference ontology packages (`core`, `memory`, and
+   their policies) as data, so clients need no copy of the allod repo;
+   additional packages install from caller-supplied documents. The
+   remaining bindings (checkpoint, envelope, markdown import, federation)
+   land with the Freehold sub-project that needs them.
 
 6. **No behavior changes.** This is a refactor with one new delivery
    vehicle. The Appendix H vectors, `allod-lint` output, CLI output that
