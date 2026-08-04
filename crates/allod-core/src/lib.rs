@@ -16,6 +16,7 @@ pub mod meta;
 pub mod model;
 pub mod policy;
 pub mod registry;
+pub mod schemaops;
 pub mod sign;
 pub mod store;
 pub mod typeexpr;
