@@ -3,6 +3,8 @@ pub mod fed;
 pub mod flows;
 pub mod md;
 pub mod ops;
+pub mod profiles;
 #[cfg(feature = "native")]
 pub mod repo;
+pub mod schema;
 pub use error::AllodError;
