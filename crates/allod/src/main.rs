@@ -22,8 +22,7 @@ mod md;
 
 use allod_core::fold::State;
 use allod_core::get_str;
-use allod_core::model::{changeset_hash, schema_context};
-use allod_core::policy::{self, Checklist};
+use allod_core::policy;
 use allod_core::sign::Keypair;
 use allod_core::store::Graph;
 use serde_yaml::{Mapping, Value};
@@ -39,51 +38,19 @@ pub(crate) fn s(v: &str) -> Value {
 }
 
 pub(crate) fn uuid4() -> String {
-    let mut bytes: [u8; 16] = rand::random();
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let h = allod_core::hash::hex_string(&bytes);
-    format!(
-        "{}-{}-{}-{}-{}",
-        &h[0..8],
-        &h[8..12],
-        &h[12..16],
-        &h[16..20],
-        &h[20..32]
-    )
+    allod_graph::ops::uuid4()
 }
 
-/// UTC now as RFC 3339, from the civil-from-days algorithm — no
-/// clock dependencies beyond the system time.
+/// UTC now as RFC 3339 — delegates to allod_graph::ops.
 pub(crate) fn now_iso() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let (days, rem) = (secs / 86400, secs % 86400);
-    let z = days as i64 + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe as i64 + era * 400 + i64::from(m <= 2);
-    format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
-        rem / 3600,
-        (rem % 3600) / 60,
-        rem % 60
-    )
+    allod_graph::ops::now_iso()
 }
 
 pub(crate) fn short(hash: &str) -> String {
-    let h = hash.strip_prefix("sha256:").unwrap_or(hash);
-    h.chars().take(12).collect()
+    allod_graph::ops::short(hash)
 }
 
-// ---------------- changeset construction ----------------
+// ---------------- changeset construction (delegates to allod_graph::ops) ----------------
 
 pub(crate) fn build_changeset(
     graph: &Graph,
@@ -91,66 +58,20 @@ pub(crate) fn build_changeset(
     intent: &str,
     ops: Vec<Value>,
 ) -> Result<(Value, String), String> {
-    let parents: Vec<Value> = graph.head()?.into_iter().map(Value::String).collect();
-    let sctx = schema_context(&graph.schema_docs()?)?;
-    let mut cs = Mapping::new();
-    cs.insert(s("kind"), s("changeset"));
-    cs.insert(s("parents"), Value::Sequence(parents));
-    let mut author_map = Mapping::new();
-    author_map.insert(s("principal"), s(&format!("principal:{}", author.name)));
-    author_map.insert(s("key"), s(&author.key_id()));
-    cs.insert(s("author"), Value::Mapping(author_map));
-    cs.insert(s("timestamp"), s(&now_iso()));
-    cs.insert(s("intent"), s(intent));
-    cs.insert(s("schema_context"), s(&sctx));
-    cs.insert(s("operations"), Value::Sequence(ops));
-    let mut cs = Value::Mapping(cs);
-    let (hash, _, _, _) = changeset_hash(&cs)?;
-    if let Some(map) = cs.as_mapping_mut() {
-        map.insert(s("hash"), s(&hash));
-        map.insert(s("signature"), s(&author.sign(&hash)));
-    }
-    Ok((cs, hash))
+    allod_graph::ops::build_changeset(graph, author, intent, ops).map_err(|e| e.to_string())
 }
 
 fn key_record(kp: &Keypair) -> Value {
-    let mut record = Mapping::new();
-    record.insert(s("key_id"), s(&kp.key_id()));
-    record.insert(s("algorithm"), s("ed25519"));
-    record.insert(s("public"), s(&kp.public_hex()));
-    record.insert(s("status"), s("active"));
-    Value::Mapping(record)
+    allod_graph::ops::key_record(kp)
 }
 
 fn evidence_doc(decisions: &[Value], envelopes: &[Value]) -> Value {
-    let mut map = Mapping::new();
-    map.insert(s("decisions"), Value::Sequence(decisions.to_vec()));
-    map.insert(s("envelopes"), Value::Sequence(envelopes.to_vec()));
-    Value::Mapping(map)
+    allod_graph::ops::evidence_doc(decisions, envelopes)
 }
 
-fn print_checklist(checklist: &Checklist) {
-    println!(
-        "      matched rules: {}",
-        checklist
-            .matched_rules
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    for (role, quorum) in &checklist.reviewers {
-        println!("      requires: reviewers role {role} (quorum {quorum})");
-    }
-    for class in &checklist.attestations {
-        println!("      requires: attestation from class {class}");
-    }
-    if checklist.root_required {
-        println!("      requires: root authority (default posture)");
-    }
-}
 
 /// Evaluate, then admit or hold. Returns true when admitted.
+/// Delegates to allod_graph::ops::admit_or_hold and handles printing.
 pub(crate) fn admit_or_hold(
     graph: &Graph,
     author_name: &str,
@@ -159,45 +80,40 @@ pub(crate) fn admit_or_hold(
     envelopes: Vec<Value>,
     quiet: bool,
 ) -> Result<bool, String> {
-    let reg = graph.registry()?;
-    let policy = graph.policy()?;
-    let state = graph.fold()?;
-    let author_ref = format!("principal:{author_name}");
-    let author_kind = state
-        .find_principal(&author_ref)
-        .map(|(kind, _)| kind.to_string())
-        .ok_or_else(|| format!("unknown principal {author_ref}"))?;
-    let checklist = policy::evaluate(&reg, &policy, &state, cs, &author_kind)?;
-    let roots = graph.roots()?;
-    let sat = policy::check_satisfied_with(
-        &state, &policy, &roots, cs, &author_ref, &checklist, &[], &envelopes,
-        &graph.trusted_measurements()?,
-    )?;
-    if sat.unmet.is_empty() {
-        let mut state = state;
-        state.apply_changeset(&reg, cs)?;
-        let evidence = evidence_doc(&[], &envelopes);
-        graph.append_changeset(cs, hash, Some(&evidence))?;
-        if !quiet {
-            let basis = if checklist.matched_rules.is_empty() {
-                "root authority, default posture".to_string()
-            } else {
-                format!(
-                    "rules: {}",
-                    checklist.matched_rules.iter().cloned().collect::<Vec<_>>().join(", ")
-                )
-            };
-            println!("  ✓ admitted {} ({basis})", short(hash));
+    use allod_graph::ops::Admission;
+    let admission = allod_graph::ops::admit_or_hold(graph, author_name, cs, hash, envelopes)
+        .map_err(|e| e.to_string())?;
+    match admission {
+        Admission::Admitted { hash: h, matched_rules } => {
+            if !quiet {
+                let basis = if matched_rules.is_empty() {
+                    "root authority, default posture".to_string()
+                } else {
+                    format!("rules: {}", matched_rules.join(", "))
+                };
+                println!("  ✓ admitted {} ({basis})", short(&h));
+            }
+            Ok(true)
         }
-        Ok(true)
-    } else {
-        graph.write_proposal(cs, hash)?;
-        graph.write_proposal_evidence(hash, &evidence_doc(&[], &envelopes))?;
-        if !quiet {
-            println!("  ⧗ held as proposal {}", short(hash));
-            print_checklist(&checklist);
+        Admission::Held { hash: h, checklist } => {
+            if !quiet {
+                println!("  ⧗ held as proposal {}", short(&h));
+                println!(
+                    "      matched rules: {}",
+                    checklist.matched_rules.join(", ")
+                );
+                for (role, quorum) in &checklist.reviewers {
+                    println!("      requires: reviewers role {role} (quorum {quorum})");
+                }
+                for class in &checklist.attestations {
+                    println!("      requires: attestation from class {class}");
+                }
+                if checklist.root_required {
+                    println!("      requires: root authority (default posture)");
+                }
+            }
+            Ok(false)
         }
-        Ok(false)
     }
 }
 
