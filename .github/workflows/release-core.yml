@@ -1,0 +1,77 @@
+name: release-core
+
+# Builds the @allod/core npm package (WASM + JS) and attaches the tarball
+# to a GitHub release, so consumers can depend on it by URL without a Rust
+# toolchain or a local allod checkout.
+#
+# Cut a release with:
+#   git tag core-v<version> && git push origin core-v<version>
+# where <version> matches crates/allod-wasm/package.json.
+
+on:
+  push:
+    tags: ["core-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build @allod/core and attach to release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install JS dependencies
+        working-directory: crates/allod-wasm
+        run: pnpm install --frozen-lockfile
+
+      - name: Check tag matches package version
+        working-directory: crates/allod-wasm
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "core-v${PKG_VERSION}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${PKG_VERSION}"
+            exit 1
+          fi
+
+      - name: Build (wasm + ts)
+        working-directory: crates/allod-wasm
+        run: pnpm run build
+
+      - name: Test
+        working-directory: crates/allod-wasm
+        run: pnpm test
+
+      - name: Pack
+        working-directory: crates/allod-wasm
+        run: npm pack
+
+      - name: Create GitHub release with tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./crates/allod-wasm/package.json').version")
+          gh release create "${GITHUB_REF_NAME}" \
+            "crates/allod-wasm/allod-core-${VERSION}.tgz" \
+            --title "@allod/core ${VERSION}" \
+            --notes "Prebuilt \`@allod/core\` npm tarball (WASM + JS). Depend on it by URL:
+
+          \`\`\`json
+          \"@allod/core\": \"https://github.com/yourbuddyconner/allod/releases/download/${GITHUB_REF_NAME}/allod-core-${VERSION}.tgz\"
+          \`\`\`"
