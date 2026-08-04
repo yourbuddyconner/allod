@@ -130,74 +130,11 @@ fn cmd_init_profile(
     profile: &str,
 ) -> Result<(), String> {
     let graph = Graph::create(dir)?;
-    let kp = Keypair::generate(owner);
-    graph.save_key(&kp)?;
-
-    // Install the schema projection and the profile's local policy
-    // with the owner bound into every role.
-    let read = |p: PathBuf| -> Result<Value, String> {
-        let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-        serde_yaml::from_str(&text).map_err(|e| e.to_string())
-    };
-    let (files, policy_path): (Vec<(&str, &str)>, &str) = match profile {
-        "memory" => (
-            vec![
-                ("core", "core/ontology.yaml"),
-                ("memory", "memory/ontology.yaml"),
-                ("memory-taxonomy", "memory/taxonomy.yaml"),
-            ],
-            "memory/policy-local.yaml",
-        ),
-        "code" => (
-            vec![
-                ("core", "core/ontology.yaml"),
-                ("code", "code/ontology.yaml"),
-                ("eng-taxonomy", "eng/taxonomy.yaml"),
-            ],
-            "code/policy-local.yaml",
-        ),
-        other => return Err(format!("unknown profile {other:?}")),
-    };
-    for (name, rel) in files {
-        graph.install_schema(name, &read(schema_dir.join(rel))?)?;
-    }
-    let mut policy = read(schema_dir.join(policy_path))?;
-    if let Some(roles) = policy.get_mut("roles").and_then(Value::as_mapping_mut) {
-        let bind = Value::Sequence(vec![s(&format!("principal:{owner}"))]);
-        let names: Vec<Value> = roles.keys().cloned().collect();
-        for name in names {
-            roles.insert(name, bind.clone());
-        }
-    }
-    graph.install_schema("policy", &policy)?;
-
-    // Genesis (§4.6): self-admitted by root signature, creating the
-    // owner principal whose key signed it.
-    let owner_node = uuid4();
-    let mut attrs = Mapping::new();
-    attrs.insert(s("display_name"), s(owner));
-    attrs.insert(s("keys"), Value::Sequence(vec![key_record(&kp)]));
-    attrs.insert(s("status"), s("active"));
-    let mut node = Mapping::new();
-    node.insert(s("kind"), s("node"));
-    node.insert(s("id"), s(&owner_node));
-    node.insert(s("type"), s("core/User@1"));
-    node.insert(s("attributes"), Value::Mapping(attrs));
-    let mut op = Mapping::new();
-    op.insert(s("create"), Value::Mapping(node));
-
-    let (cs, hash) = build_changeset(
-        &graph,
-        &kp,
-        &format!("Genesis: root authority {owner}, core + memory schema, memory-local policy"),
-        vec![Value::Mapping(op)],
-    )?;
-    let reg = graph.registry()?;
-    let mut state = State::default();
-    state.apply_changeset(&reg, &cs)?;
-    graph.append_changeset(&cs, &hash, None)?;
-    graph.write_meta(&hash, &[format!("principal:{owner}")])?;
-    println!("  ✓ graph {} (owner {owner})", short(&hash));
+    let profile_src = allod_graph::flows::profile_from_dir(profile, schema_dir)
+        .map_err(|e| e.to_string())?;
+    let result = allod_graph::flows::init(&graph, owner, profile_src)
+        .map_err(|e| e.to_string())?;
+    println!("  ✓ graph {} (owner {})", allod_graph::ops::short(&result.graph_id), result.owner);
     Ok(())
 }
 
