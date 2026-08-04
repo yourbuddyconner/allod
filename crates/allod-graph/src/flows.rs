@@ -227,14 +227,76 @@ pub fn note(graph: &Graph, agent: &str, content: &str) -> Result<NoteResult, All
     Ok(NoteResult { note_id, admission })
 }
 
+/// Propose a new Preference node. Classified as `work@1`, optionally linked to a source note.
+/// Builds a self-attesting envelope; the changeset is typically held for owner decision.
 pub fn propose_preference(
-    _graph: &Graph,
-    _agent: &str,
-    _statement: &str,
-    _strength: &str,
-    _from_note: Option<&str>,
+    graph: &Graph,
+    agent: &str,
+    statement: &str,
+    strength: &str,
+    from_note: Option<&str>,
 ) -> Result<ProposalResult, AllodError> {
-    Err(AllodError::Other("not implemented".into()))
+    use allod_core::policy;
+    use crate::ops;
+
+    let kp = graph.load_key(agent).map_err(AllodError::from)?;
+    let pref_id = ops::uuid4();
+
+    let mut attrs = serde_yaml::Mapping::new();
+    attrs.insert(Value::String("statement".into()), Value::String(statement.into()));
+    attrs.insert(Value::String("strength".into()), Value::String(strength.into()));
+
+    let node_op = ops::create_node_op(
+        &pref_id,
+        "memory/Preference@1",
+        Value::Mapping(attrs),
+        Some(provenance_val(agent)),
+    );
+    let cls_op = ops::classification_op(
+        &format!("node:{pref_id}"),
+        "work@1",
+        &format!("principal:{agent}"),
+        "model-assisted",
+    );
+
+    let mut op_list = vec![node_op, cls_op];
+
+    if let Some(note_id) = from_note {
+        let edge_op = ops::create_edge_op(
+            &ops::uuid4(),
+            "memory/relates_to@1",
+            &format!("node:{pref_id}"),
+            &format!("node:{note_id}"),
+            None,
+        );
+        op_list.push(edge_op);
+    }
+
+    let (cs, hash) = ops::build_changeset(
+        graph,
+        &kp,
+        &format!("Propose preference: {statement}"),
+        op_list,
+    )?;
+
+    // Self-attesting envelope (§5.2): proves who signed, not what code ran.
+    let mut statement_map = serde_yaml::Mapping::new();
+    statement_map.insert(Value::String("changeset_hash".into()), Value::String(hash.clone()));
+    let mut envelope = serde_yaml::Mapping::new();
+    envelope.insert(Value::String("kind".into()), Value::String("attestation-envelope".into()));
+    envelope.insert(Value::String("statement".into()), Value::Mapping(statement_map));
+    envelope.insert(Value::String("attester".into()), Value::String(format!("principal:{agent}")));
+    envelope.insert(Value::String("evidence".into()), Value::String("none".into()));
+    envelope.insert(Value::String("evidence_type".into()), Value::String("none".into()));
+    let mut envelope = Value::Mapping(envelope);
+    let payload = policy::envelope_payload(&envelope).map_err(AllodError::from)?;
+    if let Some(map) = envelope.as_mapping_mut() {
+        map.insert(Value::String("signature".into()), Value::String(kp.sign(&payload)));
+    }
+
+    let admission = ops::admit_or_hold(graph, agent, &cs, &hash, vec![envelope])?;
+
+    Ok(ProposalResult { hash, admission })
 }
 
 pub fn decide(_graph: &Graph, _hash: &str, _by: &str, _verdict: &str) -> Result<DecisionOutcome, AllodError> {

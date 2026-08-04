@@ -229,60 +229,34 @@ fn cmd_propose_preference(
     strength: &str,
     from_note: Option<&str>,
 ) -> Result<String, String> {
+    use allod_graph::ops::Admission;
     let graph = Graph::open(dir)?;
-    let kp = graph.load_key(agent)?;
-    let pref_id = uuid4();
-    let mut attrs = Mapping::new();
-    attrs.insert(s("statement"), s(statement));
-    attrs.insert(s("strength"), s(strength));
-    let mut node = Mapping::new();
-    node.insert(s("kind"), s("node"));
-    node.insert(s("id"), s(&pref_id));
-    node.insert(s("type"), s("memory/Preference@1"));
-    node.insert(s("attributes"), Value::Mapping(attrs));
-    node.insert(s("provenance"), provenance(agent, "allod-demo-agent@0.1"));
-    let mut op = Mapping::new();
-    op.insert(s("create"), Value::Mapping(node));
-    let mut ops = vec![
-        Value::Mapping(op),
-        classification_op(&format!("node:{pref_id}"), "work@1", agent),
-    ];
-    if let Some(note_id) = from_note {
-        let mut edge = Mapping::new();
-        edge.insert(s("kind"), s("edge"));
-        edge.insert(s("id"), s(&uuid4()));
-        edge.insert(s("type"), s("memory/relates_to@1"));
-        edge.insert(s("from"), s(&format!("node:{pref_id}")));
-        edge.insert(s("to"), s(&format!("node:{note_id}")));
-        let mut op = Mapping::new();
-        op.insert(s("create"), Value::Mapping(edge));
-        ops.push(Value::Mapping(op));
+    let result = allod_graph::flows::propose_preference(&graph, agent, statement, strength, from_note)
+        .map_err(|e| e.to_string())?;
+    match &result.admission {
+        Admission::Admitted { hash: h, matched_rules } => {
+            let basis = if matched_rules.is_empty() {
+                "root authority, default posture".to_string()
+            } else {
+                format!("rules: {}", matched_rules.join(", "))
+            };
+            println!("  ✓ admitted {} ({basis})", allod_graph::ops::short(h));
+        }
+        Admission::Held { hash: h, checklist } => {
+            println!("  ⧗ held as proposal {}", allod_graph::ops::short(h));
+            println!("      matched rules: {}", checklist.matched_rules.join(", "));
+            for (role, quorum) in &checklist.reviewers {
+                println!("      requires: reviewers role {role} (quorum {quorum})");
+            }
+            for class in &checklist.attestations {
+                println!("      requires: attestation from class {class}");
+            }
+            if checklist.root_required {
+                println!("      requires: root authority (default posture)");
+            }
+        }
     }
-    let (cs, hash) = build_changeset(
-        &graph,
-        &kp,
-        &format!("Propose preference: {statement}"),
-        ops,
-    )?;
-
-    // The signed envelope (§5.2, evidence: none): the agent attests
-    // its own pipeline. It proves who signed, not what code ran.
-    let mut statement_map = Mapping::new();
-    statement_map.insert(s("changeset_hash"), s(&hash));
-    let mut envelope = Mapping::new();
-    envelope.insert(s("kind"), s("attestation-envelope"));
-    envelope.insert(s("statement"), Value::Mapping(statement_map));
-    envelope.insert(s("attester"), s(&format!("principal:{agent}")));
-    envelope.insert(s("evidence"), s("none"));
-    envelope.insert(s("evidence_type"), s("none"));
-    let mut envelope = Value::Mapping(envelope);
-    let payload = policy::envelope_payload(&envelope)?;
-    if let Some(map) = envelope.as_mapping_mut() {
-        map.insert(s("signature"), s(&kp.sign(&payload)));
-    }
-
-    admit_or_hold(&graph, agent, &cs, &hash, vec![envelope], false)?;
-    Ok(hash)
+    Ok(result.hash)
 }
 
 fn cmd_approve(dir: &Path, hash: &str, by: &str) -> Result<(), String> {
