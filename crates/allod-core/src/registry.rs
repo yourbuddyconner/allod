@@ -26,6 +26,54 @@ pub struct Registry {
     pub taxonomies: HashMap<String, Taxonomy>,
 }
 
+/// Insert a fully-assembled package into the registry.
+/// Shared by `register_ontology` and `from_state` so they cannot drift.
+/// This is the single insertion point for packages.
+pub(crate) fn insert_package(
+    reg: &mut Registry,
+    name: &str,
+    types: Value,
+    edges: Value,
+    structs: Value,
+    rules: Value,
+    imports: Vec<String>,
+) {
+    reg.packages.insert(
+        name.to_string(),
+        Package {
+            types,
+            edges,
+            structs,
+            rules,
+            imports,
+        },
+    );
+}
+
+/// Insert a taxonomy with already-assembled terms into the registry.
+/// Shared by `register_taxonomy` and `from_state` so they cannot drift.
+/// This is the single insertion point for taxonomies.
+pub(crate) fn insert_taxonomy(reg: &mut Registry, name: &str, terms: Vec<Value>) {
+    let mut term_map: HashMap<String, Vec<String>> = HashMap::new();
+    for term in &terms {
+        if let Some(tname) = get_str(term, "name") {
+            let parents = term
+                .get("parents")
+                .and_then(Value::as_sequence)
+                .map(|p| {
+                    p.iter()
+                        .filter_map(Value::as_str)
+                        .map(String::from)
+                        .collect()
+                })
+                .unwrap_or_default();
+            term_map.insert(tname.to_string(), parents);
+        }
+    }
+    reg.taxonomies
+        .insert(name.to_string(), Taxonomy { terms: term_map });
+}
+
 impl Registry {
     /// Register an ontology document. Returns false when the package
     /// name is missing or invalid.
@@ -43,16 +91,11 @@ impl Registry {
                     .collect()
             })
             .unwrap_or_default();
-        self.packages.insert(
-            name.to_string(),
-            Package {
-                types: doc.get("entity_types").cloned().unwrap_or(Value::Null),
-                edges: doc.get("edge_types").cloned().unwrap_or(Value::Null),
-                structs: doc.get("structs").cloned().unwrap_or(Value::Null),
-                rules: doc.get("validation_rules").cloned().unwrap_or(Value::Null),
-                imports,
-            },
-        );
+        let types = doc.get("entity_types").cloned().unwrap_or(Value::Null);
+        let edges = doc.get("edge_types").cloned().unwrap_or(Value::Null);
+        let structs = doc.get("structs").cloned().unwrap_or(Value::Null);
+        let rules = doc.get("validation_rules").cloned().unwrap_or(Value::Null);
+        insert_package(self, name, types, edges, structs, rules, imports);
         true
     }
 
@@ -62,25 +105,26 @@ impl Registry {
         let Some(name) = get_str(doc, "taxonomy") else {
             return false;
         };
-        let mut terms = HashMap::new();
+        let mut terms = Vec::new();
         if let Some(seq) = doc.get("terms").and_then(Value::as_sequence) {
             for term in seq {
                 if let Some(tname) = get_str(term, "name") {
                     let parents = term
                         .get("parents")
                         .and_then(Value::as_sequence)
-                        .map(|p| {
-                            p.iter()
-                                .filter_map(Value::as_str)
-                                .map(String::from)
-                                .collect()
-                        })
+                        .cloned()
                         .unwrap_or_default();
-                    terms.insert(tname.to_string(), parents);
+                    let mut term_map = serde_yaml::Mapping::new();
+                    term_map.insert(
+                        Value::String("name".into()),
+                        Value::String(tname.to_string()),
+                    );
+                    term_map.insert(Value::String("parents".into()), Value::Sequence(parents));
+                    terms.push(Value::Mapping(term_map));
                 }
             }
         }
-        self.taxonomies.insert(name.to_string(), Taxonomy { terms });
+        insert_taxonomy(self, name, terms);
         true
     }
 

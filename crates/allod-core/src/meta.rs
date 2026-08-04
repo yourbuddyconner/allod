@@ -6,7 +6,7 @@
 //! persisted graph state.
 
 use crate::fold::State;
-use crate::registry::Registry;
+use crate::registry::{Registry, insert_package, insert_taxonomy};
 use crate::{bare, get_str};
 use serde_yaml::Value;
 
@@ -52,6 +52,11 @@ pub fn meta_registry() -> Registry {
 ///   the owning package, e.g. "core"
 /// - `version: int` (optional)
 /// - `definition: string` (required) — YAML mapping for the element
+/// - `imports: list<string>` (optional) — cross-package imports; may appear on any
+///   type's node. When reconstructing from state, all imports from a package's nodes
+///   are collected, deduplicated, and sorted into Package::imports. This allows
+///   imports to be materialized as attributes in the schema layer and round-trip
+///   through the log.
 /// - TaxonomyTerm additionally: `taxonomy: string` (required), `parents: list<string>`,
 ///   `status: enum<active|deprecated>`
 /// - Policy: only `name` and `definition`
@@ -67,6 +72,7 @@ entity_types:
       package:    { type: string, required: true }
       version:    { type: int }
       definition: { type: string, required: true }
+      imports:    { type: list<string> }
 
   EdgeType:
     attributes:
@@ -74,6 +80,7 @@ entity_types:
       package:    { type: string, required: true }
       version:    { type: int }
       definition: { type: string, required: true }
+      imports:    { type: list<string> }
 
   Struct:
     attributes:
@@ -81,6 +88,7 @@ entity_types:
       package:    { type: string, required: true }
       version:    { type: int }
       definition: { type: string, required: true }
+      imports:    { type: list<string> }
 
   TaxonomyTerm:
     attributes:
@@ -97,6 +105,7 @@ entity_types:
       package:    { type: string, required: true }
       version:    { type: int }
       definition: { type: string, required: true }
+      imports:    { type: list<string> }
 
   Policy:
     attributes:
@@ -113,6 +122,11 @@ impl Registry {
     /// `definition` attribute is a canonical YAML string for that element;
     /// identity comes from `name` + `package` (or `taxonomy` for terms).
     ///
+    /// Package imports are collected from an optional `imports: list<string>`
+    /// attribute that may appear on any of a package's meta nodes. All imports
+    /// found are deduplicated and sorted. This allows imports to be embedded
+    /// in the state alongside the package's schema definitions.
+    ///
     /// Returns `Err` naming the node id on any unparseable definition.
     pub fn from_state(state: &State) -> Result<Registry, String> {
         let mut reg = meta_registry();
@@ -121,12 +135,14 @@ impl Registry {
         // We accumulate meta nodes by package/taxonomy, then assemble them.
         use std::collections::HashMap;
 
-        // package_name -> (entity_types, edge_types, structs, rules, imports)
+        // package_name -> (entity_types, edge_types, structs, rules)
         // represented as serde_yaml mappings being built up
         let mut pkg_entity_types: HashMap<String, serde_yaml::Mapping> = HashMap::new();
         let mut pkg_edge_types: HashMap<String, serde_yaml::Mapping> = HashMap::new();
         let mut pkg_structs: HashMap<String, serde_yaml::Mapping> = HashMap::new();
         let mut pkg_rules: HashMap<String, Vec<Value>> = HashMap::new();
+        // package_name -> set of imports seen across all nodes for that package
+        let mut pkg_imports: HashMap<String, std::collections::BTreeSet<String>> = HashMap::new();
 
         // taxonomy_name -> terms vec
         let mut tax_terms: HashMap<String, Vec<Value>> = HashMap::new();
@@ -167,6 +183,21 @@ impl Registry {
                         .entry(package.to_string())
                         .or_default()
                         .insert(Value::String(name.to_string()), def_val);
+
+                    // Collect imports from this node's imports attribute
+                    if let Some(imports_seq) = attrs
+                        .and_then(|a| a.get("imports"))
+                        .and_then(Value::as_sequence)
+                    {
+                        let pkg_imports_set = pkg_imports
+                            .entry(package.to_string())
+                            .or_insert_with(std::collections::BTreeSet::new);
+                        for imp_val in imports_seq {
+                            if let Some(imp_str) = imp_val.as_str() {
+                                pkg_imports_set.insert(imp_str.to_string());
+                            }
+                        }
+                    }
                 }
                 "meta/EdgeType" => {
                     let name = get_attr("name")
@@ -181,6 +212,21 @@ impl Registry {
                         .entry(package.to_string())
                         .or_default()
                         .insert(Value::String(name.to_string()), def_val);
+
+                    // Collect imports from this node's imports attribute
+                    if let Some(imports_seq) = attrs
+                        .and_then(|a| a.get("imports"))
+                        .and_then(Value::as_sequence)
+                    {
+                        let pkg_imports_set = pkg_imports
+                            .entry(package.to_string())
+                            .or_insert_with(std::collections::BTreeSet::new);
+                        for imp_val in imports_seq {
+                            if let Some(imp_str) = imp_val.as_str() {
+                                pkg_imports_set.insert(imp_str.to_string());
+                            }
+                        }
+                    }
                 }
                 "meta/Struct" => {
                     let name = get_attr("name")
@@ -195,6 +241,21 @@ impl Registry {
                         .entry(package.to_string())
                         .or_default()
                         .insert(Value::String(name.to_string()), def_val);
+
+                    // Collect imports from this node's imports attribute
+                    if let Some(imports_seq) = attrs
+                        .and_then(|a| a.get("imports"))
+                        .and_then(Value::as_sequence)
+                    {
+                        let pkg_imports_set = pkg_imports
+                            .entry(package.to_string())
+                            .or_insert_with(std::collections::BTreeSet::new);
+                        for imp_val in imports_seq {
+                            if let Some(imp_str) = imp_val.as_str() {
+                                pkg_imports_set.insert(imp_str.to_string());
+                            }
+                        }
+                    }
                 }
                 "meta/ValidationRule" => {
                     let package = get_attr("package")
@@ -210,6 +271,21 @@ impl Registry {
                         .entry(package.to_string())
                         .or_default()
                         .push(def_val);
+
+                    // Collect imports from this node's imports attribute
+                    if let Some(imports_seq) = attrs
+                        .and_then(|a| a.get("imports"))
+                        .and_then(Value::as_sequence)
+                    {
+                        let pkg_imports_set = pkg_imports
+                            .entry(package.to_string())
+                            .or_insert_with(std::collections::BTreeSet::new);
+                        for imp_val in imports_seq {
+                            if let Some(imp_str) = imp_val.as_str() {
+                                pkg_imports_set.insert(imp_str.to_string());
+                            }
+                        }
+                    }
                 }
                 "meta/TaxonomyTerm" => {
                     let name = get_attr("name")
@@ -273,7 +349,13 @@ impl Registry {
                 .map(Value::Sequence)
                 .unwrap_or(Value::Null);
 
-            insert_package(&mut reg, &pkg_name, entity_types, edge_types, structs, rules);
+            // Convert BTreeSet of imports to sorted Vec
+            let imports: Vec<String> = pkg_imports
+                .remove(&pkg_name)
+                .map(|set| set.into_iter().collect())
+                .unwrap_or_default();
+
+            insert_package(&mut reg, &pkg_name, entity_types, edge_types, structs, rules, imports);
         }
 
         // Assemble taxonomies
@@ -283,54 +365,6 @@ impl Registry {
 
         Ok(reg)
     }
-}
-
-/// Insert a fully-assembled package into the registry.
-/// Shared by `register_ontology` and `from_state` so they cannot drift.
-pub(crate) fn insert_package(
-    reg: &mut Registry,
-    name: &str,
-    types: Value,
-    edges: Value,
-    structs: Value,
-    rules: Value,
-) {
-    use crate::registry::Package;
-    reg.packages.insert(
-        name.to_string(),
-        Package {
-            types,
-            edges,
-            structs,
-            rules,
-            imports: Vec::new(),
-        },
-    );
-}
-
-/// Insert a taxonomy with already-assembled terms into the registry.
-/// Shared by `register_taxonomy` and `from_state` so they cannot drift.
-pub(crate) fn insert_taxonomy(reg: &mut Registry, name: &str, terms: Vec<Value>) {
-    use crate::registry::Taxonomy;
-    use std::collections::HashMap;
-    let mut term_map: HashMap<String, Vec<String>> = HashMap::new();
-    for term in &terms {
-        if let Some(tname) = get_str(term, "name") {
-            let parents = term
-                .get("parents")
-                .and_then(Value::as_sequence)
-                .map(|p| {
-                    p.iter()
-                        .filter_map(Value::as_str)
-                        .map(String::from)
-                        .collect()
-                })
-                .unwrap_or_default();
-            term_map.insert(tname.to_string(), parents);
-        }
-    }
-    reg.taxonomies
-        .insert(name.to_string(), Taxonomy { terms: term_map });
 }
 
 #[cfg(test)]
@@ -587,6 +621,110 @@ attributes:
         assert!(
             msg.contains("bad-node-1"),
             "error must name the offending node id, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn from_state_round_trips_package_imports() {
+        let mut state = State::default();
+
+        // A meta/EntityType node for core/Person that carries imports
+        let person_def = r#"
+attributes:
+  name: { type: string, required: true }
+"#;
+
+        let mut attrs = serde_yaml::Mapping::new();
+        attrs.insert(
+            Value::String("name".into()),
+            Value::String("Person".into()),
+        );
+        attrs.insert(
+            Value::String("package".into()),
+            Value::String("core".into()),
+        );
+        attrs.insert(
+            Value::String("definition".into()),
+            Value::String(person_def.into()),
+        );
+        // Attach imports as a list attribute on this node
+        attrs.insert(
+            Value::String("imports".into()),
+            Value::Sequence(vec![
+                Value::String("base".into()),
+                Value::String("common".into()),
+            ]),
+        );
+
+        state.objects.insert(
+            ("node".into(), "meta-person-1".into()),
+            make_node("meta-person-1", "meta/EntityType@1", attrs),
+        );
+
+        let reg = Registry::from_state(&state).expect("from_state must succeed");
+
+        // core/Person must resolve
+        let resolved = reg.resolve_type("core/Person", None);
+        assert!(resolved.is_some(), "core/Person must resolve");
+
+        // Check that imports were collected and stored
+        let pkg = reg.packages.get("core").expect("core package must exist");
+        assert_eq!(
+            pkg.imports,
+            vec!["base".to_string(), "common".to_string()],
+            "imports must round-trip and be sorted"
+        );
+    }
+
+    #[test]
+    fn from_state_deduplicates_imports_across_nodes() {
+        let mut state = State::default();
+
+        // Two nodes for the same package, each carrying overlapping imports
+        let type1_def = r#"attributes: {}"#;
+        let type2_def = r#"attributes: {}"#;
+
+        let mut attrs1 = serde_yaml::Mapping::new();
+        attrs1.insert(Value::String("name".into()), Value::String("Type1".into()));
+        attrs1.insert(Value::String("package".into()), Value::String("app".into()));
+        attrs1.insert(Value::String("definition".into()), Value::String(type1_def.into()));
+        attrs1.insert(
+            Value::String("imports".into()),
+            Value::Sequence(vec![
+                Value::String("base".into()),
+                Value::String("common".into()),
+            ]),
+        );
+
+        let mut attrs2 = serde_yaml::Mapping::new();
+        attrs2.insert(Value::String("name".into()), Value::String("Type2".into()));
+        attrs2.insert(Value::String("package".into()), Value::String("app".into()));
+        attrs2.insert(Value::String("definition".into()), Value::String(type2_def.into()));
+        attrs2.insert(
+            Value::String("imports".into()),
+            Value::Sequence(vec![
+                Value::String("common".into()),
+                Value::String("extra".into()),
+            ]),
+        );
+
+        state.objects.insert(
+            ("node".into(), "meta-type1".into()),
+            make_node("meta-type1", "meta/EntityType@1", attrs1),
+        );
+        state.objects.insert(
+            ("node".into(), "meta-type2".into()),
+            make_node("meta-type2", "meta/EdgeType@1", attrs2),
+        );
+
+        let reg = Registry::from_state(&state).expect("from_state must succeed");
+
+        // app package should have all unique imports, sorted
+        let pkg = reg.packages.get("app").expect("app package must exist");
+        assert_eq!(
+            pkg.imports,
+            vec!["base".to_string(), "common".to_string(), "extra".to_string()],
+            "imports must be deduplicated and sorted across all nodes"
         );
     }
 }
