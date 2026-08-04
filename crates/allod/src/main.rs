@@ -190,27 +190,36 @@ fn classification_op(subject: &str, term: &str, agent: &str) -> Value {
 }
 
 fn cmd_note(dir: &Path, agent: &str, content: &str) -> Result<(String, bool), String> {
+    use allod_graph::ops::Admission;
     let graph = Graph::open(dir)?;
-    let kp = graph.load_key(agent)?;
-    let note_id = uuid4();
-    let mut attrs = Mapping::new();
-    attrs.insert(s("content"), s(content));
-    let mut node = Mapping::new();
-    node.insert(s("kind"), s("node"));
-    node.insert(s("id"), s(&note_id));
-    node.insert(s("type"), s("memory/Note@1"));
-    node.insert(s("attributes"), Value::Mapping(attrs));
-    node.insert(s("provenance"), provenance(agent, "allod-demo-agent@0.1"));
-    let mut op = Mapping::new();
-    op.insert(s("create"), Value::Mapping(node));
-
-    let ops = vec![
-        Value::Mapping(op),
-        classification_op(&format!("node:{note_id}"), "workspace/scratch@1", agent),
-    ];
-    let (cs, hash) = build_changeset(&graph, &kp, "Scratch note", ops)?;
-    let admitted = admit_or_hold(&graph, agent, &cs, &hash, vec![], false)?;
-    Ok((note_id, admitted))
+    let result = allod_graph::flows::note(&graph, agent, content)
+        .map_err(|e| e.to_string())?;
+    let admitted = match &result.admission {
+        Admission::Admitted { hash: h, matched_rules } => {
+            let basis = if matched_rules.is_empty() {
+                "root authority, default posture".to_string()
+            } else {
+                format!("rules: {}", matched_rules.join(", "))
+            };
+            println!("  ✓ admitted {} ({basis})", allod_graph::ops::short(h));
+            true
+        }
+        Admission::Held { hash: h, checklist } => {
+            println!("  ⧗ held as proposal {}", allod_graph::ops::short(h));
+            println!("      matched rules: {}", checklist.matched_rules.join(", "));
+            for (role, quorum) in &checklist.reviewers {
+                println!("      requires: reviewers role {role} (quorum {quorum})");
+            }
+            for class in &checklist.attestations {
+                println!("      requires: attestation from class {class}");
+            }
+            if checklist.root_required {
+                println!("      requires: root authority (default posture)");
+            }
+            false
+        }
+    };
+    Ok((result.note_id, admitted))
 }
 
 fn cmd_propose_preference(

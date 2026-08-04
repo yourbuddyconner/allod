@@ -192,8 +192,39 @@ pub fn principal_add(graph: &Graph, name: &str, kind: &str, by: &str) -> Result<
     Ok(PrincipalAdded { node_id, admission })
 }
 
-pub fn note(_graph: &Graph, _agent: &str, _content: &str) -> Result<NoteResult, AllodError> {
-    Err(AllodError::Other("not implemented".into()))
+fn provenance_val(agent: &str) -> Value {
+    let mut prov = serde_yaml::Mapping::new();
+    prov.insert(Value::String("derived_by".into()), Value::String(format!("principal:{agent}")));
+    prov.insert(Value::String("method".into()), Value::String("model-assisted".into()));
+    prov.insert(Value::String("tool".into()), Value::String("allod-demo-agent@0.1".into()));
+    Value::Mapping(prov)
+}
+
+/// Write a scratch note for `agent` with `content`. Admits immediately under scratch-is-free.
+pub fn note(graph: &Graph, agent: &str, content: &str) -> Result<NoteResult, AllodError> {
+    let kp = graph.load_key(agent).map_err(AllodError::from)?;
+    let note_id = crate::ops::uuid4();
+
+    let mut attrs = serde_yaml::Mapping::new();
+    attrs.insert(Value::String("content".into()), Value::String(content.into()));
+
+    let node_op = crate::ops::create_node_op(
+        &note_id,
+        "memory/Note@1",
+        Value::Mapping(attrs),
+        Some(provenance_val(agent)),
+    );
+    let cls_op = crate::ops::classification_op(
+        &format!("node:{note_id}"),
+        "workspace/scratch@1",
+        &format!("principal:{agent}"),
+        "model-assisted",
+    );
+
+    let (cs, hash) = crate::ops::build_changeset(graph, &kp, "Scratch note", vec![node_op, cls_op])?;
+    let admission = crate::ops::admit_or_hold(graph, agent, &cs, &hash, vec![])?;
+
+    Ok(NoteResult { note_id, admission })
 }
 
 pub fn propose_preference(
