@@ -142,8 +142,54 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
     })
 }
 
-pub fn principal_add(_graph: &Graph, _name: &str, _kind: &str, _by: &str) -> Result<PrincipalAdded, AllodError> {
-    Err(AllodError::Other("not implemented".into()))
+/// Register a new principal (agent, service, or user) in the graph.
+/// Generates a fresh keypair for `name`, saves it, and admits or holds the changeset.
+pub fn principal_add(graph: &Graph, name: &str, kind: &str, by: &str) -> Result<PrincipalAdded, AllodError> {
+    use allod_core::sign::Keypair;
+    use allod_core::get_str;
+    use crate::ops;
+
+    let type_ref = match kind {
+        "agent"   => "core/Agent@1",
+        "service" => "core/Service@1",
+        "user"    => "core/User@1",
+        other     => return Err(AllodError::Other(format!("unknown principal kind {other:?}"))),
+    };
+
+    let kp = Keypair::generate(name);
+    graph.save_key(&kp).map_err(AllodError::from)?;
+
+    let node_id = ops::uuid4();
+    let mut attrs = serde_yaml::Mapping::new();
+    attrs.insert(Value::String("display_name".into()), Value::String(name.into()));
+    attrs.insert(Value::String("keys".into()), Value::Sequence(vec![ops::key_record(&kp)]));
+    attrs.insert(Value::String("status".into()), Value::String("active".into()));
+
+    if kind == "agent" {
+        let state = graph.fold().map_err(AllodError::from)?;
+        let (_, owner_obj) = state
+            .find_principal(&format!("principal:{by}"))
+            .ok_or_else(|| AllodError::UnknownPrincipal(format!("principal:{by}")))?;
+        let owner_node = get_str(&owner_obj.content, "id").unwrap_or("").to_string();
+        attrs.insert(Value::String("delegated_by".into()), Value::String(format!("node:{owner_node}")));
+        attrs.insert(
+            Value::String("scope".into()),
+            serde_yaml::from_str::<Value>("{ region: workspace }").unwrap(),
+        );
+    }
+
+    let node_op = ops::create_node_op(&node_id, type_ref, Value::Mapping(attrs), None);
+
+    let owner_kp = graph.load_key(by).map_err(AllodError::from)?;
+    let (cs, hash) = ops::build_changeset(
+        graph,
+        &owner_kp,
+        &format!("Register {kind} {name}, by {by}"),
+        vec![node_op],
+    )?;
+    let admission = ops::admit_or_hold(graph, by, &cs, &hash, vec![])?;
+
+    Ok(PrincipalAdded { node_id, admission })
 }
 
 pub fn note(_graph: &Graph, _agent: &str, _content: &str) -> Result<NoteResult, AllodError> {

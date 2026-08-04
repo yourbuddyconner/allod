@@ -29,10 +29,6 @@ use serde_yaml::{Mapping, Value};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-fn yaml(s: &str) -> Value {
-    serde_yaml::from_str(s).expect("internal template must parse")
-}
-
 pub(crate) fn s(v: &str) -> Value {
     Value::String(v.to_string())
 }
@@ -59,10 +55,6 @@ pub(crate) fn build_changeset(
     ops: Vec<Value>,
 ) -> Result<(Value, String), String> {
     allod_graph::ops::build_changeset(graph, author, intent, ops).map_err(|e| e.to_string())
-}
-
-fn key_record(kp: &Keypair) -> Value {
-    allod_graph::ops::key_record(kp)
 }
 
 fn evidence_doc(decisions: &[Value], envelopes: &[Value]) -> Value {
@@ -139,44 +131,36 @@ fn cmd_init_profile(
 }
 
 fn cmd_principal_add(dir: &Path, name: &str, kind: &str, by: &str) -> Result<(), String> {
+    use allod_graph::ops::Admission;
     let graph = Graph::open(dir)?;
-    let owner_kp = graph.load_key(by)?;
-    let kp = Keypair::generate(name);
-    graph.save_key(&kp)?;
-    let type_ref = match kind {
-        "agent" => "core/Agent@1",
-        "service" => "core/Service@1",
-        "user" => "core/User@1",
-        other => return Err(format!("unknown principal kind {other:?}")),
-    };
-    let mut attrs = Mapping::new();
-    attrs.insert(s("display_name"), s(name));
-    attrs.insert(s("keys"), Value::Sequence(vec![key_record(&kp)]));
-    attrs.insert(s("status"), s("active"));
-    if kind == "agent" {
-        let state = graph.fold()?;
-        let (_, owner_obj) = state
-            .find_principal(&format!("principal:{by}"))
-            .ok_or_else(|| format!("unknown principal {by}"))?;
-        let owner_node = get_str(&owner_obj.content, "id").unwrap_or("").to_string();
-        attrs.insert(s("delegated_by"), s(&format!("node:{owner_node}")));
-        attrs.insert(s("scope"), yaml("{ region: workspace }"));
+    let result = allod_graph::flows::principal_add(&graph, name, kind, by)
+        .map_err(|e| e.to_string())?;
+    match result.admission {
+        Admission::Admitted { hash: h, matched_rules } => {
+            let basis = if matched_rules.is_empty() {
+                "root authority, default posture".to_string()
+            } else {
+                format!("rules: {}", matched_rules.join(", "))
+            };
+            println!("  ✓ admitted {} ({basis})", short(&h));
+        }
+        Admission::Held { hash: h, checklist } => {
+            println!("  ⧗ held as proposal {}", short(&h));
+            println!(
+                "      matched rules: {}",
+                checklist.matched_rules.join(", ")
+            );
+            for (role, quorum) in &checklist.reviewers {
+                println!("      requires: reviewers role {role} (quorum {quorum})");
+            }
+            for class in &checklist.attestations {
+                println!("      requires: attestation from class {class}");
+            }
+            if checklist.root_required {
+                println!("      requires: root authority (default posture)");
+            }
+        }
     }
-    let mut node = Mapping::new();
-    node.insert(s("kind"), s("node"));
-    node.insert(s("id"), s(&uuid4()));
-    node.insert(s("type"), s(type_ref));
-    node.insert(s("attributes"), Value::Mapping(attrs));
-    let mut op = Mapping::new();
-    op.insert(s("create"), Value::Mapping(node));
-
-    let (cs, hash) = build_changeset(
-        &graph,
-        &owner_kp,
-        &format!("Register {kind} {name}, by {by}"),
-        vec![Value::Mapping(op)],
-    )?;
-    admit_or_hold(&graph, by, &cs, &hash, vec![], false)?;
     Ok(())
 }
 
