@@ -536,9 +536,9 @@ mod tests {
     }
 
     fn memory_docs() -> Vec<(String, Value)> {
-        let core_yaml = include_str!("../../../../../../ontologies/core/ontology.yaml");
-        let memory_yaml = include_str!("../../../../../../ontologies/memory/ontology.yaml");
-        let taxonomy_yaml = include_str!("../../../../../../ontologies/memory/taxonomy.yaml");
+        let core_yaml = include_str!("../../../ontologies/core/ontology.yaml");
+        let memory_yaml = include_str!("../../../ontologies/memory/ontology.yaml");
+        let taxonomy_yaml = include_str!("../../../ontologies/memory/taxonomy.yaml");
         vec![
             ("core".to_string(), serde_yaml::from_str(core_yaml).expect("core YAML")),
             ("memory".to_string(), serde_yaml::from_str(memory_yaml).expect("memory YAML")),
@@ -547,7 +547,7 @@ mod tests {
     }
 
     fn memory_policy() -> Value {
-        let yaml = include_str!("../../../../../../ontologies/memory/policy-local.yaml");
+        let yaml = include_str!("../../../ontologies/memory/policy-local.yaml");
         serde_yaml::from_str(yaml).expect("policy YAML")
     }
 
