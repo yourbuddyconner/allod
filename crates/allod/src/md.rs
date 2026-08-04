@@ -4,7 +4,7 @@
 //! prints the byte-identical output that the mvp acceptance test expects.
 
 use allod_core::store::Graph;
-use allod_graph::ops::{short, Admission};
+use allod_graph::ops::short;
 use std::path::Path;
 
 pub fn export(graph_dir: &Path, out: &Path) -> Result<(), String> {
@@ -23,7 +23,12 @@ pub fn import(graph_dir: &Path, bundle: &Path, as_principal: &str) -> Result<(),
 
     let report = allod_graph::md::import(&graph, bundle, as_principal).map_err(|e| e.to_string())?;
 
-    if report.admissions.is_empty() && report.skipped.is_empty() {
+    // Abort if any files were malformed (restoring old CLI behaviour).
+    if let Some((path, reason)) = report.skipped.first() {
+        return Err(format!("malformed file {}: {reason}", path.display()));
+    }
+
+    if report.admissions.is_empty() {
         // Round-trip path.
         let state = graph.fold()?;
         let current = state.state_hash()?;
@@ -50,37 +55,8 @@ pub fn import(graph_dir: &Path, bundle: &Path, as_principal: &str) -> Result<(),
             report.unchanged
         );
         for admission in &report.admissions {
-            print_admission(admission);
+            crate::print_admission(admission);
         }
     }
     Ok(())
-}
-
-fn print_admission(admission: &Admission) {
-    match admission {
-        Admission::Admitted { hash, matched_rules } => {
-            let basis = if matched_rules.is_empty() {
-                "root authority, default posture".to_string()
-            } else {
-                format!("rules: {}", matched_rules.join(", "))
-            };
-            println!("  ✓ admitted {} ({basis})", short(hash));
-        }
-        Admission::Held { hash, checklist } => {
-            println!("  ⧗ held as proposal {}", short(hash));
-            println!(
-                "      matched rules: {}",
-                checklist.matched_rules.join(", ")
-            );
-            for (role, quorum) in &checklist.reviewers {
-                println!("      requires: reviewers role {role} (quorum {quorum})");
-            }
-            for class in &checklist.attestations {
-                println!("      requires: attestation from class {class}");
-            }
-            if checklist.root_required {
-                println!("      requires: root authority (default posture)");
-            }
-        }
-    }
 }

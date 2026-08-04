@@ -22,11 +22,45 @@ mod md;
 
 use allod_core::get_str;
 use allod_core::store::Graph;
+use allod_graph::ops::Admission;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub(crate) fn short(hash: &str) -> String {
     allod_graph::ops::short(hash)
+}
+
+/// Print the outcome of an admission decision to stdout.
+///
+/// Byte-identical output expected by mvp.rs and demo.rs; shared across all
+/// command paths so changes stay in one place.
+pub(crate) fn print_admission(admission: &Admission) {
+    match admission {
+        Admission::Admitted { hash, matched_rules } => {
+            let basis = if matched_rules.is_empty() {
+                "root authority, default posture".to_string()
+            } else {
+                format!("rules: {}", matched_rules.join(", "))
+            };
+            println!("  ✓ admitted {} ({basis})", short(hash));
+        }
+        Admission::Held { hash, checklist } => {
+            println!("  ⧗ held as proposal {}", short(hash));
+            println!(
+                "      matched rules: {}",
+                checklist.matched_rules.join(", ")
+            );
+            for (role, quorum) in &checklist.reviewers {
+                println!("      requires: reviewers role {role} (quorum {quorum})");
+            }
+            for class in &checklist.attestations {
+                println!("      requires: attestation from class {class}");
+            }
+            if checklist.root_required {
+                println!("      requires: root authority (default posture)");
+            }
+        }
+    }
 }
 
 // ---------------- commands ----------------
@@ -51,36 +85,10 @@ fn cmd_init_profile(
 }
 
 fn cmd_principal_add(dir: &Path, name: &str, kind: &str, by: &str) -> Result<(), String> {
-    use allod_graph::ops::Admission;
     let graph = Graph::open(dir)?;
     let result = allod_graph::flows::principal_add(&graph, name, kind, by)
         .map_err(|e| e.to_string())?;
-    match result.admission {
-        Admission::Admitted { hash: h, matched_rules } => {
-            let basis = if matched_rules.is_empty() {
-                "root authority, default posture".to_string()
-            } else {
-                format!("rules: {}", matched_rules.join(", "))
-            };
-            println!("  ✓ admitted {} ({basis})", short(&h));
-        }
-        Admission::Held { hash: h, checklist } => {
-            println!("  ⧗ held as proposal {}", short(&h));
-            println!(
-                "      matched rules: {}",
-                checklist.matched_rules.join(", ")
-            );
-            for (role, quorum) in &checklist.reviewers {
-                println!("      requires: reviewers role {role} (quorum {quorum})");
-            }
-            for class in &checklist.attestations {
-                println!("      requires: attestation from class {class}");
-            }
-            if checklist.root_required {
-                println!("      requires: root authority (default posture)");
-            }
-        }
-    }
+    print_admission(&result.admission);
     Ok(())
 }
 
@@ -90,35 +98,11 @@ fn cmd_agent_add(dir: &Path, name: &str, by: &str) -> Result<(), String> {
 
 
 fn cmd_note(dir: &Path, agent: &str, content: &str) -> Result<(String, bool), String> {
-    use allod_graph::ops::Admission;
     let graph = Graph::open(dir)?;
     let result = allod_graph::flows::note(&graph, agent, content)
         .map_err(|e| e.to_string())?;
-    let admitted = match &result.admission {
-        Admission::Admitted { hash: h, matched_rules } => {
-            let basis = if matched_rules.is_empty() {
-                "root authority, default posture".to_string()
-            } else {
-                format!("rules: {}", matched_rules.join(", "))
-            };
-            println!("  ✓ admitted {} ({basis})", allod_graph::ops::short(h));
-            true
-        }
-        Admission::Held { hash: h, checklist } => {
-            println!("  ⧗ held as proposal {}", allod_graph::ops::short(h));
-            println!("      matched rules: {}", checklist.matched_rules.join(", "));
-            for (role, quorum) in &checklist.reviewers {
-                println!("      requires: reviewers role {role} (quorum {quorum})");
-            }
-            for class in &checklist.attestations {
-                println!("      requires: attestation from class {class}");
-            }
-            if checklist.root_required {
-                println!("      requires: root authority (default posture)");
-            }
-            false
-        }
-    };
+    let admitted = matches!(&result.admission, Admission::Admitted { .. });
+    print_admission(&result.admission);
     Ok((result.note_id, admitted))
 }
 
@@ -129,33 +113,10 @@ fn cmd_propose_preference(
     strength: &str,
     from_note: Option<&str>,
 ) -> Result<String, String> {
-    use allod_graph::ops::Admission;
     let graph = Graph::open(dir)?;
     let result = allod_graph::flows::propose_preference(&graph, agent, statement, strength, from_note)
         .map_err(|e| e.to_string())?;
-    match &result.admission {
-        Admission::Admitted { hash: h, matched_rules } => {
-            let basis = if matched_rules.is_empty() {
-                "root authority, default posture".to_string()
-            } else {
-                format!("rules: {}", matched_rules.join(", "))
-            };
-            println!("  ✓ admitted {} ({basis})", allod_graph::ops::short(h));
-        }
-        Admission::Held { hash: h, checklist } => {
-            println!("  ⧗ held as proposal {}", allod_graph::ops::short(h));
-            println!("      matched rules: {}", checklist.matched_rules.join(", "));
-            for (role, quorum) in &checklist.reviewers {
-                println!("      requires: reviewers role {role} (quorum {quorum})");
-            }
-            for class in &checklist.attestations {
-                println!("      requires: attestation from class {class}");
-            }
-            if checklist.root_required {
-                println!("      requires: root authority (default posture)");
-            }
-        }
-    }
+    print_admission(&result.admission);
     Ok(result.hash)
 }
 
@@ -200,35 +161,15 @@ fn cmd_classify(
     by: &str,
     basis: &str,
 ) -> Result<Option<String>, String> {
-    use allod_graph::ops::Admission;
     let graph = Graph::open(dir)?;
     let admission = allod_graph::flows::classify(&graph, node_id, term, by, basis)
         .map_err(|e| e.to_string())?;
-    match admission {
-        Admission::Admitted { hash: h, matched_rules } => {
-            let basis_str = if matched_rules.is_empty() {
-                "root authority, default posture".to_string()
-            } else {
-                format!("rules: {}", matched_rules.join(", "))
-            };
-            println!("  ✓ admitted {} ({basis_str})", allod_graph::ops::short(&h));
-            Ok(None)
-        }
-        Admission::Held { hash: h, checklist } => {
-            println!("  ⧗ held as proposal {}", allod_graph::ops::short(&h));
-            println!("      matched rules: {}", checklist.matched_rules.join(", "));
-            for (role, quorum) in &checklist.reviewers {
-                println!("      requires: reviewers role {role} (quorum {quorum})");
-            }
-            for class in &checklist.attestations {
-                println!("      requires: attestation from class {class}");
-            }
-            if checklist.root_required {
-                println!("      requires: root authority (default posture)");
-            }
-            Ok(Some(h))
-        }
-    }
+    let held_hash = match &admission {
+        Admission::Held { hash, .. } => Some(hash.clone()),
+        Admission::Admitted { .. } => None,
+    };
+    print_admission(&admission);
+    Ok(held_hash)
 }
 
 fn cmd_checkpoint(dir: &Path, by: &str) -> Result<(), String> {
@@ -337,7 +278,8 @@ fn cmd_verify(dir: &Path) -> Result<(), String> {
     for cp in &report.checkpoints {
         // Check cp.ok before printing — must not print ✓ on the failure path
         if !cp.ok {
-            return Err(format!("checkpoint at {} disagrees with replay", short(&cp.revision)));
+            let reason = cp.reason.as_deref().unwrap_or("checkpoint verification failed");
+            return Err(reason.to_string());
         }
         println!(
             "  ✓ checkpoint {} verified against replay ({})",

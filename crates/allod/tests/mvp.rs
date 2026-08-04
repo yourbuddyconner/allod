@@ -160,6 +160,7 @@ fn appendix_a_acceptance() {
         &["demo-federation", &p("fed-a"), &p("fed-b"), "--schema", sch],
         &[
             "bundle verified",
+            "held as proposal",
             "lineage: derived_from allod:",
             "VERIFIED: 3 changesets",
             "refused",

@@ -5,7 +5,7 @@
 //! is pure: no filesystem access, no printing.
 
 use allod_core::store::Graph;
-use allod_graph::ops::{short, Admission};
+use allod_graph::ops::short;
 use serde_yaml::Value;
 use std::fs;
 use std::path::Path;
@@ -129,6 +129,15 @@ pub fn import(
         short(&source_graph)
     );
 
+    // Print the admission outcome (held as proposal or admitted directly).
+    let mut held_hash: Option<String> = None;
+    for admission in &admissions {
+        crate::print_admission(admission);
+        if let allod_graph::ops::Admission::Held { hash, .. } = admission {
+            held_hash = Some(hash.clone());
+        }
+    }
+
     // Find the rev for the lineage line.
     let rev = bundle
         .get("objects")
@@ -149,9 +158,5 @@ pub fn import(
         short(&rev)
     );
 
-    // Return the proposal hash if held, else None.
-    match admissions.into_iter().next() {
-        Some(Admission::Held { hash, .. }) => Ok(Some(hash)),
-        _ => Ok(None),
-    }
+    Ok(held_hash)
 }
