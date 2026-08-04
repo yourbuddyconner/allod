@@ -54,7 +54,7 @@ fn to_definition(val: &Value) -> Result<String, String> {
 
 // ─── compile ────────────────────────────────────────────────────────────────
 
-/// Compile projection-form documents (ontology/taxonomy YAML mappings plus one
+/// Compile projection-form documents (ontology/taxonomy YAML mappings plus optional
 /// policy document) into `create` operations on meta nodes.
 ///
 /// IDs are minted by `mint_id`; callers can supply `uuid4()` for live use or
@@ -63,9 +63,13 @@ fn to_definition(val: &Value) -> Result<String, String> {
 /// The `imports` field of each ontology document is encoded as a
 /// `list<string>` on each of that package's meta nodes, so that
 /// `Registry::from_state` can reconstruct the package's import list.
+///
+/// If `policy` is `Some`, a `meta/Policy@1` node is created. If `None`, no policy
+/// node is emitted — useful when compiling docs-only packages without overriding
+/// the existing policy.
 pub fn compile_schema_ops(
     docs: &[(String, Value)],
-    policy: &Value,
+    policy: Option<&Value>,
     mint_id: &mut dyn FnMut() -> String,
 ) -> Result<Vec<Value>, String> {
     let mut ops: Vec<Value> = Vec::new();
@@ -177,7 +181,7 @@ pub fn compile_schema_ops(
     }
 
     // ── policy ──────────────────────────────────────────────────────────────
-    {
+    if let Some(policy) = policy {
         let policy_name = get_str(policy, "policy").unwrap_or("policy");
         let definition = to_definition(policy)?;
         let mut attrs = serde_yaml::Mapping::new();
@@ -508,7 +512,7 @@ mod tests {
         let docs = memory_docs();
         let policy = memory_policy();
 
-        let ops = compile_schema_ops(&docs, &policy, &mut seq_id())
+        let ops = compile_schema_ops(&docs, Some(&policy), &mut seq_id())
             .expect("compile_schema_ops must succeed");
 
         assert!(!ops.is_empty(), "must produce at least one op");
@@ -556,7 +560,7 @@ mod tests {
         let docs = memory_docs();
         let policy = memory_policy();
 
-        let ops = compile_schema_ops(&docs, &policy, &mut seq_id())
+        let ops = compile_schema_ops(&docs, Some(&policy), &mut seq_id())
             .expect("compile_schema_ops must succeed");
         let state = apply_ops(&ops);
 
@@ -590,7 +594,7 @@ mod tests {
         let docs = memory_docs();
         let policy = memory_policy();
 
-        let ops = compile_schema_ops(&docs, &policy, &mut seq_id())
+        let ops = compile_schema_ops(&docs, Some(&policy), &mut seq_id())
             .expect("compile_schema_ops must succeed");
         let state = apply_ops(&ops);
 
@@ -627,7 +631,7 @@ rules: []
         let doc: Value = serde_yaml::from_str(doc_yaml).unwrap();
         let policy: Value = serde_yaml::from_str(policy_yaml).unwrap();
 
-        let ops = compile_schema_ops(&[("test".to_string(), doc)], &policy, &mut seq_id())
+        let ops = compile_schema_ops(&[("test".to_string(), doc)], Some(&policy), &mut seq_id())
             .expect("compile must succeed");
 
         let types: Vec<&str> = ops
@@ -677,7 +681,7 @@ rules: []
         let tax: Value = serde_yaml::from_str(tax_yaml).unwrap();
         let policy: Value = serde_yaml::from_str(policy_yaml).unwrap();
 
-        let ops = compile_schema_ops(&[("workspace-taxonomy".to_string(), tax)], &policy, &mut seq_id())
+        let ops = compile_schema_ops(&[("workspace-taxonomy".to_string(), tax)], Some(&policy), &mut seq_id())
             .expect("compile must succeed");
 
         let term_ops: Vec<_> = ops
@@ -704,7 +708,7 @@ rules: []
         let docs = memory_docs();
         let policy = memory_policy();
 
-        let ops = compile_schema_ops(&docs, &policy, &mut seq_id())
+        let ops = compile_schema_ops(&docs, Some(&policy), &mut seq_id())
             .expect("compile_schema_ops must succeed");
         let state = apply_ops(&ops);
 

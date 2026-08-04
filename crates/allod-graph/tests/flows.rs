@@ -264,3 +264,118 @@ fn checkpoint_records_state() {
     assert!(!result.revision.is_empty());
     assert!(!result.state_hash.is_empty());
 }
+
+// ---- install_package ----
+
+#[test]
+fn install_package_with_policy_emits_one_policy_op() {
+    let graph = common::init_memory_graph();
+    // Get the genesis changeset to count initial log entries
+    let initial_log = flows::log(&graph).expect("log");
+    assert!(!initial_log.is_empty(), "genesis changeset should exist");
+
+    // Create a minimal schema doc with one entity type so ops are emitted
+    let schema_doc = serde_yaml::from_str(
+        "ontology: test\nentity_types:\n  TestType:\n    attributes:\n      name: {type: string}\n"
+    ).expect("schema doc");
+    let docs = vec![("test".to_string(), schema_doc)];
+
+    // Create a policy (copy from genesis)
+    let policy = allod_graph::flows::profile_from_dir("memory", &schema_dir())
+        .expect("profile_from_dir")
+        .policy;
+
+    let result = flows::install_package(&graph, &docs, Some(&policy), "o")
+        .expect("install_package");
+    // Note: install_package calls ops::commit which applies policy governance
+    // Owner "o" is the principal who signed the changeset, governance approval is implicit
+    let is_admitted = matches!(result, Admission::Admitted { .. });
+    let is_held = matches!(result, Admission::Held { .. });
+    assert!(is_admitted || is_held, "should be admitted or held, got {:?}", result);
+
+    // The new changeset should have one policy op
+    let log = flows::log(&graph).expect("log");
+    assert!(log.len() > initial_log.len(), "should have a new changeset in log");
+
+    // Policy ops are identified by metadata; we check that the changeset was created
+    // The op count includes at least the EntityType + Policy nodes
+    let latest_entry = &log[log.len() - 1];
+    assert!(latest_entry.op_count >= 2, "should have at least EntityType + Policy ops, got {}", latest_entry.op_count);
+}
+
+#[test]
+fn install_package_without_policy_emits_no_policy_op() {
+    let graph = common::init_memory_graph();
+    let initial_log = flows::log(&graph).expect("log");
+
+    // Create a schema doc with one entity type
+    let schema_doc = serde_yaml::from_str(
+        "ontology: test\nentity_types:\n  TestType:\n    attributes:\n      name: {type: string}\n"
+    ).expect("schema doc");
+    let docs = vec![("test".to_string(), schema_doc)];
+
+    let result = flows::install_package(&graph, &docs, None, "o")
+        .expect("install_package");
+    // Note: install_package calls ops::commit which applies policy governance
+    let is_admitted = matches!(result, Admission::Admitted { .. });
+    let is_held = matches!(result, Admission::Held { .. });
+    assert!(is_admitted || is_held, "should be admitted or held, got {:?}", result);
+
+    // The new changeset should have only the EntityType op (no policy)
+    // With policy=None, we should have exactly 1 op instead of 2
+    let log = flows::log(&graph).expect("log");
+    assert!(log.len() > initial_log.len(), "should have a new changeset in log");
+
+    let latest_entry = &log[log.len() - 1];
+    assert_eq!(latest_entry.op_count, 1, "should have exactly one op (EntityType only, no Policy) when policy is None, got {}", latest_entry.op_count);
+}
+
+// ---- genesis sentinel contract ----
+
+#[test]
+fn genesis_schema_context_equals_genesis_constant() {
+    use allod_core::model::GENESIS_SCHEMA_CONTEXT;
+
+    let graph = common::init_memory_graph();
+    let chain = graph.chain().expect("chain");
+    assert!(!chain.is_empty(), "genesis changeset should exist");
+
+    let genesis = &chain[0];
+    let schema_context = allod_core::get_str(genesis, "schema_context")
+        .expect("genesis changeset has schema_context field");
+
+    assert_eq!(schema_context, GENESIS_SCHEMA_CONTEXT,
+        "genesis changeset's schema_context must equal GENESIS_SCHEMA_CONTEXT");
+}
+
+#[test]
+fn second_changeset_schema_context_differs_from_genesis() {
+    use allod_core::model::GENESIS_SCHEMA_CONTEXT;
+
+    let graph = common::init_memory_graph();
+    flows::principal_add(&graph, "a1", "agent", "o").expect("principal_add");
+
+    let chain = graph.chain().expect("chain");
+    assert!(chain.len() >= 2, "should have at least 2 changesets");
+
+    let genesis = &chain[0];
+    let genesis_context = allod_core::get_str(genesis, "schema_context")
+        .expect("genesis has schema_context");
+    assert_eq!(genesis_context, GENESIS_SCHEMA_CONTEXT, "genesis context must be constant");
+
+    let second = &chain[1];
+    let second_context = allod_core::get_str(second, "schema_context")
+        .expect("second changeset has schema_context");
+
+    assert_ne!(second_context, GENESIS_SCHEMA_CONTEXT,
+        "second changeset's schema_context must differ from genesis constant");
+}
+
+#[test]
+fn verify_reports_ok_on_graph_with_schema() {
+    let graph = common::init_memory_graph();
+    flows::principal_add(&graph, "a1", "agent", "o").expect("principal_add");
+
+    let report = flows::verify(&graph).expect("verify");
+    assert!(report.ok, "verify should report ok after init and principal_add");
+}

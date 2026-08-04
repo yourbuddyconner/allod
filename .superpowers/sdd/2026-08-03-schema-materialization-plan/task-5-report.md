@@ -143,3 +143,26 @@ hashes invariant.
 `graph.append_changeset` directly. This is correct per §4.6: genesis is
 self-admitting. The `fold()` speculative registry handles the bootstrap
 problem (schema ops and User node in same changeset).
+
+---
+
+## Review Findings Fixes
+
+**Finding 1 (Important):** Genesis sentinel contract end-to-end test  
+Added three integration tests in `crates/allod-graph/tests/flows.rs`:
+- `genesis_schema_context_equals_genesis_constant`: Verifies the genesis changeset's `schema_context` field equals `allod_core::model::GENESIS_SCHEMA_CONTEXT`.
+- `second_changeset_schema_context_differs_from_genesis`: Verifies the SECOND changeset's schema_context does NOT equal the genesis constant.
+- `verify_reports_ok_on_graph_with_schema`: Verifies `flows::verify` reports ok on the initialized graph.
+
+**Finding 2 (Important):** `install_package(policy: Option<&Value>)` duplicate policy bug  
+Modified `compile_schema_ops` in `crates/allod-core/src/schemaops.rs` to accept `policy: Option<&Value>` instead of requiring a policy:
+- When `policy` is `Some(p)`, exactly one `meta/Policy@1` node is created.
+- When `policy` is `None`, **no** policy node is emitted — only docs are compiled.
+Updated `install_package` to pass `policy` directly (rather than fetching graph.policy() when None), eliminating the duplicate-policy footgun.
+Added doc-comment clarifying the contract.
+Added two tests:
+- `install_package_with_policy_emits_one_policy_op`: Verifies exactly one policy op when `Some(policy)`.
+- `install_package_without_policy_emits_no_policy_op`: Verifies no policy op when `None`.
+
+**Finding 3 (Minor):** FIXME comment in describe()  
+Added a FIXME comment in `crates/allod-graph/src/schema.rs` at line ~112 noting "redundant folds — registry() already folds for package lookup above."

@@ -112,6 +112,7 @@ pub fn describe(graph: &Graph) -> Result<SchemaDescription, AllodError> {
     for pkg_name in pkg_names {
         let package = &reg.packages[pkg_name];
 
+        // FIXME: redundant folds — registry() already folds for package lookup above.
         // Entity types
         if let Some(map) = package.types.as_mapping() {
             let mut type_names: Vec<&str> = map

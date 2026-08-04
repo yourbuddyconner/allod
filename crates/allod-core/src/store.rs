@@ -554,7 +554,7 @@ mod tests {
         let policy = memory_policy();
 
         let mut id_gen = seq_id();
-        let schema_ops = compile_schema_ops(&docs, &policy, &mut id_gen)
+        let schema_ops = compile_schema_ops(&docs, Some(&policy), &mut id_gen)
             .expect("compile_schema_ops must succeed");
 
         // Owner User node op
@@ -656,7 +656,7 @@ mod tests {
         let policy = memory_policy();
 
         let mut id_gen = seq_id();
-        let schema_ops = compile_schema_ops(&docs, &policy, &mut id_gen)
+        let schema_ops = compile_schema_ops(&docs, Some(&policy), &mut id_gen)
             .expect("compile_schema_ops must succeed");
 
         // Genesis: schema ops only (no user node, keeps it minimal)

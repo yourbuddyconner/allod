@@ -113,7 +113,7 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
 
     // Compile schema docs + policy into meta-node create ops.
     let mut mint_id = crate::ops::uuid4;
-    let schema_ops = compile_schema_ops(&profile.docs, &profile.policy, &mut mint_id)
+    let schema_ops = compile_schema_ops(&profile.docs, Some(&profile.policy), &mut mint_id)
         .map_err(AllodError::from)?;
 
     // Owner User node op.
@@ -150,10 +150,17 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
 
 /// Install a schema package into the graph through policy admission.
 ///
-/// Compiles `docs` and `policy` into meta-node create ops and submits them through
-/// `ops::commit` so governance rules apply. Under the reference policy, ops targeting
-/// meta-typed nodes match `operation: define-type` / `set-policy` / `deprecate-term`
-/// selectors (§3.2.2 sugar mapping in `policy::op_contexts`).
+/// Compiles `docs` and optional `policy` into meta-node create ops and submits them
+/// through `ops::commit` so governance rules apply. Under the reference policy, ops
+/// targeting meta-typed nodes match `operation: define-type` / `set-policy` /
+/// `deprecate-term` selectors (§3.2.2 sugar mapping in `policy::op_contexts`).
+///
+/// Policy contract:
+/// - If `policy` is `Some(p)`, exactly one `meta/Policy@1` node is created with
+///   that policy definition.
+/// - If `policy` is `None`, **no** policy node is emitted — only the docs are
+///   compiled. This preserves the existing policy in the graph; a policy update
+///   must be explicit via `Some(policy)`.
 ///
 /// `by` is the principal name whose keypair signs the changeset.
 pub fn install_package(
@@ -164,18 +171,10 @@ pub fn install_package(
 ) -> Result<Admission, AllodError> {
     use allod_core::schemaops::compile_schema_ops;
 
-    // If no policy override is given, use the graph's current policy.
-    let policy_owned: Value;
-    let effective_policy = match policy {
-        Some(p) => p,
-        None => {
-            policy_owned = graph.policy().map_err(AllodError::from)?;
-            &policy_owned
-        }
-    };
-
+    // Compile docs only, with optional policy override.
+    // If policy is None, no policy node is emitted.
     let mut mint_id = crate::ops::uuid4;
-    let schema_ops = compile_schema_ops(docs, effective_policy, &mut mint_id)
+    let schema_ops = compile_schema_ops(docs, policy, &mut mint_id)
         .map_err(AllodError::from)?;
 
     crate::ops::commit(
