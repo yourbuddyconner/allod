@@ -1,6 +1,6 @@
 {
   "name": "@allod/core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "WASM bindings for allod-graph \u2014 governed knowledge graph operations",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -22,7 +22,7 @@
     }
   },
   "scripts": {
-    "build:wasm": "wasm-pack build --target nodejs --out-dir pkg && rm -f pkg/.gitignore",
+    "build:wasm": "wasm-pack build --target nodejs --out-dir pkg && rm -f pkg/.gitignore && node build/patch-wasm-path.mjs",
     "build:ts": "tsc",
     "build": "pnpm run build:wasm && pnpm run build:ts",
     "prepublishOnly": "pnpm run build",
