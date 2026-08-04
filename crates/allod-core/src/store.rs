@@ -283,6 +283,7 @@ impl Graph {
     }
 
     pub fn registry(&self) -> Result<Registry, String> {
+        // FIXME: fold result could be cached per call site; callers using both fold twice
         let state = self.fold()?;
         // If the folded state contains any live meta-typed node, derive the
         // registry from state (materialized path).
@@ -300,6 +301,7 @@ impl Graph {
     }
 
     pub fn policy(&self) -> Result<Value, String> {
+        // FIXME: fold result could be cached per call site; callers using both fold twice
         let state = self.fold()?;
         // If a live meta/Policy node exists, parse its definition attribute.
         for ((kind, _), obj) in &state.objects {
@@ -456,15 +458,20 @@ impl Graph {
 
         // Mainline: derive the registry per-changeset from state.
         //
-        // When a changeset itself installs schema (meta ops) AND also creates
-        // objects of those new types in the same CS, the registry is derived
-        // by speculatively pre-applying the meta ops, so the effective registry
-        // already knows about the types defined within that changeset.
+        // Genesis exception (§4.6 / decision 3): the very first changeset may
+        // install schema (meta ops) AND create objects of those new types in
+        // the same atomic unit.  For the genesis changeset only, we
+        // speculatively pre-apply the meta ops so the registry already knows
+        // about types defined within that changeset.  Every subsequent
+        // changeset validates strictly against the registry derived from
+        // committed state — i.e. types must already be present before the
+        // changeset that uses them.
         let mut state = State::default();
+        let mut is_genesis = true;
         for cs in &chain {
-            let effective_reg = if changeset_touches_meta(&state, cs) {
-                // Speculatively apply this changeset's meta ops to derive
-                // the registry that governs validation of ALL ops in this CS.
+            let effective_reg = if is_genesis && changeset_touches_meta(&state, cs) {
+                // Genesis only: speculatively apply meta ops to derive the
+                // registry that governs validation of ALL ops in this CS.
                 speculative_registry_for_changeset(&state, cs)?
             } else {
                 // Derive from committed state: if no meta nodes exist yet,
@@ -472,6 +479,7 @@ impl Graph {
                 // present it returns the full materialized registry.
                 Registry::from_state(&state)?
             };
+            is_genesis = false;
 
             state.apply_changeset(&effective_reg, cs).map_err(|e| {
                 format!(
@@ -704,6 +712,60 @@ mod tests {
         graph_bad.append_changeset(&cs_bad_schema, &bad_schema_hash, None).unwrap();
         match graph_bad.fold() {
             Ok(_) => panic!("fold must fail when Idea-create appears before schema changeset"),
+            Err(err) => {
+                assert!(
+                    err.contains("memory/Idea") || err.contains("does not resolve") || err.contains("reject"),
+                    "error must mention schema resolution failure, got: {err}"
+                );
+            }
+        }
+    }
+
+    /// Regression guard (§4.6 / decision 3): a POST-genesis changeset that
+    /// combines a `meta/EntityType` create for `memory/Idea@1` with a
+    /// `memory/Idea` node create in the SAME changeset must FAIL fold.
+    ///
+    /// The Idea type is not present in the parent-revision registry, so the
+    /// speculative pre-apply is NOT allowed outside of genesis.  This test
+    /// verifies that re-broadening the genesis exception is caught immediately.
+    #[test]
+    fn post_genesis_same_changeset_smuggle_fails() {
+        let docs = memory_docs();
+        let policy = memory_policy();
+
+        let mut id_gen = seq_id();
+        let schema_ops = compile_schema_ops(&docs, &policy, &mut id_gen)
+            .expect("compile_schema_ops must succeed");
+
+        // Genesis: schema ops only (no user node, keeps it minimal)
+        let (cs0, hash0) = raw_changeset(None, schema_ops);
+
+        // Post-genesis: ONE changeset that BOTH defines memory/Idea@1 schema
+        // AND creates a memory/Idea node — this is the "smuggle" pattern.
+        let idea_def = "attributes:\n  title: {type: string}\n";
+        let mut idea_attrs = serde_yaml::Mapping::new();
+        idea_attrs.insert(s("name"), s("Idea"));
+        idea_attrs.insert(s("package"), s("memory"));
+        idea_attrs.insert(s("definition"), s(idea_def));
+        let schema_op = create_node_op("meta-idea-1", "meta/EntityType@1", idea_attrs);
+
+        let mut idea_node_attrs = serde_yaml::Mapping::new();
+        idea_node_attrs.insert(s("title"), s("first idea"));
+        let idea_node_op = create_node_op("idea-1", "memory/Idea@1", idea_node_attrs);
+
+        // Both ops in a single post-genesis changeset.
+        let (cs_smuggle, smuggle_hash) =
+            raw_changeset(Some(&hash0), vec![schema_op, idea_node_op]);
+
+        let graph = Graph::with_store(Box::new(MemStore::new()));
+        graph.write_meta("test-smuggle", &[]).unwrap();
+        graph.append_changeset(&cs0, &hash0, None).unwrap();
+        graph.append_changeset(&cs_smuggle, &smuggle_hash, None).unwrap();
+
+        match graph.fold() {
+            Ok(_) => panic!(
+                "fold must reject a post-genesis changeset that smuggles schema + instance together"
+            ),
             Err(err) => {
                 assert!(
                     err.contains("memory/Idea") || err.contains("does not resolve") || err.contains("reject"),
