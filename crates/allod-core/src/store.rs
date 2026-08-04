@@ -324,6 +324,11 @@ impl Graph {
         Ok(hashes)
     }
 
+    /// Remove a pending proposal and its evidence file (if any).
+    ///
+    /// Relies on [`DocStore::remove`] being Ok-on-absent: calling this on a
+    /// hash that was never written, or that was already removed, is safe and
+    /// returns `Ok(())`.
     pub fn remove_proposal(&self, hash: &str) -> Result<(), String> {
         self.store.remove(&format!("proposals/{}.yaml", short(hash)))?;
         self.store.remove(&format!("proposals/{}.evidence.yaml", short(hash)))?;
@@ -348,5 +353,28 @@ mod tests {
         assert!(graph.read_evidence("sha256:ab").unwrap().is_none());
         graph.write_evidence("sha256:ab", &cs).unwrap();
         assert!(graph.read_evidence("sha256:ab").unwrap().is_some());
+    }
+
+    #[test]
+    fn remove_proposal_absent_is_ok() {
+        let graph = Graph::with_store(Box::new(MemStore::new()));
+
+        // Removing a hash that was never written must not error.
+        assert!(graph.remove_proposal("sha256:deadbeef").is_ok());
+
+        // Write a proposal (no evidence).
+        let cs: Value = serde_yaml::from_str("hash: sha256:aa
+parents: []").unwrap();
+        graph.write_proposal(&cs, "sha256:aa").unwrap();
+        let proposals = graph.list_proposals().unwrap();
+        assert!(proposals.contains(&"sha256:aa".to_string()), "proposal should be listed");
+
+        // Remove it — should succeed.
+        assert!(graph.remove_proposal("sha256:aa").is_ok());
+        let proposals = graph.list_proposals().unwrap();
+        assert!(!proposals.contains(&"sha256:aa".to_string()), "proposal should be gone");
+
+        // Remove again (now absent) — still Ok.
+        assert!(graph.remove_proposal("sha256:aa").is_ok());
     }
 }

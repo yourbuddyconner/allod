@@ -71,8 +71,8 @@ pub fn load_docs(input: &[(String, Value)]) -> Loaded {
 /// Load every .yaml file under `root`, registering ontologies and
 /// taxonomies so references resolve regardless of file order.
 pub fn load_dir(root: &Path) -> Loaded {
-    let mut raw_docs: Vec<(String, Value)> = Vec::new();
-    let mut io_issues = Vec::new();
+    let mut docs = Vec::new();
+    let mut issues = Vec::new();
     let mut files = Vec::new();
     collect_yaml(root, &mut files);
     files.sort();
@@ -80,7 +80,7 @@ pub fn load_dir(root: &Path) -> Loaded {
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
             Err(err) => {
-                io_issues.push(LoadIssue {
+                issues.push(LoadIssue {
                     path: path.clone(),
                     context: "io".into(),
                     message: err.to_string(),
@@ -88,13 +88,12 @@ pub fn load_dir(root: &Path) -> Loaded {
                 continue;
             }
         };
-        let name = path.to_string_lossy().to_string();
         for de in serde_yaml::Deserializer::from_str(&text) {
             match Value::deserialize(de) {
-                Ok(doc) if doc.is_mapping() => raw_docs.push((name.clone(), doc)),
+                Ok(doc) if doc.is_mapping() => docs.push((path.clone(), doc)),
                 Ok(_) => {}
                 Err(err) => {
-                    io_issues.push(LoadIssue {
+                    issues.push(LoadIssue {
                         path: path.clone(),
                         context: "yaml".into(),
                         message: format!("parse failure: {err}"),
@@ -104,9 +103,27 @@ pub fn load_dir(root: &Path) -> Loaded {
             }
         }
     }
-    let mut loaded = load_docs(&raw_docs);
-    // Prepend I/O and parse issues so they appear before registry issues
-    io_issues.extend(loaded.issues);
-    loaded.issues = io_issues;
-    loaded
+    let mut registry = Registry::default();
+    for (path, doc) in &docs {
+        if doc.get("ontology").is_some() {
+            if !registry.register_ontology(doc) {
+                issues.push(LoadIssue {
+                    path: path.clone(),
+                    context: "ontology".into(),
+                    message: "missing or invalid package name".into(),
+                });
+            }
+        } else if doc.get("taxonomy").is_some() && !registry.register_taxonomy(doc) {
+            issues.push(LoadIssue {
+                path: path.clone(),
+                context: "taxonomy".into(),
+                message: "missing or invalid taxonomy name".into(),
+            });
+        }
+    }
+    Loaded {
+        registry,
+        docs,
+        issues,
+    }
 }
