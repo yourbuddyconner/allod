@@ -416,6 +416,74 @@ pub fn classify(
     ops::admit_or_hold(graph, by, &cs, &hash, vec![])
 }
 
+// ---- Result types for task 4b ----
+
+pub enum EnvelopeOutcome {
+    Verified(String),
+    Degraded(String),
+}
+
+#[derive(serde::Serialize)]
+pub struct ProposalSummary {
+    pub hash: String,
+    pub intent: String,
+    pub author: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct ChangesetSummary {
+    pub hash: String,
+    pub author: String,
+    pub op_count: usize,
+    pub intent: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct EntitySummary {
+    pub type_ref: String,
+    pub label: String,
+    pub derived_by: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct StateView {
+    pub state_hash: String,
+    pub nodes: Vec<EntitySummary>,
+}
+
+#[derive(serde::Serialize)]
+pub enum LevelResult {
+    Verified,
+    Degraded(String),
+    Failed(String),
+}
+
+#[derive(serde::Serialize)]
+pub struct ChangesetEntry {
+    pub hash: String,
+    pub author: String,
+    pub integrity: LevelResult,
+    pub authorship: LevelResult,
+    pub governance: LevelResult,
+    pub admitted_by: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct CheckpointEntry {
+    pub revision: String,
+    pub signer: String,
+    pub ok: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct VerifyReport {
+    pub ok: bool,
+    pub changesets: Vec<ChangesetEntry>,
+    pub checkpoints: Vec<CheckpointEntry>,
+    pub degraded: Vec<String>,
+    pub state_hash: String,
+}
+
 /// Write a signed checkpoint recording the current revision and state hash.
 pub fn checkpoint(graph: &Graph, by: &str) -> Result<CheckpointResult, AllodError> {
     use allod_core::get_str;
@@ -454,4 +522,383 @@ pub fn checkpoint(graph: &Graph, by: &str) -> Result<CheckpointResult, AllodErro
         revision: head,
         state_hash: recorded_state_hash,
     })
+}
+
+/// Trust a simulated measurement (§9): adds `measurement` to the graph's trusted set.
+pub fn trust(graph: &Graph, measurement: &str) -> Result<(), AllodError> {
+    graph.trust_measurement(measurement).map_err(AllodError::from)
+}
+
+/// Build and verify an attestation envelope for `cs_hash`, signed by `by`, with tool `tool`.
+/// Returns `EnvelopeOutcome::Verified` or `Degraded` on success; `Err` on hard failure.
+pub fn envelope(graph: &Graph, cs_hash: &str, by: &str, tool: &str) -> Result<EnvelopeOutcome, AllodError> {
+    use allod_core::{get_str, policy};
+
+    let kp = graph.load_key(by).map_err(AllodError::from)?;
+    let measurement = allod_core::hash::plain_sha256(tool.as_bytes());
+
+    let mut statement = serde_yaml::Mapping::new();
+    statement.insert(Value::String("changeset_hash".into()), Value::String(cs_hash.into()));
+    let mut evidence_map = serde_yaml::Mapping::new();
+    evidence_map.insert(Value::String("measurement".into()), Value::String(measurement));
+    evidence_map.insert(Value::String("claimed_identity".into()), Value::String(tool.into()));
+    let mut env_map = serde_yaml::Mapping::new();
+    env_map.insert(Value::String("kind".into()), Value::String("attestation-envelope".into()));
+    env_map.insert(Value::String("statement".into()), Value::Mapping(statement));
+    env_map.insert(Value::String("attester".into()), Value::String(format!("principal:{by}")));
+    env_map.insert(Value::String("evidence".into()), Value::Mapping(evidence_map));
+    env_map.insert(Value::String("evidence_type".into()), Value::String("simulated".into()));
+    let mut envelope = Value::Mapping(env_map);
+
+    let payload = policy::envelope_payload(&envelope).map_err(AllodError::from)?;
+    if let Some(map) = envelope.as_mapping_mut() {
+        map.insert(Value::String("signature".into()), Value::String(kp.sign(&payload)));
+    }
+
+    // Verify signature against registered key
+    let state = graph.fold().map_err(AllodError::from)?;
+    let attester_ref = format!("principal:{by}");
+    let public = state
+        .find_principal(&attester_ref)
+        .and_then(|(_, obj)| {
+            obj.content
+                .get("attributes")?
+                .get("keys")?
+                .as_sequence()?
+                .iter()
+                .find_map(|r| get_str(r, "public").map(String::from))
+        })
+        .ok_or_else(|| AllodError::Other("attester has no registered key".into()))?;
+    allod_core::sign::verify(&public, &payload, get_str(&envelope, "signature").unwrap())
+        .map_err(AllodError::from)?;
+
+    // Verify evidence chain against trusted measurements
+    let outcome = match policy::verify_evidence(&envelope, &graph.trusted_measurements().map_err(AllodError::from)?) {
+        policy::EvidenceResult::Verified(note) => EnvelopeOutcome::Verified(note),
+        policy::EvidenceResult::Degraded(note) => EnvelopeOutcome::Degraded(note),
+        policy::EvidenceResult::Failed(reason) => {
+            return Err(AllodError::Other(format!("envelope failed: {reason}")));
+        }
+    };
+
+    // Attach to changeset evidence for audit trail
+    let mut evidence_file = graph
+        .read_evidence(cs_hash).map_err(AllodError::from)?
+        .unwrap_or_else(|| crate::ops::evidence_doc(&[], &[]));
+    if let Some(list) = evidence_file
+        .as_mapping_mut()
+        .and_then(|m| m.get_mut("envelopes"))
+        .and_then(Value::as_sequence_mut)
+    {
+        list.push(envelope);
+    }
+    graph.write_evidence(cs_hash, &evidence_file).map_err(AllodError::from)?;
+
+    Ok(outcome)
+}
+
+/// List pending proposals.
+pub fn proposals(graph: &Graph) -> Result<Vec<ProposalSummary>, AllodError> {
+    use allod_core::get_str;
+
+    let hashes = graph.list_proposals().map_err(AllodError::from)?;
+    let mut result = Vec::new();
+    for hash in hashes {
+        let cs = graph.read_proposal(&hash).map_err(AllodError::from)?;
+        result.push(ProposalSummary {
+            hash: hash.clone(),
+            intent: get_str(&cs, "intent").unwrap_or("").to_string(),
+            author: get_str(
+                cs.get("author").unwrap_or(&Value::Null),
+                "principal",
+            )
+            .unwrap_or("?")
+            .to_string(),
+        });
+    }
+    Ok(result)
+}
+
+/// List admitted changesets.
+pub fn log(graph: &Graph) -> Result<Vec<ChangesetSummary>, AllodError> {
+    use allod_core::get_str;
+
+    let chain = graph.chain().map_err(AllodError::from)?;
+    let mut result = Vec::new();
+    for cs in chain {
+        let hash = get_str(&cs, "hash").unwrap_or("?").to_string();
+        let author = get_str(cs.get("author").unwrap_or(&Value::Null), "principal")
+            .unwrap_or("?")
+            .to_string();
+        let op_count = cs
+            .get("operations")
+            .and_then(Value::as_sequence)
+            .map(|o| o.len())
+            .unwrap_or(0);
+        let intent = get_str(&cs, "intent").unwrap_or("").to_string();
+        result.push(ChangesetSummary { hash, author, op_count, intent });
+    }
+    Ok(result)
+}
+
+/// Current graph state as typed data.
+pub fn state(graph: &Graph) -> Result<StateView, AllodError> {
+    use allod_core::get_str;
+
+    let state = graph.fold().map_err(AllodError::from)?;
+    let state_hash = state.state_hash().map_err(AllodError::from)?;
+    let mut nodes = Vec::new();
+    for ((kind, _), obj) in &state.objects {
+        if kind != "node" || obj.deleted {
+            continue;
+        }
+        let type_ref = get_str(&obj.content, "type").unwrap_or("?").to_string();
+        let attrs = obj.content.get("attributes");
+        let label = attrs
+            .and_then(|a| {
+                get_str(a, "display_name")
+                    .or_else(|| get_str(a, "statement"))
+                    .or_else(|| get_str(a, "content"))
+                    .or_else(|| get_str(a, "name"))
+            })
+            .unwrap_or("")
+            .to_string();
+        let derived_by = obj
+            .content
+            .get("provenance")
+            .and_then(|p| get_str(p, "derived_by"))
+            .map(|s| s.to_string());
+        nodes.push(EntitySummary { type_ref, label, derived_by });
+    }
+    Ok(StateView { state_hash, nodes })
+}
+
+/// Verify the full chain: integrity (level 1), authorship (level 2), governance (level 3).
+pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
+    use allod_core::{fold::State, get_str, policy};
+
+    let reg = graph.registry().map_err(AllodError::from)?;
+    let policy_doc = graph.policy().map_err(AllodError::from)?;
+    let roots = graph.roots().map_err(AllodError::from)?;
+    let chain = graph.chain().map_err(AllodError::from)?;
+    let mut state = State::default();
+    let mut degraded: Vec<String> = Vec::new();
+    let mut changeset_entries: Vec<ChangesetEntry> = Vec::new();
+    let mut ok = true;
+
+    for (i, cs) in chain.iter().enumerate() {
+        let hash = get_str(cs, "hash").unwrap_or("?").to_string();
+        let author_val = cs.get("author").cloned().unwrap_or(Value::Null);
+        let author_ref = get_str(&author_val, "principal").unwrap_or("?").to_string();
+        let key_id = get_str(&author_val, "key").unwrap_or("").to_string();
+        let signature = get_str(cs, "signature").unwrap_or("").to_string();
+
+        let genesis = i == 0;
+
+        // Level 3: governance (before applying this changeset to state)
+        let (governance, admitted_by) = if genesis {
+            (LevelResult::Verified, "genesis (self-admitted, §4.6)".to_string())
+        } else {
+            let author_kind = match state.find_principal(&author_ref) {
+                Some((kind, _)) => kind.to_string(),
+                None => {
+                    let reason = format!("{hash}: unknown author {author_ref}");
+                    ok = false;
+                    changeset_entries.push(ChangesetEntry {
+                        hash,
+                        author: author_ref,
+                        integrity: LevelResult::Failed("not reached".into()),
+                        authorship: LevelResult::Failed("not reached".into()),
+                        governance: LevelResult::Failed(reason.clone()),
+                        admitted_by: String::new(),
+                    });
+                    continue;
+                }
+            };
+            let checklist = match policy::evaluate(&reg, &policy_doc, &state, cs, &author_kind) {
+                Ok(c) => c,
+                Err(e) => {
+                    let reason = e.to_string();
+                    ok = false;
+                    changeset_entries.push(ChangesetEntry {
+                        hash,
+                        author: author_ref,
+                        integrity: LevelResult::Failed("not reached".into()),
+                        authorship: LevelResult::Failed("not reached".into()),
+                        governance: LevelResult::Failed(reason.clone()),
+                        admitted_by: String::new(),
+                    });
+                    continue;
+                }
+            };
+            let evidence = graph.read_evidence(&hash).map_err(AllodError::from)?
+                .unwrap_or(Value::Null);
+            let decisions: Vec<Value> = evidence
+                .get("decisions")
+                .and_then(Value::as_sequence)
+                .cloned()
+                .unwrap_or_default();
+            let envelopes: Vec<Value> = evidence
+                .get("envelopes")
+                .and_then(Value::as_sequence)
+                .cloned()
+                .unwrap_or_default();
+            let sat = match policy::check_satisfied_with(
+                &state, &policy_doc, &roots, cs, &author_ref, &checklist, &decisions,
+                &envelopes, &graph.trusted_measurements().map_err(AllodError::from)?,
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    let reason = e.to_string();
+                    ok = false;
+                    changeset_entries.push(ChangesetEntry {
+                        hash,
+                        author: author_ref,
+                        integrity: LevelResult::Failed("not reached".into()),
+                        authorship: LevelResult::Failed("not reached".into()),
+                        governance: LevelResult::Failed(reason),
+                        admitted_by: String::new(),
+                    });
+                    continue;
+                }
+            };
+            if !sat.unmet.is_empty() {
+                let reason = format!("governance FAILS for {}: {}", crate::ops::short(&hash), sat.unmet.join("; "));
+                ok = false;
+                changeset_entries.push(ChangesetEntry {
+                    hash,
+                    author: author_ref,
+                    integrity: LevelResult::Failed("not reached".into()),
+                    authorship: LevelResult::Failed("not reached".into()),
+                    governance: LevelResult::Failed(reason),
+                    admitted_by: String::new(),
+                });
+                continue;
+            }
+            degraded.extend(sat.degraded);
+            let admitted_by = if checklist.is_trivial() {
+                format!(
+                    "rules {}",
+                    checklist.matched_rules.iter().cloned().collect::<Vec<_>>().join(", ")
+                )
+            } else if !decisions.is_empty() {
+                format!("{} decision record(s)", decisions.len())
+            } else {
+                "root authority".to_string()
+            };
+            (LevelResult::Verified, admitted_by)
+        };
+
+        // Level 1: integrity — fold recomputes and checks hash
+        let integrity = match state.apply_changeset(&reg, cs) {
+            Ok(()) => LevelResult::Verified,
+            Err(e) => {
+                ok = false;
+                LevelResult::Failed(format!("{hash}: {e}"))
+            }
+        };
+
+        // Level 2: authorship — signature check
+        let authorship = match state.public_key_of(&author_ref, &key_id) {
+            Some(public) => {
+                match allod_core::sign::verify(&public, &hash, &signature) {
+                    Ok(()) => {
+                        if genesis && !roots.contains(&author_ref) {
+                            ok = false;
+                            LevelResult::Failed(format!("{hash}: genesis author {author_ref} is not root"))
+                        } else {
+                            LevelResult::Verified
+                        }
+                    }
+                    Err(e) => {
+                        ok = false;
+                        LevelResult::Failed(format!("{hash}: signature: {e}"))
+                    }
+                }
+            }
+            None => {
+                ok = false;
+                LevelResult::Failed(format!("{hash}: no active key {key_id} for {author_ref}"))
+            }
+        };
+
+        changeset_entries.push(ChangesetEntry {
+            hash,
+            author: author_ref,
+            integrity,
+            authorship,
+            governance,
+            admitted_by,
+        });
+    }
+
+    // Compute final state hash after replay
+    let final_state_hash = state.state_hash().map_err(AllodError::from)?;
+
+    // Checkpoints
+    let mut checkpoint_entries: Vec<CheckpointEntry> = Vec::new();
+    for cp in graph.checkpoints().map_err(AllodError::from)? {
+        let revision = get_str(&cp, "revision").unwrap_or("?").to_string();
+        let claimed = get_str(&cp, "state_hash").unwrap_or("?").to_string();
+        let signer = get_str(&cp, "signer").unwrap_or("?").to_string();
+        let cp_signature = get_str(&cp, "signature").unwrap_or("").to_string();
+
+        // Check revision hash matches replay
+        if revision == graph.head().map_err(AllodError::from)?.unwrap_or_default()
+            && claimed != final_state_hash
+        {
+            ok = false;
+            checkpoint_entries.push(CheckpointEntry {
+                revision,
+                signer,
+                ok: false,
+            });
+            continue;
+        }
+
+        // Compute checkpoint payload and verify signature
+        let payload = checkpoint_payload(&cp)?;
+        let cp_ok = match state
+            .public_key_of(&signer, "")
+            .or_else(|| {
+                state.find_principal(&signer).and_then(|(_, obj)| {
+                    obj.content
+                        .get("attributes")?
+                        .get("keys")?
+                        .as_sequence()?
+                        .iter()
+                        .find_map(|r| get_str(r, "public").map(String::from))
+                })
+            }) {
+            Some(public) => allod_core::sign::verify(&public, &payload, &cp_signature).is_ok(),
+            None => false,
+        };
+        if !cp_ok {
+            ok = false;
+        }
+        checkpoint_entries.push(CheckpointEntry {
+            revision,
+            signer,
+            ok: cp_ok,
+        });
+    }
+
+    Ok(VerifyReport {
+        ok,
+        changesets: changeset_entries,
+        checkpoints: checkpoint_entries,
+        degraded,
+        state_hash: final_state_hash,
+    })
+}
+
+fn checkpoint_payload(cp: &Value) -> Result<String, AllodError> {
+    let mut pre = cp.clone();
+    if let Some(map) = pre.as_mapping_mut() {
+        map.remove("signature");
+    }
+    Ok(allod_core::sha256_hex(
+        "checkpoint",
+        &allod_core::canonical_cbor(&pre).map_err(AllodError::from)?,
+    ))
 }

@@ -335,7 +335,7 @@ fn checkpoint_payload(cp: &Value) -> Result<String, String> {
 
 fn cmd_trust(dir: &Path, measurement: &str) -> Result<(), String> {
     let graph = Graph::open(dir)?;
-    graph.trust_measurement(measurement)?;
+    allod_graph::flows::trust(&graph, measurement).map_err(|e| e.to_string())?;
     println!("  ✓ trusting simulated measurement {}", short(measurement));
     Ok(())
 }

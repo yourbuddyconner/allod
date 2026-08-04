@@ -4,6 +4,20 @@ use std::path::PathBuf;
 
 mod common;
 
+// ---- Task 4b stubs (will be implemented one by one) ----
+
+// ---- trust ----
+
+#[test]
+fn trust_measurement_ok() {
+    let graph = common::init_memory_graph();
+    let measurement = allod_core::hash::plain_sha256(b"test-tool-v1");
+    flows::trust(&graph, &measurement).expect("trust");
+    // Verify the measurement is stored
+    let measurements = graph.trusted_measurements().expect("trusted_measurements");
+    assert!(measurements.iter().any(|m| m == &measurement));
+}
+
 fn schema_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ontologies")
 }
