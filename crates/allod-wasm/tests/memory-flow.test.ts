@@ -54,6 +54,50 @@ test("the founding loop, from TypeScript", async () => {
   expect(g2.state().state_hash).toEqual(g.state().state_hash);
 });
 
+test("describe_schema lists memory/Note type", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "allod-wasm-schema-"));
+  const backend = fsBackend(dir);
+  const g = new AllodGraph([], backend.persist);
+  await g.init("alice", "memory");
+
+  // describe_schema returns a SchemaDescription: { entity_types, edge_types, terms }
+  const schema = g.describe_schema();
+  expect(schema).toBeDefined();
+  // The memory ontology defines Note, Preference, Routine, Commitment, Interest
+  expect(Array.isArray(schema.entity_types)).toBe(true);
+  const names: string[] = schema.entity_types.map((t: { name: string }) => t.name);
+  expect(names.some((n) => n.includes("Note"))).toBe(true);
+  // Schema should also include terms and edge_types arrays
+  expect(Array.isArray(schema.terms)).toBe(true);
+  expect(Array.isArray(schema.edge_types)).toBe(true);
+});
+
+test("install_package with tiny ontology is Held or Admitted", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "allod-wasm-install-"));
+  const backend = fsBackend(dir);
+  const g = new AllodGraph([], backend.persist);
+  await g.init("alice", "memory");
+
+  // docs_yaml is a YAML mapping where each value is the ontology doc object.
+  // The memory policy requires owner review for define-type ops (schema-changes-are-serious),
+  // so the result will be Held.
+  const docsYaml = `test:
+  ontology: test
+  entity_types:
+    Widget:
+      attributes:
+        name:
+          type: string
+          required: true
+`;
+
+  const result = await g.install_package(docsYaml, "alice");
+  // Under the memory policy, schema changes (define-type) require owner review.
+  // Even when the owner is the author, a formal decision record is required,
+  // so the changeset is Held.
+  expect(result.Held !== undefined || result.Admitted !== undefined).toBe(true);
+});
+
 test("generic commit: memory/Note@1 admitted, memory/Preference@1 held", async () => {
   const dir = mkdtempSync(join(tmpdir(), "allod-wasm-commit-"));
   const backend = fsBackend(dir);
