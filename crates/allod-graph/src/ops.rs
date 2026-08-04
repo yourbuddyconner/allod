@@ -47,6 +47,9 @@ pub fn uuid4() -> String {
 }
 
 pub fn now_iso() -> String {
+    #[cfg(target_arch = "wasm32")]
+    let secs = (js_sys::Date::now() / 1000.0) as u64;
+    #[cfg(not(target_arch = "wasm32"))]
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
