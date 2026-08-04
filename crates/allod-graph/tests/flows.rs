@@ -34,6 +34,22 @@ fn log_lists_changesets() {
     assert!(entries[0].op_count > 0);
 }
 
+// ---- state ----
+
+#[test]
+fn state_returns_nodes_and_hash() {
+    let graph = common::init_memory_graph();
+    flows::principal_add(&graph, "a6", "agent", "o").unwrap();
+    flows::note(&graph, "a6", "some content").unwrap();
+    let view = flows::state(&graph).expect("state");
+    assert!(!view.state_hash.is_empty());
+    // There should be at least the owner node and the agent node
+    assert!(view.nodes.len() >= 2);
+    // Owner node has a label
+    let has_owner = view.nodes.iter().any(|n| n.label == "o");
+    assert!(has_owner, "owner node 'o' should be in state");
+}
+
 // ---- Task 4b stubs (will be implemented one by one) ----
 
 // ---- trust ----

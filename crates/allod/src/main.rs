@@ -385,29 +385,13 @@ fn cmd_log(dir: &Path) -> Result<(), String> {
 
 fn cmd_show(dir: &Path) -> Result<(), String> {
     let graph = Graph::open(dir)?;
-    let state = graph.fold()?;
-    println!("  state hash {}", short(&state.state_hash()?));
-    for ((kind, _), obj) in &state.objects {
-        if kind != "node" || obj.deleted {
-            continue;
-        }
-        let tref = get_str(&obj.content, "type").unwrap_or("?");
-        let attrs = obj.content.get("attributes");
-        let label = attrs
-            .and_then(|a| {
-                get_str(a, "display_name")
-                    .or_else(|| get_str(a, "statement"))
-                    .or_else(|| get_str(a, "content"))
-                    .or_else(|| get_str(a, "name"))
-            })
-            .unwrap_or("");
-        let by = obj
-            .content
-            .get("provenance")
-            .and_then(|p| get_str(p, "derived_by"))
+    let view = allod_graph::flows::state(&graph).map_err(|e| e.to_string())?;
+    println!("  state hash {}", short(&view.state_hash));
+    for node in &view.nodes {
+        let by = node.derived_by.as_deref()
             .map(|p| format!("  (by {p})"))
             .unwrap_or_default();
-        println!("  {tref}  {label}{by}");
+        println!("  {}  {}{}", node.type_ref, node.label, by);
     }
     Ok(())
 }
