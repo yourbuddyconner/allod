@@ -685,7 +685,9 @@ impl AllodGraph {
 
         let change = GitChange { repo, target_ref, ops: op_pairs };
         let policy_doc = self.graph.policy().map_err(err)?;
-        let checklist = policy::evaluate_git(&policy_doc, &change, None).map_err(err)?;
+        let state = self.graph.fold().map_err(err)?;
+        let reg = self.graph.registry().map_err(err)?;
+        let checklist = policy::evaluate_git(&policy_doc, &change, Some((&state, &reg))).map_err(err)?;
 
         let matched: Vec<serde_yaml::Value> = checklist
             .matched_rules

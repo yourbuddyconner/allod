@@ -387,7 +387,7 @@ test("persist callback rejection propagates to the mutating call (non-vacuous)",
 // ---------------------------------------------------------------------------
 
 describe("two-phase commit (commit_payload + commit_signed)", () => {
-  test("commit_payload returns changeset without signature + hash; commit_signed with external sig admits", async () => {
+  test("commit_payload returns changeset without signature + hash; commit_signed with external sig admits scratch note", async () => {
     let latestDump: [string, string][] = [];
     const capturingPersist = async (dump: [string, string][]) => {
       latestDump = dump;
@@ -400,21 +400,31 @@ describe("two-phase commit (commit_payload + commit_signed)", () => {
     // Capture dump after principal_add so we have agent's key
     const agentSecret = extractSecret(latestDump, "agent");
 
-    const prefId = uuid4();
+    // Use a scratch note (workspace/scratch@1 classification) — scratch-is-free admits immediately.
+    const noteId = uuid4();
     const ops = [
       {
         create: {
           kind: "node",
-          id: prefId,
-          type: "memory/Preference@1",
-          attributes: { statement: "two-phase works", strength: "soft" },
-          provenance: { derived_by: "principal:agent", method: "model-assisted", tool: "test@0.1" },
+          id: noteId,
+          type: "memory/Note@1",
+          attributes: { content: "two-phase commit works" },
+        },
+      },
+      {
+        create: {
+          kind: "classification",
+          id: uuid4(),
+          subject: `node:${noteId}`,
+          term: "workspace/scratch@1",
+          asserted_by: "principal:agent",
+          basis: "model-assisted",
         },
       },
     ];
 
     // Phase 1: build the changeset payload without signing (read-only)
-    const phase1 = g.commit_payload("agent", "Two-phase test", ops);
+    const phase1 = g.commit_payload("agent", "Two-phase scratch note", ops);
     expect(phase1).toBeDefined();
     expect(typeof phase1.hash).toBe("string");
     expect(phase1.hash).toMatch(/^sha256:/);
@@ -425,8 +435,12 @@ describe("two-phase commit (commit_payload + commit_signed)", () => {
     // Phase 2: sign the hash externally and submit
     const signature = ed25519Sign(agentSecret, phase1.hash as string);
     const outcome = await g.commit_signed(phase1.changeset, signature, []);
-    // Preference without scratch classification should be Held for owner review
-    expect(outcome.Held !== undefined || outcome.Admitted !== undefined).toBe(true);
+    // Scratch note is admitted immediately under scratch-is-free
+    expect(outcome.Admitted).toBeDefined();
+
+    // verify() must pass after admission
+    const report = g.verify();
+    expect(report.ok).toBe(true);
   });
 
   test("commit_signed with envelope satisfies model-assisted-needs-signed-envelope", async () => {
@@ -467,11 +481,10 @@ describe("two-phase commit (commit_payload + commit_signed)", () => {
     // Attach signature to envelope
     const envelope = { ...(envPhase.envelope as object), signature: envSignature };
 
-    // Phase 2: commit_signed with envelope
+    // Phase 2: commit_signed with envelope — Preference without scratch → Held for owner review.
+    // The signed envelope satisfies model-assisted-needs-signed-envelope but owner decide still needed.
     const outcome = await g.commit_signed(phase1.changeset, csSignature, [envelope]);
-    // With the signed envelope, the proposal should be Held (still needs owner decide)
-    // but the envelope requirement is satisfied
-    expect(outcome.Held !== undefined || outcome.Admitted !== undefined).toBe(true);
+    expect(outcome.Held).toBeDefined();
   });
 });
 
@@ -540,7 +553,13 @@ async function installAndApproveGitPolicy(
   g: AllodGraph,
   ownerSecret: string
 ): Promise<void> {
-  const gitPolicy = `rules:
+  // roles: binds principal:owner into the "owner" role so that
+  // git_satisfaction can verify that the owner's signature satisfies the
+  // reviewer requirement.
+  const gitPolicy = `roles:
+  owner:
+    - principal:owner
+rules:
   - name: protected-src
     select:
       substrate: git
@@ -648,5 +667,43 @@ describe("git evaluation bindings", () => {
     expect(deciders.length).toBe(1);
     expect(deciders[0].principal).toBe("principal:owner");
     expect(deciders[0].signature).toBe(fakeSignature);
+  });
+
+  test("git_satisfaction satisfied branch: owner signs decision → unmet becomes empty", async () => {
+    // The git policy in installAndApproveGitPolicy requires `role: owner` for src/**.
+    // The "owner" principal is the graph owner, which holds the owner role.
+    // Steps:
+    //   1. Install & approve git policy with owner reviewer requirement.
+    //   2. git_checklist for a src/** path → has reviewer requirement.
+    //   3. git_satisfaction with no decisions → unmet non-empty.
+    //   4. git_decision_payload → sign with owner key → git_decision_attach.
+    //   5. git_satisfaction with the signed decision → unmet empty.
+    let latestDump: [string, string][] = [];
+    const capturingPersist = async (dump: [string, string][]) => {
+      latestDump = dump;
+    };
+    const g = new AllodGraph([], capturingPersist);
+    await g.init("owner", "memory");
+    const ownerSecret = extractSecret(latestDump, "owner");
+
+    await installAndApproveGitPolicy(g, ownerSecret);
+
+    const subject = "git:abc123def456";
+    const ops = [["update", "src/lib.rs"]];
+    const checklistResult = g.git_checklist("my-repo", "refs/heads/main", ops);
+    expect((checklistResult.matched as string[]).includes("protected-src")).toBe(true);
+
+    // With no decisions: unmet must be non-empty.
+    const unmetBefore = g.git_satisfaction(subject, checklistResult.checklist, []);
+    expect((unmetBefore.unmet as string[]).length).toBeGreaterThan(0);
+
+    // Build a signed decision record.
+    const phase1 = g.git_decision_payload(subject, "approve");
+    const ownerSig = ed25519Sign(ownerSecret, phase1.payload as string);
+    const signedRecord = g.git_decision_attach(phase1.record, "owner", ownerSig);
+
+    // With the signed owner decision: unmet must be empty.
+    const unmetAfter = g.git_satisfaction(subject, checklistResult.checklist, [signedRecord]);
+    expect((unmetAfter.unmet as string[]).length).toBe(0);
   });
 });
