@@ -1,0 +1,45 @@
+# review — code-review artifacts, version 1 (projection form, §2.5)
+#
+# The §4.4 review artifact as typed graph data: a Review carries a
+# verdict over a change; ReviewComments anchor prose to code through
+# git: external refs. Comments ingested from an external host carry
+# their origin in external_source/external_id and a claimed author —
+# unsigned provenance, distinct from principal-signed reviews.
+
+ontology: review
+version: 1
+imports:
+  - { ontology: core, state_hash: "sha256:a48eb0cd7e8c2ad6a36067a387077d6ba68f034e7186a6adb78ccf000fd05087" }
+  - { ontology: code, state_hash: "sha256:0d711ff71a9e8015167d519ba827f5bde1527c1816bfcae0e59fc0c44ae2460b" }
+  - { ontology: eng,  state_hash: "sha256:91503a084d99788e08e7ec41f288ef149deee858f82a51dc892a7627970c8e06" }
+
+entity_types:
+
+  Review:
+    attributes:
+      verdict: { type: "enum<approve|approve-with-comments|request-changes>", required: true }
+      body:    { type: string }                     # long text; the review prose
+      commit:  { type: external-ref }               # git:<repo>#<sha> the review examined
+
+  ReviewComment:
+    attributes:
+      body:            { type: string, required: true }
+      anchor:          { type: external-ref }        # git:<repo>#<sha>:<path> plus span
+      span:            { type: string }              # e.g. "L120-L184"
+      status:          { type: "enum<open|resolved|wont-fix>" }
+      external_source: { type: string }              # e.g. github
+      external_id:     { type: string }              # host comment id, ingest dedup key
+      claimed_author:  { type: string }              # unsigned external identity
+
+edge_types:
+  reviews:   { domain: Review, range: eng/ChangeRequest, cardinality: many-to-one }
+  part_of:   { domain: ReviewComment, range: Review, cardinality: many-to-one }
+  replies_to: { domain: ReviewComment, range: ReviewComment, cardinality: many-to-one }
+  concerns:  { domain: ReviewComment, range: [code/SourceFile, code/Function], cardinality: many-to-many }
+
+validation_rules:
+  - name: external-comments-carry-their-id
+    on:
+      type: ReviewComment
+      where: { attr: external_source, present: true }
+    require: { attr: external_id, present: true }
