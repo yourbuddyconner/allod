@@ -26,7 +26,7 @@ entity_types:
       body:            { type: string, required: true }
       anchor:          { type: external-ref }        # git:<repo>#<sha>:<path> plus span
       span:            { type: string }              # e.g. "L120-L184"
-      status:          { type: "enum<open|resolved|wont-fix>" }
+      status:          { type: "enum<open|resolved|wont-fix|tombstoned>" }
       external_source: { type: string }              # e.g. github
       external_id:     { type: string }              # host comment id, ingest dedup key
       claimed_author:  { type: string }              # unsigned external identity
