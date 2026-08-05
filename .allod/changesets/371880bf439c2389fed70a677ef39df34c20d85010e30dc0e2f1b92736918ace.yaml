@@ -1,16 +1,16 @@
 kind: changeset
 parents:
-- sha256:fb87f9fc7620ee71461d5118622b239582d14cb1b1e5f385924fae9ec2e4cfbe
+- sha256:a9569649c99b1da93434eda3f24648cd8c1d2fcad282f670aba65e1382fa6d9b
 author:
   principal: principal:conner
-  key: sha256:d704bde7aff981c918e3dc5c73180208894b06879008d977047f159346ed4e0b
-timestamp: 2026-08-05T02:18:56Z
+  key: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
+timestamp: 2026-08-05T02:35:07Z
 intent: Install schema package (0 doc(s))
-schema_context: sha256:3b5e5accca9f0e84c26eee1a73a958e944d23b8be24ec99df88f399f354ce1a4
+schema_context: sha256:826f687a2beb0914bd67500a72d5af8d60bd195a2824cbc32791b3ee2765df1d
 operations:
 - update:
     kind: node
-    id: cc893322-54c8-459c-a10f-e4784e20d4f2
+    id: 88c1afe4-2120-4d00-b68c-83a914300232
     type: meta/Policy@1
     attributes:
       name: repo-governance
@@ -51,6 +51,6 @@ operations:
             reviewers:
               role: code-owner
               quorum: 1
-    prior: sha256:0755f2a2bb71375910b09128c5f55a80e49c471e551b1c7bd47c6fa252b05c6b
-hash: sha256:744dedc7eec977890a8c4bedd86e56d9f85a21180ea73e322747ca20b1a3ef6d
-signature: sig:ed25519:b8ce5faa3c4d620ead7d1736bea81c88d593ac8fb8614223f79fdbaf57ea0c40b8b49a1529494deb75307503cab769d6cf67e39d5e925e6c76ca907899aade02
+    prior: sha256:37e8d8070f40a93ed5fe33bb9a499e455f6d1ab091604a191da204041eba91ca
+hash: sha256:371880bf439c2389fed70a677ef39df34c20d85010e30dc0e2f1b92736918ace
+signature: sig:ed25519:12cc30f1ac9440459b17497699cc84adfbb7b3fd0e14a5f7c3f7b1a67d1edb009c38dda907069989b72198fa730bdea522a949c17637c23524f190bfee58090e

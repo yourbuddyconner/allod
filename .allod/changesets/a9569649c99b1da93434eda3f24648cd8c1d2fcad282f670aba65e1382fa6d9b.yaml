@@ -2,14 +2,14 @@ kind: changeset
 parents: []
 author:
   principal: principal:conner
-  key: sha256:d704bde7aff981c918e3dc5c73180208894b06879008d977047f159346ed4e0b
-timestamp: 2026-08-05T02:18:55Z
+  key: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
+timestamp: 2026-08-05T02:35:07Z
 intent: 'Genesis: root authority conner, core + memory schema, memory-local policy'
 schema_context: sha256:0000000000000000000000000000000000000000000000000000000000000000
 operations:
 - create:
     kind: node
-    id: 03c5c2b3-8571-49e2-8717-8fea9e70e33c
+    id: 88cb6721-4f56-4a2b-81a2-594f20622efa
     type: meta/EntityType@1
     attributes:
       name: Person
@@ -26,7 +26,7 @@ operations:
             target: Company
 - create:
     kind: node
-    id: 4fdd6679-599c-4b6f-8dff-7178a56644db
+    id: 2ba01634-a50e-45e0-a08c-3e09793a2ea4
     type: meta/EntityType@1
     attributes:
       name: Company
@@ -40,7 +40,7 @@ operations:
             type: list<string>
 - create:
     kind: node
-    id: 3d8c2a18-209b-4757-8f2a-6079c54010d4
+    id: 02caa1cd-0d3d-4294-8be3-0490518b7cd1
     type: meta/EntityType@1
     attributes:
       name: User
@@ -57,7 +57,7 @@ operations:
             type: enum<active|suspended>
 - create:
     kind: node
-    id: 1364e63d-373d-411d-9cec-0beb297381dd
+    id: fc36d5c2-0e97-480a-ba3d-cbb96db0ac1e
     type: meta/EntityType@1
     attributes:
       name: Service
@@ -74,7 +74,7 @@ operations:
             type: enum<active|suspended>
 - create:
     kind: node
-    id: b7cefb22-0c27-4a5b-a4d8-e3958a1970b8
+    id: 6c1e64a0-f76c-426e-af01-3c64f48b30a9
     type: meta/EntityType@1
     attributes:
       name: Agent
@@ -97,7 +97,7 @@ operations:
             type: selector
 - create:
     kind: node
-    id: 7e0e5130-f092-4b7c-b787-2c798b3df4e6
+    id: 956f98f4-1717-4fec-81fb-e1b853e6ec82
     type: meta/EntityType@1
     attributes:
       name: Peer
@@ -116,7 +116,7 @@ operations:
             type: enum<out-of-band|tofu|attested>
 - create:
     kind: node
-    id: d2ec5104-8370-4fd3-beac-05e4ee0223f1
+    id: 72edcd02-d2d4-46ed-976d-88fb577a1d7d
     type: meta/EntityType@1
     attributes:
       name: Grant
@@ -138,7 +138,7 @@ operations:
             type: timestamp
 - create:
     kind: node
-    id: eeedbe3e-2654-4cc0-b82e-0a034d186caa
+    id: 546ea5ed-e41a-480e-a836-19ccfbc0dc2c
     type: meta/EdgeType@1
     attributes:
       name: employs
@@ -149,7 +149,7 @@ operations:
         cardinality: one-to-many
 - create:
     kind: node
-    id: 4feaf16b-846f-46e5-b167-432614632632
+    id: 31ee402b-7923-4bca-b186-4bae563c3a98
     type: meta/EdgeType@1
     attributes:
       name: knows
@@ -163,7 +163,7 @@ operations:
             type: date
 - create:
     kind: node
-    id: 5c8f1b71-f3a0-4be5-a46b-d1fe41fb55d9
+    id: 31df8a84-53d9-4e76-bcb7-929650e111e3
     type: meta/Struct@1
     attributes:
       name: KeyRecord
@@ -187,7 +187,7 @@ operations:
           required: true
 - create:
     kind: node
-    id: 594cc250-d74d-45c1-b151-b7ca05bb3d07
+    id: 778160ea-8746-4cc6-b3c9-8d449501367b
     type: meta/EntityType@1
     attributes:
       name: Note
@@ -204,7 +204,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 7e67ec17-d04d-4f9c-893c-677f7e7df04d
+    id: 07d59975-f20f-4c1a-93c3-f863412b07ea
     type: meta/EntityType@1
     attributes:
       name: Preference
@@ -222,7 +222,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 51060fdd-8383-4345-b91c-e1b98278caac
+    id: 706bc187-6700-4fbc-b834-43730ffe273a
     type: meta/EntityType@1
     attributes:
       name: Routine
@@ -241,7 +241,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 20092f4b-188f-41c5-93b8-541880363092
+    id: 21971d46-a30f-4bf4-baf1-c550435c5e3b
     type: meta/EntityType@1
     attributes:
       name: Commitment
@@ -259,7 +259,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 83d9b924-4e66-4fec-8e98-949f96f3e61d
+    id: 7af61950-6e02-45c6-91e6-ec5c3c1b2e9f
     type: meta/EntityType@1
     attributes:
       name: Interest
@@ -275,7 +275,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 4cf66424-2b0c-4383-b653-23699ffec380
+    id: 6e103ce9-d70f-459f-8ee8-a3646a36bd0b
     type: meta/EdgeType@1
     attributes:
       name: about
@@ -295,7 +295,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 955f3d3f-161d-467e-9244-13c7b6a34eb2
+    id: 875f4eba-0b8c-4c77-88bd-b07a3b1a111b
     type: meta/EdgeType@1
     attributes:
       name: owed_to
@@ -308,7 +308,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 81dedc38-da23-4859-bbc6-c3cf9eb3bab9
+    id: 99bfcfc6-1758-4869-9359-963980acd48a
     type: meta/EdgeType@1
     attributes:
       name: supersedes
@@ -321,7 +321,7 @@ operations:
       - core
 - create:
     kind: node
-    id: ae1db0f8-9150-4269-85f1-2f562d7f4cc0
+    id: ee3ca09e-0594-4158-b164-67b35f439cc6
     type: meta/EdgeType@1
     attributes:
       name: relates_to
@@ -342,7 +342,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 31b21722-b8bd-462e-8b35-e201eeb26932
+    id: 1b6ddc8a-3f50-4648-9b68-888e854de452
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity
@@ -350,7 +350,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 03b6d05e-9e85-4671-a0ae-545d33f1d21f
+    id: 801b65ee-e5e4-4c23-83a9-9d56a5ae5e31
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity/private
@@ -359,7 +359,7 @@ operations:
       - sensitivity
 - create:
     kind: node
-    id: adec0ecf-65bb-4ca0-bb6b-23a9b63ed386
+    id: 26c81683-0056-4216-86b6-650f45a51556
     type: meta/TaxonomyTerm@1
     attributes:
       name: life
@@ -367,7 +367,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 570e5177-afee-48a2-bc2d-90987b74ab9c
+    id: cf628740-b067-41f9-a037-79a6906a6f5d
     type: meta/TaxonomyTerm@1
     attributes:
       name: life/family
@@ -376,7 +376,7 @@ operations:
       - life
 - create:
     kind: node
-    id: 42474f5f-2676-4156-8fd5-6ea8abeda34b
+    id: cfb0049a-dcd9-4c09-bc58-8f84f7343c01
     type: meta/TaxonomyTerm@1
     attributes:
       name: life/health
@@ -386,7 +386,7 @@ operations:
       - sensitivity/private
 - create:
     kind: node
-    id: 08831c52-d351-4089-8cc0-8320ac193fab
+    id: ae78bd82-6177-497a-8274-873c575959cc
     type: meta/TaxonomyTerm@1
     attributes:
       name: life/finances
@@ -396,7 +396,7 @@ operations:
       - sensitivity/private
 - create:
     kind: node
-    id: 8fdebd8f-7ef1-476a-a625-baa43f5eedde
+    id: 16bce79c-1805-4dab-9508-95a1b9fa58e6
     type: meta/TaxonomyTerm@1
     attributes:
       name: work
@@ -404,7 +404,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: a9514f69-335d-4bfc-9517-0252f87f7584
+    id: 73ac3d4d-a818-493a-bac2-9fc3834e803a
     type: meta/TaxonomyTerm@1
     attributes:
       name: workspace
@@ -412,7 +412,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: fc217215-3931-42c8-a81e-1881e602faba
+    id: 6b1184a6-fe16-468e-9869-3406f9d8785d
     type: meta/TaxonomyTerm@1
     attributes:
       name: workspace/scratch
@@ -421,7 +421,7 @@ operations:
       - workspace
 - create:
     kind: node
-    id: a942cff3-d322-431e-b755-fb383040faf2
+    id: b547487f-225d-46bf-aa49-055a2d46d8dc
     type: meta/TaxonomyTerm@1
     attributes:
       name: workspace/curated
@@ -430,7 +430,7 @@ operations:
       - workspace
 - create:
     kind: node
-    id: cc893322-54c8-459c-a10f-e4784e20d4f2
+    id: 88c1afe4-2120-4d00-b68c-83a914300232
     type: meta/Policy@1
     attributes:
       name: memory-local
@@ -494,15 +494,15 @@ operations:
               attester_class: indexer
 - create:
     kind: node
-    id: 80c1bb70-1ad5-4334-a796-74930b472ee1
+    id: 93d75641-c3b2-4090-b447-ebc2d92a5c70
     type: core/User@1
     attributes:
       display_name: conner
       keys:
-      - key_id: sha256:d704bde7aff981c918e3dc5c73180208894b06879008d977047f159346ed4e0b
+      - key_id: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
         algorithm: ed25519
-        public: aaaae69fba39d46311e2290bdf18df5c36328c321a825b235b177d7475bbf929
+        public: 6a5443ede0dba670b5241291e46eca3e9ef0365275394afea611eff01d08e1d8
         status: active
       status: active
-hash: sha256:fb87f9fc7620ee71461d5118622b239582d14cb1b1e5f385924fae9ec2e4cfbe
-signature: sig:ed25519:94d5d7913defff4ec51cfb3172c8994bc4847a58060112bfbbe0b8e53218638ab55fd543ae54cabd65eb358aa79f4ce889d1a153d97b9318837776b404aaaa02
+hash: sha256:a9569649c99b1da93434eda3f24648cd8c1d2fcad282f670aba65e1382fa6d9b
+signature: sig:ed25519:a694e1f7572f16d72ce5e0d3241f0163e672be697a0f483ae255e07810d33e93ef233625c070dad7c6334cd63a21ae7e580bc4729d454cf7cc4001244025f40f
