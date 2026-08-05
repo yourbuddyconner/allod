@@ -129,6 +129,7 @@ fn verify_governance_failure_has_real_reason() {
 /// substrate rewire (Task 5). Run green first, stay green after.
 #[test]
 fn verify_report_is_stable_across_substrate_rewire() {
+    allod_graph::hermetic_keys_for_tests();
     use allod_graph::flows::LevelResult;
     use allod_core::store::Graph as CoreGraph;
     use allod_graph::flows;

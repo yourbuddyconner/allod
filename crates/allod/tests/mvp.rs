@@ -12,9 +12,14 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
+fn test_keys_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("allod-mvp-keys-{}", std::process::id()))
+}
+
 fn run(args: &[&str]) -> (bool, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_allod"))
         .args(args)
+        .env("ALLOD_KEYS_DIR", test_keys_dir())
         .current_dir(repo_root())
         .output()
         .expect("binary runs");
@@ -168,4 +173,5 @@ fn appendix_a_acceptance() {
     );
 
     let _ = fs::remove_dir_all(&base);
+    let _ = fs::remove_dir_all(&test_keys_dir());
 }

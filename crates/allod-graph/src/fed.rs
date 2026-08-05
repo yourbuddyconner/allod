@@ -40,7 +40,7 @@ pub fn peer_add(
     root_key_hex: &str,
     by: &str,
 ) -> Result<(), AllodError> {
-    let kp = graph.load_key(by)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let mut attrs = Mapping::new();
     attrs.insert(s("graph_id"), s(graph_id));
     attrs.insert(
@@ -57,7 +57,7 @@ pub fn peer_add(
     op.insert(s("create"), Value::Mapping(node));
     let (cs, hash) = build_changeset(
         graph,
-        &kp,
+        &signer,
         &format!("Register peer {name} ({})", short(graph_id)),
         vec![Value::Mapping(op)],
     )?;
@@ -68,7 +68,7 @@ pub fn peer_add(
 /// Issue a grant (§9.4): a governed graph object authorizing
 /// disclosure of a region to an audience. Returns the grant node id.
 pub fn grant(graph: &Graph, audience: &str, region: &str, by: &str) -> Result<String, AllodError> {
-    let kp = graph.load_key(by)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let grant_id = uuid4();
     let mut scope = Mapping::new();
     scope.insert(s("region"), s(region));
@@ -88,7 +88,7 @@ pub fn grant(graph: &Graph, audience: &str, region: &str, by: &str) -> Result<St
     op.insert(s("create"), Value::Mapping(node));
     let (cs, hash) = build_changeset(
         graph,
-        &kp,
+        &signer,
         &format!("Grant region {region} to {}", short(audience)),
         vec![Value::Mapping(op)],
     )?;
@@ -99,7 +99,7 @@ pub fn grant(graph: &Graph, audience: &str, region: &str, by: &str) -> Result<St
 /// Revoke a grant: a governed deletion. Bytes already transferred
 /// stay transferred; future bundle production is refused (§9.4).
 pub fn revoke(graph: &Graph, grant_id: &str, by: &str) -> Result<(), AllodError> {
-    let kp = graph.load_key(by)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let state = graph.fold()?;
     let obj = state
         .get_live("node", grant_id)
@@ -112,7 +112,7 @@ pub fn revoke(graph: &Graph, grant_id: &str, by: &str) -> Result<(), AllodError>
     op.insert(s("delete"), Value::Mapping(del));
     let (cs, hash) = build_changeset(
         graph,
-        &kp,
+        &signer,
         &format!("Revoke grant {}", short(grant_id)),
         vec![Value::Mapping(op)],
     )?;
@@ -127,7 +127,7 @@ pub fn revoke(graph: &Graph, grant_id: &str, by: &str) -> Result<(), AllodError>
 /// is the WASM-safe surface. The CLI shim writes the result to disk
 /// and prints the confirmation line.
 pub fn make_bundle(graph: &Graph, grant_id: &str, by: &str) -> Result<Value, AllodError> {
-    let kp = graph.load_key(by)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let reg = graph.registry()?;
     let state = graph.fold()?;
 
@@ -250,7 +250,7 @@ pub fn make_bundle(graph: &Graph, grant_id: &str, by: &str) -> Result<Value, All
     let mut checkpoint = Value::Mapping(checkpoint);
     let payload = signed_payload(&checkpoint, "checkpoint")?;
     if let Some(map) = checkpoint.as_mapping_mut() {
-        map.insert(s("signature"), s(&kp.sign(&payload)));
+        map.insert(s("signature"), s(&signer.sign(&payload).map_err(AllodError::from)?));
     }
 
     let mut doc = Mapping::new();
@@ -459,10 +459,10 @@ pub fn import(
     }
     let mut op = Mapping::new();
     op.insert(s("create"), payload);
-    let kp = graph.load_key(by)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let (cs, hash) = build_changeset(
         graph,
-        &kp,
+        &signer,
         &format!("Import {} from peer {}", short(import_id), short(source_graph)),
         vec![Value::Mapping(op)],
     )?;

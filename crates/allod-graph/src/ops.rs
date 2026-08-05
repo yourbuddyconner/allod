@@ -8,6 +8,9 @@ use serde_yaml::{Mapping, Value};
 
 use crate::AllodError;
 
+#[allow(unused_imports)]
+use allod_core::keys::Signer;
+
 fn s(v: &str) -> Value {
     Value::String(v.to_string())
 }
@@ -81,7 +84,7 @@ pub fn short(hash: &str) -> String {
 
 pub fn build_changeset(
     graph: &Graph,
-    author: &Keypair,
+    signer: &allod_core::keys::Signer,
     intent: &str,
     ops: Vec<Value>,
 ) -> Result<(Value, String), AllodError> {
@@ -96,8 +99,8 @@ pub fn build_changeset(
     cs.insert(s("kind"), s("changeset"));
     cs.insert(s("parents"), Value::Sequence(parents));
     let mut author_map = Mapping::new();
-    author_map.insert(s("principal"), s(&format!("principal:{}", author.name)));
-    author_map.insert(s("key"), s(&author.key_id()));
+    author_map.insert(s("principal"), s(&format!("principal:{}", signer.name())));
+    author_map.insert(s("key"), s(&signer.key_id().map_err(AllodError::from)?));
     cs.insert(s("author"), Value::Mapping(author_map));
     cs.insert(s("timestamp"), s(&now_iso()));
     cs.insert(s("intent"), s(intent));
@@ -107,7 +110,7 @@ pub fn build_changeset(
     let (hash, _, _, _) = changeset_hash(&cs)?;
     if let Some(map) = cs.as_mapping_mut() {
         map.insert(s("hash"), s(&hash));
-        map.insert(s("signature"), s(&author.sign(&hash)));
+        map.insert(s("signature"), s(&signer.sign(&hash).map_err(AllodError::from)?));
     }
     Ok((cs, hash))
 }
@@ -334,7 +337,8 @@ mod tests {
 
         // build_changeset pins schema_context = expected_sctx.
         let kp = Keypair::generate("builder");
-        let (cs_built, _) = build_changeset(&graph, &kp, "test intent", vec![dummy_op.clone()])
+        let signer = allod_core::keys::Signer::local(kp);
+        let (cs_built, _) = build_changeset(&graph, &signer, "test intent", vec![dummy_op.clone()])
             .expect("build_changeset must succeed");
 
         let sctx = get_str(&cs_built, "schema_context")
@@ -350,7 +354,9 @@ mod tests {
         graph.append_changeset(&cs1, &hash1, None).unwrap();
 
         let dummy_op2 = create_meta_node_op("meta-type-dummy2", "Dummy2", "myapp");
-        let (cs_built2, _) = build_changeset(&graph, &kp, "test intent 2", vec![dummy_op2])
+        let kp2 = Keypair::generate("builder2");
+        let signer2 = allod_core::keys::Signer::local(kp2);
+        let (cs_built2, _) = build_changeset(&graph, &signer2, "test intent 2", vec![dummy_op2])
             .expect("build_changeset must succeed after schema changeset");
 
         let sctx2 = get_str(&cs_built2, "schema_context")
@@ -375,8 +381,8 @@ pub fn commit(
     ops: Vec<Value>,
     envelopes: Vec<Value>,
 ) -> Result<Admission, AllodError> {
-    let kp = graph.load_key(author_name)?;
-    let (cs, hash) = build_changeset(graph, &kp, intent, ops)?;
+    let signer = graph.signer(author_name).map_err(AllodError::from)?;
+    let (cs, hash) = build_changeset(graph, &signer, intent, ops)?;
     admit_or_hold(graph, author_name, &cs, &hash, envelopes)
 }
 
@@ -390,7 +396,7 @@ pub fn signed_envelope(
     author_name: &str,
     cs_hash: &str,
 ) -> Result<Value, AllodError> {
-    let kp = graph.load_key(author_name)?;
+    let signer = graph.signer(author_name).map_err(AllodError::from)?;
 
     let mut statement_map = serde_yaml::Mapping::new();
     statement_map.insert(s("changeset_hash"), s(cs_hash));
@@ -405,7 +411,7 @@ pub fn signed_envelope(
     let mut envelope = Value::Mapping(envelope_map);
     let payload = policy::envelope_payload(&envelope).map_err(AllodError::from)?;
     if let Some(map) = envelope.as_mapping_mut() {
-        map.insert(s("signature"), s(&kp.sign(&payload)));
+        map.insert(s("signature"), s(&signer.sign(&payload).map_err(AllodError::from)?));
     }
 
     Ok(envelope)
@@ -421,8 +427,8 @@ pub fn commit_with_envelope(
     intent: &str,
     ops: Vec<Value>,
 ) -> Result<Admission, AllodError> {
-    let kp = graph.load_key(author_name)?;
-    let (cs, hash) = build_changeset(graph, &kp, intent, ops)?;
+    let signer = graph.signer(author_name).map_err(AllodError::from)?;
+    let (cs, hash) = build_changeset(graph, &signer, intent, ops)?;
     let envelope = signed_envelope(graph, author_name, &hash)?;
     admit_or_hold(graph, author_name, &cs, &hash, vec![envelope])
 }

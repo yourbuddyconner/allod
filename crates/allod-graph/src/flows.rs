@@ -100,6 +100,8 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
     use allod_core::sign::Keypair;
 
     let kp = Keypair::generate(owner);
+    // Genesis: no graph_id yet, so store in-repo (.allod/keys/) for compatibility.
+    // After write_meta establishes the graph_id, signer() falls back to load_key here.
     graph.save_key(&kp).map_err(AllodError::from)?;
 
     // Bind owner into every policy role before compiling schema ops.
@@ -132,7 +134,8 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
         "Genesis: root authority {owner}, core + {} schema, {}-local policy",
         profile.name, profile.name
     );
-    let (cs, hash) = crate::ops::build_changeset(graph, &kp, &intent, genesis_ops)?;
+    let genesis_signer = allod_core::keys::Signer::local(kp);
+    let (cs, hash) = crate::ops::build_changeset(graph, &genesis_signer, &intent, genesis_ops)?;
 
     // Self-admit genesis (§4.6): append directly without policy check.
     // The genesis changeset defines schema (meta-node ops) AND uses those types in the
@@ -265,7 +268,7 @@ pub fn principal_add(graph: &Graph, name: &str, kind: &str, by: &str) -> Result<
     };
 
     let kp = Keypair::generate(name);
-    graph.save_key(&kp).map_err(AllodError::from)?;
+    graph.create_key(&kp).map_err(AllodError::from)?;
 
     let node_id = ops::uuid4();
     let mut attrs = serde_yaml::Mapping::new();
@@ -288,10 +291,10 @@ pub fn principal_add(graph: &Graph, name: &str, kind: &str, by: &str) -> Result<
 
     let node_op = ops::create_node_op(&node_id, type_ref, Value::Mapping(attrs), None);
 
-    let owner_kp = graph.load_key(by).map_err(AllodError::from)?;
+    let owner_signer = graph.signer(by).map_err(AllodError::from)?;
     let (cs, hash) = ops::build_changeset(
         graph,
-        &owner_kp,
+        &owner_signer,
         &format!("Register {kind} {name}, by {by}"),
         vec![node_op],
     )?;
@@ -310,7 +313,7 @@ fn provenance_val(agent: &str) -> Value {
 
 /// Write a scratch note for `agent` with `content`. Admits immediately under scratch-is-free.
 pub fn note(graph: &Graph, agent: &str, content: &str) -> Result<NoteResult, AllodError> {
-    let kp = graph.load_key(agent).map_err(AllodError::from)?;
+    let signer = graph.signer(agent).map_err(AllodError::from)?;
     let note_id = crate::ops::uuid4();
 
     let mut attrs = serde_yaml::Mapping::new();
@@ -329,7 +332,7 @@ pub fn note(graph: &Graph, agent: &str, content: &str) -> Result<NoteResult, All
         "model-assisted",
     );
 
-    let (cs, hash) = crate::ops::build_changeset(graph, &kp, "Scratch note", vec![node_op, cls_op])?;
+    let (cs, hash) = crate::ops::build_changeset(graph, &signer, "Scratch note", vec![node_op, cls_op])?;
     let admission = crate::ops::admit_or_hold(graph, agent, &cs, &hash, vec![])?;
 
     Ok(NoteResult { note_id, admission })
@@ -346,7 +349,7 @@ pub fn propose_preference(
 ) -> Result<ProposalResult, AllodError> {
     use crate::ops;
 
-    let kp = graph.load_key(agent).map_err(AllodError::from)?;
+    let signer = graph.signer(agent).map_err(AllodError::from)?;
     let pref_id = ops::uuid4();
 
     let mut attrs = serde_yaml::Mapping::new();
@@ -381,7 +384,7 @@ pub fn propose_preference(
 
     let (cs, hash) = ops::build_changeset(
         graph,
-        &kp,
+        &signer,
         &format!("Propose preference: {statement}"),
         op_list,
     )?;
@@ -398,7 +401,7 @@ pub fn propose_preference(
 pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<DecisionOutcome, AllodError> {
     use allod_core::{get_str, policy};
 
-    let kp = graph.load_key(by).map_err(AllodError::from)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let cs = graph.read_proposal(hash)
         .map_err(|_| AllodError::ProposalNotFound(hash.to_string()))?;
     let evidence = graph.read_proposal_evidence(hash).map_err(AllodError::from)?;
@@ -449,7 +452,7 @@ pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<Deci
     let payload = policy::decision_payload(&record).map_err(AllodError::from)?;
     let mut decider = serde_yaml::Mapping::new();
     decider.insert(Value::String("principal".into()), Value::String(format!("principal:{by}")));
-    decider.insert(Value::String("signature".into()), Value::String(kp.sign(&payload)));
+    decider.insert(Value::String("signature".into()), Value::String(signer.sign(&payload).map_err(AllodError::from)?));
     if let Some(map) = record.as_mapping_mut() {
         map.insert(Value::String("deciders".into()), Value::Sequence(vec![Value::Mapping(decider)]));
     }
@@ -514,7 +517,7 @@ pub fn classify(
 ) -> Result<Admission, AllodError> {
     use crate::ops;
 
-    let kp = graph.load_key(by).map_err(AllodError::from)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let cls_op = ops::classification_op(
         &format!("node:{node_id}"),
         term,
@@ -523,7 +526,7 @@ pub fn classify(
     );
     let (cs, hash) = ops::build_changeset(
         graph,
-        &kp,
+        &signer,
         &format!("Classify node:{node_id} as {term}"),
         vec![cls_op],
     )?;
@@ -610,7 +613,7 @@ pub struct VerifyReport {
 pub fn checkpoint(graph: &Graph, by: &str) -> Result<CheckpointResult, AllodError> {
     use allod_core::get_str;
 
-    let kp = graph.load_key(by).map_err(AllodError::from)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let head = graph.head().map_err(AllodError::from)?
         .ok_or_else(|| AllodError::Other("empty graph".into()))?;
     let state = graph.fold().map_err(AllodError::from)?;
@@ -634,7 +637,7 @@ pub fn checkpoint(graph: &Graph, by: &str) -> Result<CheckpointResult, AllodErro
         }).map_err(AllodError::from)?,
     );
     if let Some(map) = cp.as_mapping_mut() {
-        map.insert(Value::String("signature".into()), Value::String(kp.sign(&payload)));
+        map.insert(Value::String("signature".into()), Value::String(signer.sign(&payload).map_err(AllodError::from)?));
     }
 
     graph.write_checkpoint(&head, &cp).map_err(AllodError::from)?;
@@ -656,7 +659,7 @@ pub fn trust(graph: &Graph, measurement: &str) -> Result<(), AllodError> {
 pub fn envelope(graph: &Graph, cs_hash: &str, by: &str, tool: &str) -> Result<EnvelopeOutcome, AllodError> {
     use allod_core::{get_str, policy};
 
-    let kp = graph.load_key(by).map_err(AllodError::from)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
     let measurement = allod_core::hash::plain_sha256(tool.as_bytes());
 
     let mut statement = serde_yaml::Mapping::new();
@@ -674,7 +677,7 @@ pub fn envelope(graph: &Graph, cs_hash: &str, by: &str, tool: &str) -> Result<En
 
     let payload = policy::envelope_payload(&envelope).map_err(AllodError::from)?;
     if let Some(map) = envelope.as_mapping_mut() {
-        map.insert(Value::String("signature".into()), Value::String(kp.sign(&payload)));
+        map.insert(Value::String("signature".into()), Value::String(signer.sign(&payload).map_err(AllodError::from)?));
     }
 
     // Verify signature against registered key

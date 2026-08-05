@@ -332,10 +332,10 @@ pub fn import(
         });
     }
 
-    let kp = graph.load_key(as_principal)?;
+    let signer = graph.signer(as_principal).map_err(crate::AllodError::from)?;
     let n = updates.len();
     let (cs, hash) =
-        build_changeset(graph, &kp, &format!("Bundle re-ingest: {n} edited file(s)"), updates)?;
+        build_changeset(graph, &signer, &format!("Bundle re-ingest: {n} edited file(s)"), updates)?;
     let admission = admit_or_hold(graph, as_principal, &cs, &hash, vec![])?;
 
     Ok(ImportReport {

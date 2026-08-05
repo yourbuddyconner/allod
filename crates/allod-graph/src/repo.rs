@@ -337,7 +337,7 @@ pub fn import_commit(
     commit: &str,
     indexer: &str,
 ) -> Result<(String, bool), AllodError> {
-    let kp = graph.load_key(indexer)?;
+    let signer = graph.signer(indexer).map_err(AllodError::from)?;
     let commit = git(repo, &["rev-parse", commit])?.trim().to_string();
     let state = graph.fold()?;
     let idx = index_state(&state);
@@ -600,7 +600,7 @@ pub fn import_commit(
     let n = ops.len();
     let (cs, hash) = build_changeset(
         graph,
-        &kp,
+        &signer,
         &format!("Derived from commit {} ({n} ops, {SCAN_TOOL})", &commit[..12.min(commit.len())]),
         ops,
     )?;

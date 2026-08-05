@@ -395,7 +395,7 @@ fn cmd_demo_federation(dir_a: &Path, dir_b: &Path, schema: &Path) -> Result<(), 
     println!("\n[3/8] B learns A's identity out of band: a peer record (§9.3)");
     let graph_a = Graph::open(dir_a)?;
     let a_id = get_str(&graph_a.meta()?, "graph_id").unwrap_or("").to_string();
-    let a_key = graph_a.load_key("conner")?.public_hex();
+    let a_key = graph_a.signer("conner")?.public_hex()?;
     fed::peer_add(dir_b, "conner-memory", &a_id, &a_key, "dana")?;
 
     println!("\n[4/8] A issues a grant: region work, audience = B's graph ID (§9.4)");

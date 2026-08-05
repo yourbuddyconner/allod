@@ -23,6 +23,13 @@ use std::path::{Path, PathBuf};
 pub struct Graph {
     pub dir: PathBuf,
     store: Box<dyn DocStore>,
+    key_backends: Vec<Box<dyn crate::keys::KeyBackend>>,
+}
+
+fn default_backends(dir: &Path) -> Vec<Box<dyn crate::keys::KeyBackend>> {
+    use crate::keys::FileBackend;
+    let legacy_keys = dir.join(".allod/keys");
+    vec![Box::new(FileBackend::platform_default(vec![legacy_keys]))]
 }
 
 fn short(hash: &str) -> &str {
@@ -148,30 +155,50 @@ impl Graph {
 
     pub fn create(dir: &Path) -> Result<Graph, String> {
         let store = FsStore::create(dir)?;
-        Ok(Graph { dir: dir.to_path_buf(), store: Box::new(store) })
+        Ok(Graph { dir: dir.to_path_buf(), store: Box::new(store), key_backends: default_backends(dir) })
     }
 
     pub fn open(dir: &Path) -> Result<Graph, String> {
         let store = FsStore::open(dir)?;
-        let graph = Graph { dir: dir.to_path_buf(), store: Box::new(store) };
+        let mut graph = Graph { dir: dir.to_path_buf(), store: Box::new(store), key_backends: default_backends(dir) };
         if graph.store.read("graph.yaml")?.is_none() {
             return Err(format!(
                 "{} is not an allod graph (no .allod/graph.yaml)",
                 dir.display()
             ));
         }
+        // Check for key_backends override in graph.yaml
+        if let Ok(meta) = graph.meta() {
+            if let Some(backends_seq) = meta.get("key_backends").and_then(Value::as_sequence) {
+                let mut chain: Vec<Box<dyn crate::keys::KeyBackend>> = Vec::new();
+                for item in backends_seq {
+                    match item.as_str() {
+                        Some("file") => {
+                            use crate::keys::FileBackend;
+                            let legacy_keys = dir.join(".allod/keys");
+                            chain.push(Box::new(FileBackend::platform_default(vec![legacy_keys])));
+                        }
+                        Some(other) => {
+                            return Err(format!("unknown key backend {other:?} (not built on this platform)"));
+                        }
+                        None => return Err("key_backends entries must be strings".into()),
+                    }
+                }
+                graph.key_backends = chain;
+            }
+        }
         Ok(graph)
     }
 
     pub fn with_store(store: Box<dyn DocStore>) -> Graph {
-        Graph { dir: PathBuf::new(), store }
+        Graph { dir: PathBuf::new(), store, key_backends: vec![] }
     }
 
     pub fn open_with_store(store: Box<dyn DocStore>) -> Result<Graph, String> {
         if store.read("graph.yaml")?.is_none() {
             return Err("not an allod graph (no .allod/graph.yaml)".into());
         }
-        Ok(Graph { dir: PathBuf::new(), store })
+        Ok(Graph { dir: PathBuf::new(), store, key_backends: vec![] })
     }
 
     // ---------------- meta ----------------
@@ -294,6 +321,39 @@ impl Graph {
 
     pub fn load_key(&self, name: &str) -> Result<Keypair, String> {
         Keypair::from_yaml(&self.read_yaml(&format!("keys/{name}.yaml"))?)
+    }
+
+    pub fn set_key_backends(&mut self, backends: Vec<Box<dyn crate::keys::KeyBackend>>) {
+        self.key_backends = backends;
+    }
+
+    pub fn signer(&self, name: &str) -> Result<crate::keys::Signer<'_>, String> {
+        let graph_id = self.meta()
+            .ok()
+            .and_then(|m| m.get("graph_id").and_then(Value::as_str).map(String::from))
+            .unwrap_or_default();
+        for backend in &self.key_backends {
+            if let Ok(handle) = backend.resolve(&graph_id, name) {
+                return Ok(crate::keys::Signer::from_backend(backend.as_ref(), handle));
+            }
+        }
+        // Fallback: try load_key (in-store .allod/keys/ doc)
+        match self.load_key(name) {
+            Ok(kp) => Ok(crate::keys::Signer::local(kp)),
+            Err(_) => Err(format!("no key for principal {name:?} (tried {} backends + in-store fallback)", self.key_backends.len())),
+        }
+    }
+
+    pub fn create_key(&self, kp: &Keypair) -> Result<(), String> {
+        let graph_id = self.meta()
+            .ok()
+            .and_then(|m| m.get("graph_id").and_then(Value::as_str).map(String::from))
+            .unwrap_or_default();
+        if let Some(backend) = self.key_backends.first() {
+            return backend.store_keypair(&graph_id, kp);
+        }
+        // Empty chain (in-memory graphs): fall back to in-store doc
+        self.save_key(kp)
     }
 
     // ---------------- log ----------------
@@ -519,6 +579,32 @@ mod tests {
     use crate::docstore::MemStore;
     use crate::model::changeset_hash;
     use crate::schemaops::compile_schema_ops;
+
+    #[test]
+    fn signer_resolves_xdg_then_legacy_then_store() {
+        // Graph in a temp dir; ALLOD_KEYS_DIR pointed at another temp dir.
+        let root = std::env::temp_dir().join(format!("allod-store-signer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::env::set_var("ALLOD_KEYS_DIR", root.join("xdg"));
+        let gdir = root.join("g");
+        let graph = Graph::create(&gdir).unwrap();
+        graph.write_meta("sha256:cafe", &[]).unwrap();
+        // (a) create_key goes to the XDG path, keyed by graph id.
+        let kp = Keypair::generate("alice");
+        let public = kp.public_hex();
+        graph.create_key(&kp).unwrap();
+        assert!(root.join("xdg").join("cafe").join("alice.yaml").is_file());
+        let s = graph.signer("alice").unwrap();
+        assert_eq!(s.public_hex().unwrap(), public);
+        // (b) a legacy in-repo key still resolves (fallback read).
+        let legacy = Keypair::generate("legacy");
+        graph.save_key(&legacy).unwrap(); // store-level write to .allod/keys/
+        let s2 = graph.signer("legacy").unwrap();
+        assert_eq!(s2.public_hex().unwrap(), legacy.public_hex());
+        // (c) unknown principal errors.
+        assert!(graph.signer("nobody").is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     // ---- helpers for building unsigned test changesets ----
 

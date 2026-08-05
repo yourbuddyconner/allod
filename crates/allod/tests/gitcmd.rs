@@ -4,8 +4,15 @@
 use std::path::Path;
 use std::process::Command;
 
+fn test_keys_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("allod-gitcmd-keys-{}", std::process::id()))
+}
+
 fn allod(args: &[&str]) -> (bool, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_allod")).args(args).output().unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_allod"))
+        .args(args)
+        .env("ALLOD_KEYS_DIR", test_keys_dir())
+        .output().unwrap();
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&out.stdout),

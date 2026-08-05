@@ -53,6 +53,11 @@ pub trait KeyBackend {
     fn sign(&self, handle: &KeyHandle, payload: &str) -> Result<String, String>;
     /// Return the hex-encoded public key for the key identified by `handle`.
     fn public(&self, handle: &KeyHandle) -> Result<String, String>;
+    /// Persist `kp` into this backend under `graph_id`. Default implementation
+    /// returns an error; backends that support key creation override this.
+    fn store_keypair(&self, _graph_id: &str, _kp: &crate::sign::Keypair) -> Result<(), String> {
+        Err(format!("backend '{}' does not support key creation", self.id()))
+    }
 }
 
 // ─── graph_dir_component ──────────────────────────────────────────────────────
@@ -215,6 +220,10 @@ impl KeyBackend for FileBackend {
                 Err("file backend cannot use a keychain handle".to_string())
             }
         }
+    }
+
+    fn store_keypair(&self, graph_id: &str, kp: &crate::sign::Keypair) -> Result<(), String> {
+        self.store(graph_id, kp).map(|_| ())
     }
 }
 
