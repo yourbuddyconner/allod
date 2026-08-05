@@ -2041,6 +2041,137 @@ operations:
     id: 00000000-0000-4000-8000-000000000076
     type: meta/EntityType@1
     attributes:
+      name: Review
+      package: review
+      definition: |
+        attributes:
+          verdict:
+            type: enum<approve|approve-with-comments|request-changes>
+            required: true
+          body:
+            type: string
+          commit:
+            type: external-ref
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000077
+    type: meta/EntityType@1
+    attributes:
+      name: ReviewComment
+      package: review
+      definition: |
+        attributes:
+          body:
+            type: string
+            required: true
+          anchor:
+            type: external-ref
+          span:
+            type: string
+          status:
+            type: enum<open|resolved|wont-fix>
+          external_source:
+            type: string
+          external_id:
+            type: string
+          claimed_author:
+            type: string
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000078
+    type: meta/EdgeType@1
+    attributes:
+      name: reviews
+      package: review
+      definition: |
+        domain: Review
+        range: eng/ChangeRequest
+        cardinality: many-to-one
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-000000000079
+    type: meta/EdgeType@1
+    attributes:
+      name: part_of
+      package: review
+      definition: |
+        domain: ReviewComment
+        range: Review
+        cardinality: many-to-one
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007a
+    type: meta/EdgeType@1
+    attributes:
+      name: replies_to
+      package: review
+      definition: |
+        domain: ReviewComment
+        range: ReviewComment
+        cardinality: many-to-one
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007b
+    type: meta/EdgeType@1
+    attributes:
+      name: concerns
+      package: review
+      definition: |
+        domain: ReviewComment
+        range:
+        - code/SourceFile
+        - code/Function
+        cardinality: many-to-many
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007c
+    type: meta/ValidationRule@1
+    attributes:
+      name: external-comments-carry-their-id
+      package: review
+      definition: |
+        name: external-comments-carry-their-id
+        on:
+          type: ReviewComment
+          where:
+            attr: external_source
+            present: true
+        require:
+          attr: external_id
+          present: true
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 00000000-0000-4000-8000-00000000007d
+    type: meta/EntityType@1
+    attributes:
       name: SpecPart
       package: spec
       definition: |
@@ -2057,7 +2188,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000077
+    id: 00000000-0000-4000-8000-00000000007e
     type: meta/EntityType@1
     attributes:
       name: Section
@@ -2074,7 +2205,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000078
+    id: 00000000-0000-4000-8000-00000000007f
     type: meta/EntityType@1
     attributes:
       name: Requirement
@@ -2093,7 +2224,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000079
+    id: 00000000-0000-4000-8000-000000000080
     type: meta/EntityType@1
     attributes:
       name: DesignDecision
@@ -2111,7 +2242,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000007a
+    id: 00000000-0000-4000-8000-000000000081
     type: meta/EntityType@1
     attributes:
       name: Issue
@@ -2127,7 +2258,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000007b
+    id: 00000000-0000-4000-8000-000000000082
     type: meta/EntityType@1
     attributes:
       name: TestVector
@@ -2143,7 +2274,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000007c
+    id: 00000000-0000-4000-8000-000000000083
     type: meta/EdgeType@1
     attributes:
       name: in_part
@@ -2156,7 +2287,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000007d
+    id: 00000000-0000-4000-8000-000000000084
     type: meta/EdgeType@1
     attributes:
       name: states
@@ -2169,7 +2300,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000007e
+    id: 00000000-0000-4000-8000-000000000085
     type: meta/EdgeType@1
     attributes:
       name: depends_on
@@ -2182,7 +2313,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000007f
+    id: 00000000-0000-4000-8000-000000000086
     type: meta/EdgeType@1
     attributes:
       name: resolved_by
@@ -2195,7 +2326,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000080
+    id: 00000000-0000-4000-8000-000000000087
     type: meta/EdgeType@1
     attributes:
       name: affects
@@ -2210,7 +2341,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000081
+    id: 00000000-0000-4000-8000-000000000088
     type: meta/EdgeType@1
     attributes:
       name: supersedes
@@ -2223,7 +2354,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000082
+    id: 00000000-0000-4000-8000-000000000089
     type: meta/EdgeType@1
     attributes:
       name: verifies
@@ -2236,7 +2367,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000083
+    id: 00000000-0000-4000-8000-00000000008a
     type: meta/ValidationRule@1
     attributes:
       name: adopted-decisions-touch-the-spec
@@ -2257,7 +2388,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000084
+    id: 00000000-0000-4000-8000-00000000008b
     type: meta/EntityType@1
     attributes:
       name: Part
@@ -2275,7 +2406,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000085
+    id: 00000000-0000-4000-8000-00000000008c
     type: meta/EntityType@1
     attributes:
       name: Batch
@@ -2293,7 +2424,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000086
+    id: 00000000-0000-4000-8000-00000000008d
     type: meta/EntityType@1
     attributes:
       name: Facility
@@ -2312,7 +2443,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000087
+    id: 00000000-0000-4000-8000-00000000008e
     type: meta/EntityType@1
     attributes:
       name: Certification
@@ -2336,7 +2467,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000088
+    id: 00000000-0000-4000-8000-00000000008f
     type: meta/EntityType@1
     attributes:
       name: Shipment
@@ -2354,7 +2485,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000089
+    id: 00000000-0000-4000-8000-000000000090
     type: meta/EntityType@1
     attributes:
       name: Inspection
@@ -2372,7 +2503,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000008a
+    id: 00000000-0000-4000-8000-000000000091
     type: meta/EdgeType@1
     attributes:
       name: makes
@@ -2385,7 +2516,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000008b
+    id: 00000000-0000-4000-8000-000000000092
     type: meta/EdgeType@1
     attributes:
       name: of_part
@@ -2398,7 +2529,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000008c
+    id: 00000000-0000-4000-8000-000000000093
     type: meta/EdgeType@1
     attributes:
       name: produced_at
@@ -2411,7 +2542,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000008d
+    id: 00000000-0000-4000-8000-000000000094
     type: meta/EdgeType@1
     attributes:
       name: component_of
@@ -2427,7 +2558,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000008e
+    id: 00000000-0000-4000-8000-000000000095
     type: meta/EdgeType@1
     attributes:
       name: contains
@@ -2440,7 +2571,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000008f
+    id: 00000000-0000-4000-8000-000000000096
     type: meta/EdgeType@1
     attributes:
       name: from_facility
@@ -2453,7 +2584,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000090
+    id: 00000000-0000-4000-8000-000000000097
     type: meta/EdgeType@1
     attributes:
       name: to_facility
@@ -2466,7 +2597,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000091
+    id: 00000000-0000-4000-8000-000000000098
     type: meta/EdgeType@1
     attributes:
       name: certifies
@@ -2482,7 +2613,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000092
+    id: 00000000-0000-4000-8000-000000000099
     type: meta/EdgeType@1
     attributes:
       name: issued_by
@@ -2495,7 +2626,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000093
+    id: 00000000-0000-4000-8000-00000000009a
     type: meta/EdgeType@1
     attributes:
       name: inspected
@@ -2510,7 +2641,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000094
+    id: 00000000-0000-4000-8000-00000000009b
     type: meta/ValidationRule@1
     attributes:
       name: shipments-have-contents
@@ -2531,7 +2662,7 @@ operations:
       - core
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000095
+    id: 00000000-0000-4000-8000-00000000009c
     type: meta/TaxonomyTerm@1
     attributes:
       name: org/sales
@@ -2540,7 +2671,7 @@ operations:
       - org
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000096
+    id: 00000000-0000-4000-8000-00000000009d
     type: meta/TaxonomyTerm@1
     attributes:
       name: org/engineering
@@ -2549,7 +2680,7 @@ operations:
       - org
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000097
+    id: 00000000-0000-4000-8000-00000000009e
     type: meta/TaxonomyTerm@1
     attributes:
       name: org
@@ -2557,7 +2688,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000098
+    id: 00000000-0000-4000-8000-00000000009f
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity
@@ -2565,7 +2696,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-000000000099
+    id: 00000000-0000-4000-8000-0000000000a0
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity/public
@@ -2574,7 +2705,7 @@ operations:
       - sensitivity
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000009a
+    id: 00000000-0000-4000-8000-0000000000a1
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity/internal
@@ -2583,7 +2714,7 @@ operations:
       - sensitivity
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000009b
+    id: 00000000-0000-4000-8000-0000000000a2
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity/confidential
@@ -2592,7 +2723,7 @@ operations:
       - sensitivity/internal
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000009c
+    id: 00000000-0000-4000-8000-0000000000a3
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity/restricted
@@ -2601,7 +2732,7 @@ operations:
       - sensitivity/confidential
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000009d
+    id: 00000000-0000-4000-8000-0000000000a4
     type: meta/TaxonomyTerm@1
     attributes:
       name: compliance
@@ -2609,7 +2740,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000009e
+    id: 00000000-0000-4000-8000-0000000000a5
     type: meta/TaxonomyTerm@1
     attributes:
       name: compliance/pii
@@ -2619,7 +2750,7 @@ operations:
       - sensitivity/confidential
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-00000000009f
+    id: 00000000-0000-4000-8000-0000000000a6
     type: meta/TaxonomyTerm@1
     attributes:
       name: compliance/financial-record
@@ -2629,7 +2760,7 @@ operations:
       - sensitivity/confidential
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a0
+    id: 00000000-0000-4000-8000-0000000000a7
     type: meta/TaxonomyTerm@1
     attributes:
       name: compliance/contract-record
@@ -2639,7 +2770,7 @@ operations:
       - sensitivity/internal
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a1
+    id: 00000000-0000-4000-8000-0000000000a8
     type: meta/TaxonomyTerm@1
     attributes:
       name: compliance/export-controlled
@@ -2649,7 +2780,7 @@ operations:
       - sensitivity/restricted
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a2
+    id: 00000000-0000-4000-8000-0000000000a9
     type: meta/TaxonomyTerm@1
     attributes:
       name: lifecycle
@@ -2657,7 +2788,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a3
+    id: 00000000-0000-4000-8000-0000000000aa
     type: meta/TaxonomyTerm@1
     attributes:
       name: lifecycle/draft
@@ -2666,7 +2797,7 @@ operations:
       - lifecycle
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a4
+    id: 00000000-0000-4000-8000-0000000000ab
     type: meta/TaxonomyTerm@1
     attributes:
       name: lifecycle/active
@@ -2675,7 +2806,7 @@ operations:
       - lifecycle
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a5
+    id: 00000000-0000-4000-8000-0000000000ac
     type: meta/TaxonomyTerm@1
     attributes:
       name: lifecycle/superseded
@@ -2684,7 +2815,7 @@ operations:
       - lifecycle
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a6
+    id: 00000000-0000-4000-8000-0000000000ad
     type: meta/TaxonomyTerm@1
     attributes:
       name: lifecycle/archived
@@ -2693,7 +2824,7 @@ operations:
       - lifecycle
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a7
+    id: 00000000-0000-4000-8000-0000000000ae
     type: meta/TaxonomyTerm@1
     attributes:
       name: workspace
@@ -2701,7 +2832,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a8
+    id: 00000000-0000-4000-8000-0000000000af
     type: meta/TaxonomyTerm@1
     attributes:
       name: workspace/scratch
@@ -2710,7 +2841,7 @@ operations:
       - workspace
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000a9
+    id: 00000000-0000-4000-8000-0000000000b0
     type: meta/TaxonomyTerm@1
     attributes:
       name: change
@@ -2718,7 +2849,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000aa
+    id: 00000000-0000-4000-8000-0000000000b1
     type: meta/TaxonomyTerm@1
     attributes:
       name: change/standard
@@ -2727,7 +2858,7 @@ operations:
       - change
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000ab
+    id: 00000000-0000-4000-8000-0000000000b2
     type: meta/TaxonomyTerm@1
     attributes:
       name: change/high-risk
@@ -2736,7 +2867,7 @@ operations:
       - change
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000ac
+    id: 00000000-0000-4000-8000-0000000000b3
     type: meta/TaxonomyTerm@1
     attributes:
       name: change/emergency
@@ -2745,7 +2876,7 @@ operations:
       - change
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000ad
+    id: 00000000-0000-4000-8000-0000000000b4
     type: meta/TaxonomyTerm@1
     attributes:
       name: security
@@ -2753,7 +2884,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000ae
+    id: 00000000-0000-4000-8000-0000000000b5
     type: meta/TaxonomyTerm@1
     attributes:
       name: security/critical
@@ -2762,7 +2893,7 @@ operations:
       - security
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000af
+    id: 00000000-0000-4000-8000-0000000000b6
     type: meta/TaxonomyTerm@1
     attributes:
       name: reliability
@@ -2770,7 +2901,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b0
+    id: 00000000-0000-4000-8000-0000000000b7
     type: meta/TaxonomyTerm@1
     attributes:
       name: reliability/tier-0
@@ -2779,7 +2910,7 @@ operations:
       - reliability
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b1
+    id: 00000000-0000-4000-8000-0000000000b8
     type: meta/TaxonomyTerm@1
     attributes:
       name: reliability/tier-1
@@ -2788,7 +2919,7 @@ operations:
       - reliability
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b2
+    id: 00000000-0000-4000-8000-0000000000b9
     type: meta/TaxonomyTerm@1
     attributes:
       name: ops
@@ -2796,7 +2927,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b3
+    id: 00000000-0000-4000-8000-0000000000ba
     type: meta/TaxonomyTerm@1
     attributes:
       name: ops/incident
@@ -2805,7 +2936,7 @@ operations:
       - ops
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b4
+    id: 00000000-0000-4000-8000-0000000000bb
     type: meta/TaxonomyTerm@1
     attributes:
       name: ops/postmortem
@@ -2814,7 +2945,7 @@ operations:
       - ops
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b5
+    id: 00000000-0000-4000-8000-0000000000bc
     type: meta/TaxonomyTerm@1
     attributes:
       name: framework
@@ -2822,7 +2953,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b6
+    id: 00000000-0000-4000-8000-0000000000bd
     type: meta/TaxonomyTerm@1
     attributes:
       name: framework/soc2
@@ -2831,7 +2962,7 @@ operations:
       - framework
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b7
+    id: 00000000-0000-4000-8000-0000000000be
     type: meta/TaxonomyTerm@1
     attributes:
       name: framework/iso27001
@@ -2840,7 +2971,7 @@ operations:
       - framework
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b8
+    id: 00000000-0000-4000-8000-0000000000bf
     type: meta/TaxonomyTerm@1
     attributes:
       name: audit
@@ -2848,7 +2979,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000b9
+    id: 00000000-0000-4000-8000-0000000000c0
     type: meta/TaxonomyTerm@1
     attributes:
       name: audit/evidence
@@ -2857,7 +2988,7 @@ operations:
       - audit
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000ba
+    id: 00000000-0000-4000-8000-0000000000c1
     type: meta/TaxonomyTerm@1
     attributes:
       name: audit/finding
@@ -2866,7 +2997,7 @@ operations:
       - audit
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000bb
+    id: 00000000-0000-4000-8000-0000000000c2
     type: meta/TaxonomyTerm@1
     attributes:
       name: audit/exception
@@ -2875,7 +3006,7 @@ operations:
       - audit
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000bc
+    id: 00000000-0000-4000-8000-0000000000c3
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity
@@ -2883,7 +3014,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000bd
+    id: 00000000-0000-4000-8000-0000000000c4
     type: meta/TaxonomyTerm@1
     attributes:
       name: sensitivity/private
@@ -2892,7 +3023,7 @@ operations:
       - sensitivity
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000be
+    id: 00000000-0000-4000-8000-0000000000c5
     type: meta/TaxonomyTerm@1
     attributes:
       name: life
@@ -2900,7 +3031,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000bf
+    id: 00000000-0000-4000-8000-0000000000c6
     type: meta/TaxonomyTerm@1
     attributes:
       name: life/family
@@ -2909,7 +3040,7 @@ operations:
       - life
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c0
+    id: 00000000-0000-4000-8000-0000000000c7
     type: meta/TaxonomyTerm@1
     attributes:
       name: life/health
@@ -2919,7 +3050,7 @@ operations:
       - sensitivity/private
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c1
+    id: 00000000-0000-4000-8000-0000000000c8
     type: meta/TaxonomyTerm@1
     attributes:
       name: life/finances
@@ -2929,7 +3060,7 @@ operations:
       - sensitivity/private
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c2
+    id: 00000000-0000-4000-8000-0000000000c9
     type: meta/TaxonomyTerm@1
     attributes:
       name: work
@@ -2937,7 +3068,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c3
+    id: 00000000-0000-4000-8000-0000000000ca
     type: meta/TaxonomyTerm@1
     attributes:
       name: workspace
@@ -2945,7 +3076,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c4
+    id: 00000000-0000-4000-8000-0000000000cb
     type: meta/TaxonomyTerm@1
     attributes:
       name: workspace/scratch
@@ -2954,7 +3085,7 @@ operations:
       - workspace
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c5
+    id: 00000000-0000-4000-8000-0000000000cc
     type: meta/TaxonomyTerm@1
     attributes:
       name: workspace/curated
@@ -2963,7 +3094,7 @@ operations:
       - workspace
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c6
+    id: 00000000-0000-4000-8000-0000000000cd
     type: meta/TaxonomyTerm@1
     attributes:
       name: review
@@ -2971,7 +3102,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c7
+    id: 00000000-0000-4000-8000-0000000000ce
     type: meta/TaxonomyTerm@1
     attributes:
       name: review/unverified
@@ -2980,7 +3111,7 @@ operations:
       - review
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c8
+    id: 00000000-0000-4000-8000-0000000000cf
     type: meta/TaxonomyTerm@1
     attributes:
       name: review/verified
@@ -2989,7 +3120,7 @@ operations:
       - review
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000c9
+    id: 00000000-0000-4000-8000-0000000000d0
     type: meta/TaxonomyTerm@1
     attributes:
       name: review/published
@@ -2998,7 +3129,7 @@ operations:
       - review/verified
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000ca
+    id: 00000000-0000-4000-8000-0000000000d1
     type: meta/TaxonomyTerm@1
     attributes:
       name: spec
@@ -3006,7 +3137,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000cb
+    id: 00000000-0000-4000-8000-0000000000d2
     type: meta/TaxonomyTerm@1
     attributes:
       name: spec/normative
@@ -3015,7 +3146,7 @@ operations:
       - spec
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000cc
+    id: 00000000-0000-4000-8000-0000000000d3
     type: meta/TaxonomyTerm@1
     attributes:
       name: spec/informative
@@ -3024,7 +3155,7 @@ operations:
       - spec
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000cd
+    id: 00000000-0000-4000-8000-0000000000d4
     type: meta/TaxonomyTerm@1
     attributes:
       name: stability
@@ -3032,7 +3163,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000ce
+    id: 00000000-0000-4000-8000-0000000000d5
     type: meta/TaxonomyTerm@1
     attributes:
       name: stability/draft
@@ -3041,7 +3172,7 @@ operations:
       - stability
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000cf
+    id: 00000000-0000-4000-8000-0000000000d6
     type: meta/TaxonomyTerm@1
     attributes:
       name: stability/stable
@@ -3050,7 +3181,7 @@ operations:
       - stability
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000d0
+    id: 00000000-0000-4000-8000-0000000000d7
     type: meta/TaxonomyTerm@1
     attributes:
       name: disclosure
@@ -3058,7 +3189,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000d1
+    id: 00000000-0000-4000-8000-0000000000d8
     type: meta/TaxonomyTerm@1
     attributes:
       name: disclosure/customer
@@ -3067,7 +3198,7 @@ operations:
       - disclosure
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000d2
+    id: 00000000-0000-4000-8000-0000000000d9
     type: meta/TaxonomyTerm@1
     attributes:
       name: disclosure/auditor
@@ -3076,7 +3207,7 @@ operations:
       - disclosure
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000d3
+    id: 00000000-0000-4000-8000-0000000000da
     type: meta/TaxonomyTerm@1
     attributes:
       name: compliance
@@ -3084,7 +3215,7 @@ operations:
       parents: []
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000d4
+    id: 00000000-0000-4000-8000-0000000000db
     type: meta/TaxonomyTerm@1
     attributes:
       name: compliance/conflict-minerals
@@ -3093,7 +3224,7 @@ operations:
       - compliance
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000d5
+    id: 00000000-0000-4000-8000-0000000000dc
     type: meta/TaxonomyTerm@1
     attributes:
       name: compliance/export-controlled
@@ -3133,18 +3264,18 @@ operations:
     term: workspace/curated@1
     asserted_by: principal:vector-author
     basis: manual
-signature: sig:ed25519:c6aa76ece5645a5ad5040ecbd3f75491288df52e1c48fa71e69b68ca64ae6bac45a5c9cb4ccfef089e3c3a65c993a82601b6a155b8080af2a76962436d864204
-hash: sha256:784e690c4b9707f33be07451a7b0cb093bf203d80b083cc285af2ec00af09d91
+signature: sig:ed25519:417e84fdb8e5eee178f293dcc648acdc168cbaf891737e1a06125cb3878e74c212f96dc90b0861b3fbf2ff67baf4e661b3df38985731b3669b315132d7646705
+hash: sha256:51f67a13a37a6ef24a959d8664f55e29007ed0f0ca21cd7c16c192b0e01e1213
 ---
 kind: changeset
 parents:
-- sha256:784e690c4b9707f33be07451a7b0cb093bf203d80b083cc285af2ec00af09d91
+- sha256:51f67a13a37a6ef24a959d8664f55e29007ed0f0ca21cd7c16c192b0e01e1213
 author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:01:00Z
 intent: Rename Ada; retire Grace
-schema_context: sha256:d8600ba935e290fa2adccc3a0fb957a0478dfc737c0102ebdb6e32eaaaf6d06b
+schema_context: sha256:9f4c855e4bb5cb8857185517361a97ff5bb489c8dcc439467f9a4d94b943c941
 operations:
 - update:
     kind: node
@@ -3157,18 +3288,18 @@ operations:
     kind: node
     id: 00000000-1000-4000-8000-000000000002
     prior: sha256:5c982e87bccc0cba99f7c65b0a9190259bb1009f2f7630b0b052147f635990de
-signature: sig:ed25519:80deeca12c750068c2994f42c71855c90907ada7077313470ed838adc4d0159d601f8b4a6663e6920f4cab78d7fe3a0a143b003c2815e04d876c0d4a702e6001
-hash: sha256:8a7106ce34e67fbca261fcf87b3d891b07f9ec0687c2c64e51ee048d5c089a40
+signature: sig:ed25519:c6789dadc25c2f1e5516dd7363605f323b48acbf8e80f5510d40e46280ce5ba0230805364327cf69b9460ebc2157ab80c0e7caedffa60a3fbaa278f955f46a07
+hash: sha256:4faa7b52cb5f9379134f07935f67a08a0bb92b3cab88a4bd914eb56d3fdba0dd
 ---
 kind: changeset
 parents:
-- sha256:8a7106ce34e67fbca261fcf87b3d891b07f9ec0687c2c64e51ee048d5c089a40
+- sha256:4faa7b52cb5f9379134f07935f67a08a0bb92b3cab88a4bd914eb56d3fdba0dd
 author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:02:00Z
 intent: A note about Ada, labeled
-schema_context: sha256:d8600ba935e290fa2adccc3a0fb957a0478dfc737c0102ebdb6e32eaaaf6d06b
+schema_context: sha256:9f4c855e4bb5cb8857185517361a97ff5bb489c8dcc439467f9a4d94b943c941
 operations:
 - create:
     kind: node
@@ -3189,22 +3320,22 @@ operations:
     term: workspace/curated@1
     asserted_by: principal:vector-author
     basis: manual
-signature: sig:ed25519:35e44e6cbd52a9263b9cdae44cf6c9fec2d3d00b8b1ea2867e2da1cd86b84091fe2af05d51a4f3098a08cb66a8e6b1ed38c2adcb81b54659805a528c1664000d
-hash: sha256:0c4a5a44d533b94c540a035e22885f2842c8bc9f68b232350171a4ef72ef7590
+signature: sig:ed25519:5c295a0c17dc35486a0206b3de9016777f4b39cfd14f8639d584d46bad731f7b26e3b0dc1fd7859d9093914f6c320c0829be86c6225746c0478c0b2111ef4207
+hash: sha256:acb60ed6896da6afc6661d26cafcb47541d1e0266fdd6f0ec8cbcbe3123c63b6
 ---
 kind: changeset
 parents:
-- sha256:0c4a5a44d533b94c540a035e22885f2842c8bc9f68b232350171a4ef72ef7590
+- sha256:acb60ed6896da6afc6661d26cafcb47541d1e0266fdd6f0ec8cbcbe3123c63b6
 author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:03:00Z
 intent: 'Schema mutation: add vectors/Annotation entity type'
-schema_context: sha256:d8600ba935e290fa2adccc3a0fb957a0478dfc737c0102ebdb6e32eaaaf6d06b
+schema_context: sha256:9f4c855e4bb5cb8857185517361a97ff5bb489c8dcc439467f9a4d94b943c941
 operations:
 - create:
     kind: node
-    id: 00000000-0000-4000-8000-0000000000d6
+    id: 00000000-0000-4000-8000-0000000000dd
     type: meta/EntityType@1
     attributes:
       name: Annotation
@@ -3212,5 +3343,5 @@ operations:
       definition: |
         attributes:
           body: {type: string, required: true}
-signature: sig:ed25519:b9660c7eaaee35e94a275d5cc76090832c0aad2f166cce0b7b255b8123a0ae3c1e02392bdafedd4415e1bfd4583a2cbd36685181e43a8dd1921c37f056110604
-hash: sha256:0f89b812ab8a733f042a31291f671bc9c4a66c90fdeb516e0023ec5c5c4c1aa8
+signature: sig:ed25519:041a0e4f602a9f77bdc773ae0355a8ea54512950d2f72e02c34a11281c4fdbb28ecca93d59f9531834b686903402d1b54ae315bd39f1c00e4781c408ff8a2e0c
+hash: sha256:adc60a524ab57f26776fdfa19517e42fcbfe00b26ee9dbcf31fff582f0f5cbf0
