@@ -1,0 +1,8 @@
+[package]
+name = "allod-substrate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+allod-core = { path = "../allod-core" }
+serde_yaml = "0.9"
