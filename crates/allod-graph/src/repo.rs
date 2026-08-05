@@ -142,14 +142,36 @@ fn find_calls(text: &str, item: &ExtractedItem, fn_names: &BTreeSet<String>) -> 
     calls
 }
 
+// ---------------- language map ----------------
+
+fn language_of(path: &str) -> Option<&'static str> {
+    let ext = path.rsplit('.').next()?;
+    match ext {
+        "rs" => Some("rust"),
+        "ts" | "tsx" => Some("typescript"),
+        "js" | "jsx" => Some("javascript"),
+        "py" => Some("python"),
+        "toml" => Some("toml"),
+        "yaml" | "yml" => Some("yaml"),
+        "md" => Some("markdown"),
+        "sh" => Some("shell"),
+        "json" => Some("json"),
+        _ => None,
+    }
+}
+
 // ---------------- the derived changeset ----------------
 
 struct ExistingIndex {
     repo_id: Option<String>,
     /// path -> (node id, rev, blob)
     files: BTreeMap<String, (String, String, String)>,
+    /// path -> (edge id, rev) for the in_repo edge
+    in_repo_edges: BTreeMap<String, (String, String)>,
     /// (path, kind, name) -> (node id, rev, content)
     items: BTreeMap<(String, String, String), (String, String, Value)>,
+    /// (path, kind, name) -> (edge id, rev) for the declares edge
+    declares_edges: BTreeMap<(String, String, String), (String, String)>,
     /// (from node id, to node id) -> (edge id, rev)
     calls: BTreeMap<(String, String), (String, String)>,
 }
@@ -158,7 +180,9 @@ fn index_state(state: &State) -> ExistingIndex {
     let mut idx = ExistingIndex {
         repo_id: None,
         files: BTreeMap::new(),
+        in_repo_edges: BTreeMap::new(),
         items: BTreeMap::new(),
+        declares_edges: BTreeMap::new(),
         calls: BTreeMap::new(),
     };
     let mut file_of_item: BTreeMap<String, String> = BTreeMap::new(); // item id -> path
@@ -185,23 +209,44 @@ fn index_state(state: &State) -> ExistingIndex {
             }
         }
     }
-    for ((kind, _), obj) in &state.objects {
+    for ((kind, edge_id), obj) in &state.objects {
         if kind != "edge" || obj.deleted {
             continue;
         }
         let tref = get_str(&obj.content, "type").map(allod_core::bare).unwrap_or("");
-        if tref == "code/declares" {
-            let from = get_str(&obj.content, "from").unwrap_or("");
-            let to = get_str(&obj.content, "to").unwrap_or("");
-            if let (Some(file_id), Some(item_id)) =
-                (from.strip_prefix("node:"), to.strip_prefix("node:"))
-            {
-                if let Some(path) = file_paths.get(file_id) {
-                    file_of_item.insert(item_id.to_string(), path.clone());
+        match tref {
+            "code/declares" => {
+                let from = get_str(&obj.content, "from").unwrap_or("");
+                let to = get_str(&obj.content, "to").unwrap_or("");
+                if let (Some(file_id), Some(item_id)) =
+                    (from.strip_prefix("node:"), to.strip_prefix("node:"))
+                {
+                    if let Some(path) = file_paths.get(file_id) {
+                        file_of_item.insert(item_id.to_string(), path.clone());
+                        // We'll fill declares_edges after we know item keys (done below)
+                        // For now, store a temporary association: edge_id by (file_id, item_id)
+                        // We'll process this after building items.
+                        let _ = (edge_id, item_id); // placeholder; resolved in the third pass
+                    }
                 }
             }
+            "code/in_repo" => {
+                let from = get_str(&obj.content, "from").unwrap_or("");
+                if let Some(file_id) = from.strip_prefix("node:") {
+                    if let Some(path) = file_paths.get(file_id) {
+                        idx.in_repo_edges.insert(
+                            path.clone(),
+                            (edge_id.clone(), obj.rev.clone()),
+                        );
+                    }
+                }
+            }
+            _ => {}
         }
     }
+    // Third pass: items, declares edges, and calls
+    // Build item key -> item_id mapping first, then correlate declares edges
+    let mut item_key_of_id: BTreeMap<String, (String, String, String)> = BTreeMap::new(); // item id -> key
     for ((kind, id), obj) in &state.objects {
         if obj.deleted {
             continue;
@@ -223,14 +268,34 @@ fn index_state(state: &State) -> ExistingIndex {
                     .unwrap_or("struct")
                     .to_string()
             };
+            let key = (path, item_kind, name.to_string());
+            item_key_of_id.insert(id.clone(), key.clone());
             idx.items.insert(
-                (path, item_kind, name.to_string()),
+                key,
                 (id.clone(), obj.rev.clone(), obj.content.clone()),
             );
         } else if kind == "edge" && tref == "code/calls" {
             let from = get_str(&obj.content, "from").unwrap_or("").to_string();
             let to = get_str(&obj.content, "to").unwrap_or("").to_string();
             idx.calls.insert((from, to), (id.clone(), obj.rev.clone()));
+        }
+    }
+    // Fourth pass: now that item_key_of_id is built, fill declares_edges
+    for ((kind, edge_id), obj) in &state.objects {
+        if kind != "edge" || obj.deleted {
+            continue;
+        }
+        let tref = get_str(&obj.content, "type").map(allod_core::bare).unwrap_or("");
+        if tref == "code/declares" {
+            let to = get_str(&obj.content, "to").unwrap_or("");
+            if let Some(item_id) = to.strip_prefix("node:") {
+                if let Some(key) = item_key_of_id.get(item_id) {
+                    idx.declares_edges.insert(
+                        key.clone(),
+                        (edge_id.clone(), obj.rev.clone()),
+                    );
+                }
+            }
         }
     }
     idx
@@ -286,17 +351,23 @@ pub fn import_commit(
     let mut desired_files: BTreeMap<String, String> = BTreeMap::new(); // path -> blob sha
     for line in git(repo, &["ls-tree", "-r", &commit])?.lines() {
         let Some((meta, path)) = line.split_once('\t') else { continue };
+        if path.starts_with(".allod/") {
+            continue;
+        }
         let parts: Vec<&str> = meta.split_whitespace().collect();
-        if parts.len() == 3 && parts[1] == "blob" && path.ends_with(".rs") {
+        if parts.len() == 3 && parts[1] == "blob" {
             desired_files.insert(path.to_string(), parts[2].to_string());
         }
     }
+    // Only fetch source text for Rust files (item extraction).
     let mut sources: BTreeMap<String, String> = BTreeMap::new();
     for path in desired_files.keys() {
-        sources.insert(
-            path.clone(),
-            git(repo, &["show", &format!("{commit}:{path}")])?,
-        );
+        if path.ends_with(".rs") {
+            sources.insert(
+                path.clone(),
+                git(repo, &["show", &format!("{commit}:{path}")])?,
+            );
+        }
     }
     let mut desired_items: BTreeMap<(String, String, String), ExtractedItem> = BTreeMap::new();
     let mut fn_names: BTreeSet<String> = BTreeSet::new();
@@ -354,7 +425,9 @@ pub fn import_commit(
         let blob_ref = format!("git:{origin}#{blob}:{path}");
         let mut attrs = Mapping::new();
         attrs.insert(s("path"), s(path));
-        attrs.insert(s("language"), s("rust"));
+        if let Some(lang) = language_of(path) {
+            attrs.insert(s("language"), s(lang));
+        }
         attrs.insert(s("blob"), s(&blob_ref));
         match idx.files.get(path) {
             Some((id, rev, old_blob)) => {
@@ -478,11 +551,48 @@ pub fn import_commit(
             ops.push(node_op("delete", del));
         }
     }
-    // Items and files that disappeared: delete their edges first is
-    // unnecessary — the fold checks danglers after all ops — but the
-    // declares edges must go with them.
-    // (Deletion of vanished files/items is left for a richer indexer;
-    // the demo repos only add and modify.)
+    // Items that disappeared: delete declares edge + item node (+ any calls edges
+    // touching them, which were already handled in the calls loop above).
+    for (key, (item_id, item_rev, _)) in &idx.items {
+        if !desired_items.contains_key(key) {
+            // Delete the declares edge first (fold rejects dangling edges).
+            if let Some((edge_id, edge_rev)) = idx.declares_edges.get(key) {
+                let mut del = Mapping::new();
+                del.insert(s("kind"), s("edge"));
+                del.insert(s("id"), s(edge_id));
+                del.insert(s("prior"), s(edge_rev));
+                ops.push(node_op("delete", del));
+            }
+            // Delete the item node.
+            let mut del = Mapping::new();
+            del.insert(s("kind"), s("node"));
+            del.insert(s("id"), s(item_id));
+            del.insert(s("prior"), s(item_rev));
+            ops.push(node_op("delete", del));
+        }
+    }
+
+    // Files that disappeared: delete in_repo edge + SourceFile node.
+    // (Items in disappeared files are already handled above since desired_items
+    // won't contain their keys either.)
+    for (path, (file_id, file_rev, _)) in &idx.files {
+        if !desired_files.contains_key(path) {
+            // Delete the in_repo edge first.
+            if let Some((edge_id, edge_rev)) = idx.in_repo_edges.get(path) {
+                let mut del = Mapping::new();
+                del.insert(s("kind"), s("edge"));
+                del.insert(s("id"), s(edge_id));
+                del.insert(s("prior"), s(edge_rev));
+                ops.push(node_op("delete", del));
+            }
+            // Delete the SourceFile node.
+            let mut del = Mapping::new();
+            del.insert(s("kind"), s("node"));
+            del.insert(s("id"), s(file_id));
+            del.insert(s("prior"), s(file_rev));
+            ops.push(node_op("delete", del));
+        }
+    }
 
     if ops.is_empty() {
         return Err(AllodError::Other("nothing changed at this commit".into()));
