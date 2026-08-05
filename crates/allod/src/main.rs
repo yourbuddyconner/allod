@@ -148,9 +148,10 @@ fn cmd_key_where(dir: &Path, principal: &str) -> Result<(), String> {
     let graph = Graph::open(dir)?;
     let graph_id = graph
         .meta()
-        .ok()
-        .and_then(|m| m.get("graph_id").and_then(|v| v.as_str().map(String::from)))
-        .unwrap_or_default();
+        .map_err(|e| format!("could not read graph_id from graph.yaml: {e}"))?
+        .get("graph_id")
+        .and_then(|v| v.as_str().map(String::from))
+        .ok_or("could not read graph_id from graph.yaml")?;
     let legacy_keys = dir.join(".allod/keys");
     let backend = allod_core::keys::FileBackend::platform_default(vec![legacy_keys]);
     let handle = backend.resolve(&graph_id, principal)?;
@@ -172,9 +173,10 @@ fn cmd_key_migrate(dir: &Path, principal: &str, to: Option<&str>) -> Result<(), 
     let graph = Graph::open(dir)?;
     let graph_id = graph
         .meta()
-        .ok()
-        .and_then(|m| m.get("graph_id").and_then(|v| v.as_str().map(String::from)))
-        .unwrap_or_default();
+        .map_err(|e| format!("could not read graph_id from graph.yaml: {e}"))?
+        .get("graph_id")
+        .and_then(|v| v.as_str().map(String::from))
+        .ok_or("could not read graph_id from graph.yaml")?;
 
     // Source: legacy repo-local key at <dir>/.allod/keys/<principal>.yaml
     let legacy_path = dir.join(".allod/keys").join(format!("{principal}.yaml"));
@@ -203,8 +205,10 @@ fn cmd_key_migrate(dir: &Path, principal: &str, to: Option<&str>) -> Result<(), 
         }
     };
 
-    // Verify re-resolve succeeds through the full graph chain before deleting
-    graph.signer(principal)?;
+    // Verify re-resolve succeeds through the destination backend only before deleting.
+    // Using graph.signer() would include the legacy fallback path and would prove
+    // "findable somewhere" rather than "present at the XDG destination".
+    dest_backend.resolve(&graph_id, principal)?;
 
     // Delete legacy file only after successful store + re-resolve
     std::fs::remove_file(&legacy_path)
