@@ -94,7 +94,12 @@ Partly built already: `crates/allod-graph/src/repo.rs` (behind the
 `native` feature) implements commit-aligned `import_commit`, a
 deterministic Rust line-scan extractor (`allod-scan@0.1`), and
 `semantic_diff`. Milestone 3 extracts this into `allod-index-code` and
-extends it rather than starting fresh. Target shape, per §8.3:
+extends it rather than starting fresh. Shipped behavior: deletion
+propagates (deleted files and their derived code objects removed from the
+graph), and `.allod/` is self-excluded from indexing. The `interface→trait`
+read-back mapping was fixed to align trait write-back. Genesis graphs made
+with the memory profile require `allod install-schema` to add the code
+package before indexing. Target shape, per §8.3:
 
 - File-granular for all languages: Repository and SourceFile nodes with
   `git:` external refs. Function-level for Rust via syn: Function/Type
@@ -118,10 +123,10 @@ extends it rather than starting fresh. Target shape, per §8.3:
   the summary. Failing is the designed steady state early on; the
   summary must make "what is unmet and where to decide it" legible.
 
-In CI, derived changesets are recomputed on demand and not pushed (the
-workflow needs no push rights). They are materialized into `.allod/`
-when a human or freehold session runs the indexer and commits. Revisit
-if recompute cost grows.
+Derived changesets are materialized and committed by the owner (`allod git
+index`), because admission requires the indexer's signing key and CI holds no
+keys. CI evaluates region reach against the committed graph state. Staleness
+between materializations is an accepted advisory-mode approximation.
 
 ### Review ontology
 
@@ -199,7 +204,7 @@ Each independently shippable, in order:
    Plan: `docs/superpowers/plans/2026-08-04-git-evaluation.md`.
    Deviations: git CLI not gix; decisions in git notes.
 3. **Derived graph.** `allod-index-code`, commit-aligned derivation,
-   region-reach rules live.
+   region-reach rules live. **Status: done.** Plan: `docs/superpowers/plans/2026-08-04-derived-graph-region-reach.md`. Deviations: derivation stays in repo.rs (no allod-index-code crate yet); owner-materialized graph instead of CI recompute; install-schema CLI added.
 4. **Freehold review surface.** wasm additions, connector (credential
    mode first, App wizard second), Inbox for git proposals, decision
    records closing the loop.
