@@ -405,12 +405,70 @@ pub fn propose_preference(
     Ok(ProposalResult { hash, admission })
 }
 
-/// Apply a decision (approve/reject) to a held proposal.
-/// Rejected and StillUnmet paths still write the signed decision record to evidence (auditable).
-pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<DecisionOutcome, AllodError> {
+/// First phase of deciding a proposal: guard already-decided, build the unsigned
+/// decision record and return it together with the signing payload. Read-only.
+pub fn decide_payload(graph: &Graph, hash: &str, verdict: &str) -> Result<(Value, String), AllodError> {
+    use allod_core::policy;
+
+    let evidence = graph.read_proposal_evidence(hash).map_err(AllodError::from)?;
+    let decisions: Vec<Value> = evidence
+        .get("decisions")
+        .and_then(Value::as_sequence)
+        .cloned()
+        .unwrap_or_default();
+
+    let already_decided = decisions.iter().any(|d| {
+        d.get("verdict")
+            .and_then(Value::as_str)
+            .map(|v| v == "reject")
+            .unwrap_or(false)
+    });
+    if already_decided {
+        return Err(AllodError::AlreadyDecided(hash.to_string()));
+    }
+
+    let policy_doc = graph.policy().map_err(AllodError::from)?;
+    let record = policy::build_decision_record(&policy_doc, hash, verdict, &crate::ops::now_iso())
+        .map_err(AllodError::from)?;
+    let payload = policy::decision_payload(&record).map_err(AllodError::from)?;
+    Ok((record, payload))
+}
+
+/// Second phase: apply an externally signed record (deciders already attached).
+/// Runs the already-decided guard again (mutating gate), validates the record shape,
+/// then runs the existing satisfaction / admission logic verbatim.
+pub fn decide_with_record(graph: &Graph, hash: &str, record: Value) -> Result<DecisionOutcome, AllodError> {
     use allod_core::{get_str, policy};
 
-    let signer = graph.signer(by).map_err(AllodError::from)?;
+    // Validate record shape.
+    let kind = record.get("kind").and_then(Value::as_str).unwrap_or("");
+    if kind != "decision-record" {
+        return Err(AllodError::Other(format!("record kind must be decision-record, got {kind:?}")));
+    }
+    let subject = record.get("subject").and_then(Value::as_str).unwrap_or("");
+    if subject != hash {
+        return Err(AllodError::Other(format!(
+            "record subject {subject:?} does not match proposal hash {hash:?}"
+        )));
+    }
+    let has_sig = record
+        .get("deciders")
+        .and_then(Value::as_sequence)
+        .map(|deciders| {
+            deciders.iter().any(|d| {
+                d.get("signature")
+                    .and_then(Value::as_str)
+                    .map(|s| s.starts_with("sig:ed25519:"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+    if !has_sig {
+        return Err(AllodError::Other(
+            "record must have at least one decider with a sig:ed25519: signature".into(),
+        ));
+    }
+
     let cs = graph.read_proposal(hash)
         .map_err(|_| AllodError::ProposalNotFound(hash.to_string()))?;
     let evidence = graph.read_proposal_evidence(hash).map_err(AllodError::from)?;
@@ -426,15 +484,7 @@ pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<Deci
         .cloned()
         .unwrap_or_default();
 
-    // Guard against deciding a proposal that has already been finalized.
-    // A final decision is any record whose verdict is "reject" or (for the
-    // approve path) any that pushed the proposal to Admitted via append_changeset.
-    // After rejection the proposal file is removed, so if we get here the file
-    // exists — but a StillUnmet loop may have left prior decision records.
-    // We surface AlreadyDecided only when a prior record already carries the
-    // same terminal verdict that the caller is requesting now, preventing
-    // duplicate rejections on proposals that somehow survived (e.g. partial
-    // failure during a previous run).
+    // Guard (mutating gate).
     let already_decided = decisions.iter().any(|d| {
         d.get("verdict")
             .and_then(Value::as_str)
@@ -445,26 +495,7 @@ pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<Deci
         return Err(AllodError::AlreadyDecided(hash.to_string()));
     }
 
-    let policy_doc = graph.policy().map_err(AllodError::from)?;
-
-    let mut record = serde_yaml::Mapping::new();
-    record.insert(Value::String("kind".into()), Value::String("decision-record".into()));
-    record.insert(Value::String("subject".into()), Value::String(hash.into()));
-    record.insert(
-        Value::String("policy_context".into()),
-        Value::String(policy::policy_context(&policy_doc).map_err(AllodError::from)?),
-    );
-    record.insert(Value::String("verdict".into()), Value::String(verdict.into()));
-    record.insert(Value::String("timestamp".into()), Value::String(crate::ops::now_iso()));
-    let mut record = Value::Mapping(record);
-
-    let payload = policy::decision_payload(&record).map_err(AllodError::from)?;
-    let mut decider = serde_yaml::Mapping::new();
-    decider.insert(Value::String("principal".into()), Value::String(format!("principal:{by}")));
-    decider.insert(Value::String("signature".into()), Value::String(signer.sign(&payload).map_err(AllodError::from)?));
-    if let Some(map) = record.as_mapping_mut() {
-        map.insert(Value::String("deciders".into()), Value::Sequence(vec![Value::Mapping(decider)]));
-    }
+    let verdict = record.get("verdict").and_then(Value::as_str).unwrap_or("").to_string();
     decisions.push(record);
 
     if verdict == "reject" {
@@ -473,6 +504,7 @@ pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<Deci
         return Ok(DecisionOutcome::Rejected);
     }
 
+    let policy_doc = graph.policy().map_err(AllodError::from)?;
     let reg = graph.registry().map_err(AllodError::from)?;
     let state = graph.fold().map_err(AllodError::from)?;
     let author_ref = get_str(
@@ -514,6 +546,19 @@ pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<Deci
     graph.remove_proposal(hash).map_err(AllodError::from)?;
 
     Ok(DecisionOutcome::Admitted { degraded: sat.degraded })
+}
+
+/// Apply a decision (approve/reject) to a held proposal.
+/// Rejected and StillUnmet paths still write the signed decision record to evidence (auditable).
+/// Now implemented as decide_payload + sign + attach_decider + decide_with_record.
+pub fn decide(graph: &Graph, hash: &str, by: &str, verdict: &str) -> Result<DecisionOutcome, AllodError> {
+    use allod_core::policy;
+
+    let (mut record, payload) = decide_payload(graph, hash, verdict)?;
+    let signer = graph.signer(by).map_err(AllodError::from)?;
+    let signature = signer.sign(&payload).map_err(AllodError::from)?;
+    policy::attach_decider(&mut record, by, &signature);
+    decide_with_record(graph, hash, record)
 }
 
 /// Add a classification term to `node_id` as `term`, authored by `by` with given `basis`.

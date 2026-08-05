@@ -695,3 +695,47 @@ fn init_create_key_failure_leaves_no_head() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+// ---- Task 3: two-phase decide ----
+
+#[test]
+fn two_phase_decide_equals_internal_decide() {
+    // Single fixture: init graph, create a held proposal, run the two-phase
+    // decide_payload → sign → attach_decider → decide_with_record path,
+    // and assert the outcome is Admitted and the stored evidence contains the
+    // attached record verbatim.
+    let graph = common::init_memory_graph();
+    flows::principal_add(&graph, "a7", "agent", "o").unwrap();
+    let r = flows::propose_preference(&graph, "a7", "prefer two-phase", "soft", None).unwrap();
+    let hash = &r.hash;
+
+    // Phase 1: build the unsigned payload (read-only).
+    let (record, payload) = flows::decide_payload(&graph, hash, "approve").expect("decide_payload");
+    assert_eq!(record.get("kind").and_then(serde_yaml::Value::as_str), Some("decision-record"));
+    assert_eq!(record.get("subject").and_then(serde_yaml::Value::as_str), Some(hash.as_str()));
+    assert!(!payload.is_empty());
+
+    // Sign with the owner key via graph.signer.
+    let signer = graph.signer("o").expect("signer");
+    let signature = signer.sign(&payload).expect("sign");
+    assert!(signature.starts_with("sig:ed25519:"), "signature must have expected prefix");
+
+    // Attach decider to the record.
+    let mut record = record;
+    allod_core::policy::attach_decider(&mut record, "o", &signature);
+
+    // Phase 2: apply the signed record.
+    let outcome = flows::decide_with_record(&graph, hash, record.clone()).expect("decide_with_record");
+    assert!(matches!(outcome, DecisionOutcome::Admitted { .. }), "expected Admitted, got {:?}", std::mem::discriminant(&outcome));
+
+    // The proposal is admitted and evidence is stored in the chain.
+    // Verify the last admitted changeset's evidence contains our record.
+    let chain = graph.chain().expect("chain");
+    let last_cs = chain.last().expect("at least one cs");
+    let last_hash = allod_core::get_str(last_cs, "hash").expect("hash");
+    let evidence = graph.read_evidence(last_hash).expect("read_evidence io").expect("evidence present");
+    let decisions = evidence.get("decisions").and_then(serde_yaml::Value::as_sequence).expect("decisions");
+    assert!(!decisions.is_empty(), "evidence must contain at least one decision record");
+    // The stored record must equal what we attached.
+    assert_eq!(&decisions[0], &record, "stored evidence record must equal attached record");
+}

@@ -557,6 +557,49 @@ pub fn decision_payload(record: &Value) -> Result<String, String> {
     Ok(sha256_hex("decision", &canonical_cbor(&Value::Mapping(map))?))
 }
 
+/// Build an unsigned decision record with kind/subject/policy_context/verdict/timestamp.
+/// This is the canonical shape that both `flows::decide` and `allod git decide` produce.
+pub fn build_decision_record(
+    policy_doc: &Value,
+    subject: &str,
+    verdict: &str,
+    timestamp: &str,
+) -> Result<Value, String> {
+    let mut record = Mapping::new();
+    record.insert(Value::String("kind".into()), Value::String("decision-record".into()));
+    record.insert(Value::String("subject".into()), Value::String(subject.into()));
+    record.insert(
+        Value::String("policy_context".into()),
+        Value::String(policy_context(policy_doc)?),
+    );
+    record.insert(Value::String("verdict".into()), Value::String(verdict.into()));
+    record.insert(Value::String("timestamp".into()), Value::String(timestamp.into()));
+    Ok(Value::Mapping(record))
+}
+
+/// Append a decider entry `{principal: "principal:<name>", signature}` to
+/// `record.deciders`, creating the sequence if absent.
+pub fn attach_decider(record: &mut Value, principal: &str, signature: &str) {
+    let mut entry = Mapping::new();
+    entry.insert(
+        Value::String("principal".into()),
+        Value::String(format!("principal:{principal}")),
+    );
+    entry.insert(
+        Value::String("signature".into()),
+        Value::String(signature.into()),
+    );
+    if let Some(map) = record.as_mapping_mut() {
+        let key = Value::String("deciders".into());
+        let seq = map
+            .entry(key)
+            .or_insert_with(|| Value::Sequence(vec![]));
+        if let Some(seq) = seq.as_sequence_mut() {
+            seq.push(Value::Mapping(entry));
+        }
+    }
+}
+
 /// The payload an attester signs: the envelope with its signature
 /// omitted (§5.2).
 pub fn envelope_payload(envelope: &Value) -> Result<String, String> {
@@ -1519,5 +1562,26 @@ rules:
             "file-level classification must also match the region rule; matched: {:?}",
             cl.matched_rules
         );
+    }
+
+    #[test]
+    fn build_decision_record_matches_handrolled_shape() {
+        let policy: Value = serde_yaml::from_str("rules: []").unwrap();
+        let rec = build_decision_record(&policy, "git:abc123", "approve", "2026-08-04T00:00:00Z").unwrap();
+        assert_eq!(rec.get("kind").unwrap().as_str().unwrap(), "decision-record");
+        assert_eq!(rec.get("subject").unwrap().as_str().unwrap(), "git:abc123");
+        assert_eq!(rec.get("verdict").unwrap().as_str().unwrap(), "approve");
+        assert_eq!(
+            rec.get("policy_context").unwrap().as_str().unwrap(),
+            policy_context(&policy).unwrap()
+        );
+        // Payload computes on the unsigned record; attach_decider then adds a decider.
+        let payload = decision_payload(&rec).unwrap();
+        assert!(!payload.is_empty());
+        let mut rec = rec;
+        attach_decider(&mut rec, "conner", "sig:ed25519:00");
+        let d = rec.get("deciders").unwrap().as_sequence().unwrap();
+        assert_eq!(d[0].get("principal").unwrap().as_str().unwrap(), "principal:conner");
+        assert_eq!(d[0].get("signature").unwrap().as_str().unwrap(), "sig:ed25519:00");
     }
 }

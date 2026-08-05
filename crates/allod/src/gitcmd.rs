@@ -19,7 +19,8 @@
 //! on the same commit reports "up to date" if nothing changed.
 
 use allod_core::policy::{
-    decision_payload, evaluate_git, policy_context, reviewers_unmet, Checklist, GitChange,
+    attach_decider, build_decision_record, decision_payload, evaluate_git, reviewers_unmet,
+    Checklist, GitChange,
 };
 use allod_core::store::Graph;
 use allod_graph::repo as repo_lib;
@@ -215,47 +216,13 @@ fn cmd_git_decide(args: &[String]) -> Result<(), String> {
     let policy = graph.policy()?;
     let signer = graph.signer(&principal).map_err(|e| e.to_string())?;
 
-    // Build the decision record (mirrors flows::decide exactly).
-    let mut record = serde_yaml::Mapping::new();
-    record.insert(
-        Value::String("kind".into()),
-        Value::String("decision-record".into()),
-    );
-    record.insert(
-        Value::String("subject".into()),
-        Value::String(subject.clone()),
-    );
-    record.insert(
-        Value::String("policy_context".into()),
-        Value::String(policy_context(&policy)?),
-    );
-    record.insert(
-        Value::String("verdict".into()),
-        Value::String(verdict.clone()),
-    );
-    record.insert(
-        Value::String("timestamp".into()),
-        Value::String(allod_graph::ops::now_iso()),
-    );
-    let mut record = Value::Mapping(record);
+    // Build the unsigned decision record using the shared builder.
+    let mut record = build_decision_record(&policy, &subject, &verdict, &allod_graph::ops::now_iso())?;
 
-    // Sign decision_payload.
+    // Sign and attach.
     let payload = decision_payload(&record)?;
-    let mut decider = serde_yaml::Mapping::new();
-    decider.insert(
-        Value::String("principal".into()),
-        Value::String(format!("principal:{principal}")),
-    );
-    decider.insert(
-        Value::String("signature".into()),
-        Value::String(signer.sign(&payload).map_err(|e| e.to_string())?),
-    );
-    if let Some(map) = record.as_mapping_mut() {
-        map.insert(
-            Value::String("deciders".into()),
-            Value::Sequence(vec![Value::Mapping(decider)]),
-        );
-    }
+    let signature = signer.sign(&payload).map_err(|e| e.to_string())?;
+    attach_decider(&mut record, &principal, &signature);
 
     // Append to git notes.
     append_decision(&repo_dir, &sha, &record)?;
