@@ -24,21 +24,37 @@ pub struct Graph {
     pub dir: PathBuf,
     store: Box<dyn DocStore>,
     key_backends: Vec<Box<dyn crate::keys::KeyBackend>>,
+    /// Index into `key_backends` used by `create_key`.
+    ///
+    /// Defaults to the first `"file"` backend so that new keys are always written
+    /// to the XDG file path unless `key_backends` in graph.yaml explicitly lists
+    /// `keychain` first (indicating deliberate opt-in to keychain creation).
+    create_backend_idx: usize,
 }
 
-fn default_backends(dir: &Path) -> Vec<Box<dyn crate::keys::KeyBackend>> {
+/// Return (backends, create_idx) for the default chain on this platform.
+///
+/// Resolution order on macOS is [keychain, file] so existing keychain keys are
+/// found first.  Creation always targets the file backend (index 1 on macOS,
+/// index 0 elsewhere) — the keychain is never written by default.
+fn default_backends(dir: &Path) -> (Vec<Box<dyn crate::keys::KeyBackend>>, usize) {
     use crate::keys::FileBackend;
     let legacy_keys = dir.join(".allod/keys");
     #[cfg(target_os = "macos")]
     {
         use crate::keys_keychain::KeychainBackend;
-        return vec![
-            Box::new(KeychainBackend::new()),
-            Box::new(FileBackend::platform_default(vec![legacy_keys])),
-        ];
+        // Resolution: keychain first, then file.
+        // Creation: file (index 1) — keychain never written by default.
+        return (
+            vec![
+                Box::new(KeychainBackend::new()),
+                Box::new(FileBackend::platform_default(vec![legacy_keys])),
+            ],
+            1, // file backend
+        );
     }
     #[cfg(not(target_os = "macos"))]
-    vec![Box::new(FileBackend::platform_default(vec![legacy_keys]))]
+    (vec![Box::new(FileBackend::platform_default(vec![legacy_keys]))], 0)
 }
 
 fn short(hash: &str) -> &str {
@@ -164,19 +180,25 @@ impl Graph {
 
     pub fn create(dir: &Path) -> Result<Graph, String> {
         let store = FsStore::create(dir)?;
-        Ok(Graph { dir: dir.to_path_buf(), store: Box::new(store), key_backends: default_backends(dir) })
+        let (key_backends, create_backend_idx) = default_backends(dir);
+        Ok(Graph { dir: dir.to_path_buf(), store: Box::new(store), key_backends, create_backend_idx })
     }
 
     pub fn open(dir: &Path) -> Result<Graph, String> {
         let store = FsStore::open(dir)?;
-        let mut graph = Graph { dir: dir.to_path_buf(), store: Box::new(store), key_backends: default_backends(dir) };
+        let (key_backends, create_backend_idx) = default_backends(dir);
+        let mut graph = Graph { dir: dir.to_path_buf(), store: Box::new(store), key_backends, create_backend_idx };
         if graph.store.read("graph.yaml")?.is_none() {
             return Err(format!(
                 "{} is not an allod graph (no .allod/graph.yaml)",
                 dir.display()
             ));
         }
-        // Check for key_backends override in graph.yaml
+        // Check for key_backends override in graph.yaml.
+        // When the user explicitly lists key_backends, the FIRST entry governs both
+        // resolution order and key creation target — this is the opt-in path for
+        // keychain creation.  Without an explicit listing the platform defaults apply
+        // (file creation even on macOS).
         if let Ok(meta) = graph.meta() {
             if let Some(backends_seq) = meta.get("key_backends").and_then(Value::as_sequence) {
                 let mut chain: Vec<Box<dyn crate::keys::KeyBackend>> = Vec::new();
@@ -202,6 +224,8 @@ impl Graph {
                         None => return Err("key_backends entries must be strings".into()),
                     }
                 }
+                // Explicit key_backends list: creation goes to the first entry (index 0).
+                graph.create_backend_idx = 0;
                 graph.key_backends = chain;
             }
         }
@@ -209,14 +233,14 @@ impl Graph {
     }
 
     pub fn with_store(store: Box<dyn DocStore>) -> Graph {
-        Graph { dir: PathBuf::new(), store, key_backends: vec![] }
+        Graph { dir: PathBuf::new(), store, key_backends: vec![], create_backend_idx: 0 }
     }
 
     pub fn open_with_store(store: Box<dyn DocStore>) -> Result<Graph, String> {
         if store.read("graph.yaml")?.is_none() {
             return Err("not an allod graph (no .allod/graph.yaml)".into());
         }
-        Ok(Graph { dir: PathBuf::new(), store, key_backends: vec![] })
+        Ok(Graph { dir: PathBuf::new(), store, key_backends: vec![], create_backend_idx: 0 })
     }
 
     // ---------------- meta ----------------
@@ -342,6 +366,12 @@ impl Graph {
     }
 
     pub fn set_key_backends(&mut self, backends: Vec<Box<dyn crate::keys::KeyBackend>>) {
+        // When explicitly overriding backends, set creation to the first file backend
+        // in the chain (index of first with id == "file"), falling back to 0.
+        self.create_backend_idx = backends
+            .iter()
+            .position(|b| b.id() == "file")
+            .unwrap_or(0);
         self.key_backends = backends;
     }
 
@@ -367,7 +397,10 @@ impl Graph {
             .ok()
             .and_then(|m| m.get("graph_id").and_then(Value::as_str).map(String::from))
             .unwrap_or_default();
-        if let Some(backend) = self.key_backends.first() {
+        // Use create_backend_idx (not first()) so that the default always targets the
+        // file backend.  Keychain creation only happens when graph.yaml explicitly lists
+        // keychain first (in which case open() sets create_backend_idx = 0).
+        if let Some(backend) = self.key_backends.get(self.create_backend_idx) {
             return backend.store_keypair(&graph_id, kp);
         }
         // Empty chain (in-memory graphs): fall back to in-store doc
