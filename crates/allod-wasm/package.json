@@ -1,6 +1,6 @@
 {
   "name": "@allod/core",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "WASM bindings for allod-graph \u2014 governed knowledge graph operations",
   "license": "MIT OR Apache-2.0",
   "repository": {
