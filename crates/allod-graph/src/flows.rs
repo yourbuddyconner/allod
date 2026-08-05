@@ -68,6 +68,12 @@ pub fn profile_from_dir(profile: &str, schema_dir: &Path) -> Result<ProfileSourc
             ],
             "memory/policy-local.yaml",
         ),
+        "review" => (
+            vec![("review", "review/ontology.yaml")],
+            // install-schema ignores the policy (None is passed through);
+            // reuse an existing file so the read succeeds.
+            "code/policy-local.yaml",
+        ),
         "code" => (
             vec![
                 ("core", "core/ontology.yaml"),

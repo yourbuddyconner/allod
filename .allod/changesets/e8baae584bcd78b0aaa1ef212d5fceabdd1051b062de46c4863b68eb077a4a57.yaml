@@ -1,0 +1,143 @@
+kind: changeset
+parents:
+- sha256:dd0433e7b2bc3843149ebfe3135b80032c86ef018f6a29c9d2871ec3ed7bada0
+author:
+  principal: principal:conner
+  key: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
+timestamp: 2026-08-05T19:59:12Z
+intent: Install schema package (1 doc(s))
+schema_context: sha256:39e97e90a623fbce025e0a5f7a751f5839f76ef775c72d1985e24dfde9c36c0b
+operations:
+- create:
+    kind: node
+    id: cba1fa9e-cab9-492a-86b3-a730b8c556da
+    type: meta/EntityType@1
+    attributes:
+      name: Review
+      package: review
+      definition: |
+        attributes:
+          verdict:
+            type: enum<approve|approve-with-comments|request-changes>
+            required: true
+          body:
+            type: string
+          commit:
+            type: external-ref
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 500e14dd-c781-4e88-a15c-000ceae1c038
+    type: meta/EntityType@1
+    attributes:
+      name: ReviewComment
+      package: review
+      definition: |
+        attributes:
+          body:
+            type: string
+            required: true
+          anchor:
+            type: external-ref
+          span:
+            type: string
+          status:
+            type: enum<open|resolved|wont-fix|tombstoned>
+          external_source:
+            type: string
+          external_id:
+            type: string
+          claimed_author:
+            type: string
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: bda2cc04-a22a-4976-b727-1b94d90a3d52
+    type: meta/EdgeType@1
+    attributes:
+      name: reviews
+      package: review
+      definition: |
+        domain: Review
+        range: eng/ChangeRequest
+        cardinality: many-to-one
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: b1470b97-3ccd-4f13-b0dc-e21e39d25c2a
+    type: meta/EdgeType@1
+    attributes:
+      name: part_of
+      package: review
+      definition: |
+        domain: ReviewComment
+        range: Review
+        cardinality: many-to-one
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 20509f13-8fff-4ca9-b341-dbcdfe24511e
+    type: meta/EdgeType@1
+    attributes:
+      name: replies_to
+      package: review
+      definition: |
+        domain: ReviewComment
+        range: ReviewComment
+        cardinality: many-to-one
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: be6738da-88d5-4648-96d8-800644a1f093
+    type: meta/EdgeType@1
+    attributes:
+      name: concerns
+      package: review
+      definition: |
+        domain: ReviewComment
+        range:
+        - code/SourceFile
+        - code/Function
+        cardinality: many-to-many
+      imports:
+      - core
+      - code
+      - eng
+- create:
+    kind: node
+    id: 0dee72b6-4b81-4cc6-b8d5-8f8ac60b527b
+    type: meta/ValidationRule@1
+    attributes:
+      name: external-comments-carry-their-id
+      package: review
+      definition: |
+        name: external-comments-carry-their-id
+        on:
+          type: ReviewComment
+          where:
+            attr: external_source
+            present: true
+        require:
+          attr: external_id
+          present: true
+      imports:
+      - core
+      - code
+      - eng
+hash: sha256:e8baae584bcd78b0aaa1ef212d5fceabdd1051b062de46c4863b68eb077a4a57
+signature: sig:ed25519:0ef34a8082f157406d5c7990b878813e5604909786dcc0bc5a2a63a7d6f484c589d5c7fe7d9519da7641f8360b919987308d75b5f03e6ad05de6a09627725104
