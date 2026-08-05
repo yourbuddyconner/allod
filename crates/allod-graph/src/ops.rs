@@ -373,6 +373,75 @@ mod tests {
     }
 }
 
+// ---- Two-phase changeset helpers ----
+
+/// Build a changeset without signing: same shape as `build_changeset` but no
+/// `signature` field. Returns `(cs_without_signature, hash)`.
+pub fn build_changeset_unsigned(
+    graph: &Graph,
+    author_name: &str,
+    intent: &str,
+    ops: Vec<Value>,
+) -> Result<(Value, String), AllodError> {
+    let signer = graph.signer(author_name).map_err(AllodError::from)?;
+    let parents: Vec<Value> = graph.head()?.into_iter().map(Value::String).collect();
+    let parent_state = graph.fold()?;
+    let sctx = allod_core::model::schema_state_hash(&parent_state)
+        .map_err(|e| AllodError::Other(format!("schema_state_hash: {e}")))?;
+    let mut cs_map = serde_yaml::Mapping::new();
+    cs_map.insert(s("kind"), s("changeset"));
+    cs_map.insert(s("parents"), Value::Sequence(parents));
+    let mut author_map = serde_yaml::Mapping::new();
+    author_map.insert(s("principal"), s(&format!("principal:{author_name}")));
+    author_map.insert(s("key"), s(&signer.key_id().map_err(AllodError::from)?));
+    cs_map.insert(s("author"), Value::Mapping(author_map));
+    cs_map.insert(s("timestamp"), s(&now_iso()));
+    cs_map.insert(s("intent"), s(intent));
+    cs_map.insert(s("schema_context"), s(&sctx));
+    cs_map.insert(s("operations"), Value::Sequence(ops));
+    let mut cs = Value::Mapping(cs_map);
+    let (hash, _, _, _) = allod_core::model::changeset_hash(&cs)?;
+    if let Some(map) = cs.as_mapping_mut() {
+        map.insert(s("hash"), s(&hash));
+    }
+    Ok((cs, hash))
+}
+
+/// Attach a top-level `signature` field to a changeset that was built without one.
+pub fn attach_changeset_signature(cs: &mut Value, signature: &str) {
+    if let Some(map) = cs.as_mapping_mut() {
+        map.insert(s("signature"), s(signature));
+    }
+}
+
+/// Build an unsigned attestation envelope: same shape as `signed_envelope` but
+/// without the `signature` field. Returns `(envelope_without_signature, payload_string)`.
+pub fn envelope_payload_parts(
+    author_name: &str,
+    cs_hash: &str,
+) -> Result<(Value, String), AllodError> {
+    let mut statement_map = serde_yaml::Mapping::new();
+    statement_map.insert(s("changeset_hash"), s(cs_hash));
+
+    let mut envelope_map = serde_yaml::Mapping::new();
+    envelope_map.insert(s("kind"), s("attestation-envelope"));
+    envelope_map.insert(s("statement"), Value::Mapping(statement_map));
+    envelope_map.insert(s("attester"), s(&format!("principal:{author_name}")));
+    envelope_map.insert(s("evidence"), s("none"));
+    envelope_map.insert(s("evidence_type"), s("none"));
+
+    let envelope = Value::Mapping(envelope_map);
+    let payload = allod_core::policy::envelope_payload(&envelope).map_err(AllodError::from)?;
+    Ok((envelope, payload))
+}
+
+/// Attach a `signature` field to an envelope built by `envelope_payload_parts`.
+pub fn attach_envelope_signature(envelope: &mut Value, signature: &str) {
+    if let Some(map) = envelope.as_mapping_mut() {
+        map.insert(s("signature"), s(signature));
+    }
+}
+
 /// Build ops, sign, and submit in one call.
 pub fn commit(
     graph: &Graph,

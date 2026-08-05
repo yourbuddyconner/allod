@@ -537,6 +537,297 @@ impl AllodGraph {
         self.do_persist().await?;
         to_js(&res)
     }
+
+    // ---- Two-phase decide ---------------------------------------------------
+
+    /// Phase 1 (read-only): build an unsigned decision record and the payload
+    /// string the decider must sign. Returns `{ record, payload }`.
+    pub fn decide_payload(&self, hash: String, verdict: String) -> Result<JsValue, JsValue> {
+        let (record, payload) =
+            allod_graph::flows::decide_payload(&self.graph, &hash, &verdict).map_err(err)?;
+        let mut map = serde_yaml::Mapping::new();
+        map.insert(
+            serde_yaml::Value::String("record".into()),
+            record,
+        );
+        map.insert(
+            serde_yaml::Value::String("payload".into()),
+            serde_yaml::Value::String(payload),
+        );
+        yaml_to_js(&serde_yaml::Value::Mapping(map))
+    }
+
+    /// Phase 2 (mutating): submit a signed decision record (with `deciders` populated).
+    /// `record` is a plain JS object matching the decision-record shape.
+    pub async fn decide_with_record(
+        &mut self,
+        hash: String,
+        record: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let record_val = js_to_yaml(record)?;
+        let res =
+            allod_graph::flows::decide_with_record(&self.graph, &hash, record_val).map_err(err)?;
+        self.do_persist().await?;
+        to_js(&res)
+    }
+
+    // ---- Two-phase commit ---------------------------------------------------
+
+    /// Phase 1 (read-only): build the changeset without signing.
+    /// Returns `{ changeset, hash }`. The `changeset` has no `signature` field yet.
+    pub fn commit_payload(
+        &self,
+        author: String,
+        intent: String,
+        ops: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let ops_vec = js_array_to_yaml_vec(ops)?;
+        let (cs, hash) = allod_graph::ops::build_changeset_unsigned(
+            &self.graph,
+            &author,
+            &intent,
+            ops_vec,
+        )
+        .map_err(err)?;
+        let mut map = serde_yaml::Mapping::new();
+        map.insert(serde_yaml::Value::String("changeset".into()), cs);
+        map.insert(
+            serde_yaml::Value::String("hash".into()),
+            serde_yaml::Value::String(hash),
+        );
+        yaml_to_js(&serde_yaml::Value::Mapping(map))
+    }
+
+    /// Phase 2 (mutating): attach the external signature and submit.
+    /// `changeset` is the plain JS object from `commit_payload` (no `signature` yet).
+    /// `signature` is the `sig:ed25519:<hex>` string.
+    /// `envelopes` is an array of attestation envelopes (may be empty).
+    pub async fn commit_signed(
+        &mut self,
+        changeset: JsValue,
+        signature: String,
+        envelopes: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let mut cs = js_to_yaml(changeset)?;
+        allod_graph::ops::attach_changeset_signature(&mut cs, &signature);
+        // Extract author_name from cs["author"]["principal"] — strip "principal:" prefix
+        let author_ref = cs
+            .get("author")
+            .and_then(|a| a.get("principal"))
+            .and_then(serde_yaml::Value::as_str)
+            .ok_or_else(|| err("changeset missing author.principal"))?
+            .to_string();
+        let author_name = author_ref
+            .strip_prefix("principal:")
+            .unwrap_or(&author_ref)
+            .to_string();
+        let hash = cs
+            .get("hash")
+            .and_then(serde_yaml::Value::as_str)
+            .ok_or_else(|| err("changeset missing hash"))?
+            .to_string();
+        let envelopes_vec = js_array_to_yaml_vec(envelopes)?;
+        let res =
+            allod_graph::ops::admit_or_hold(&self.graph, &author_name, &cs, &hash, envelopes_vec)
+                .map_err(err)?;
+        self.do_persist().await?;
+        to_js(&res)
+    }
+
+    // ---- Envelope (read-only) -----------------------------------------------
+
+    /// Build the unsigned attestation envelope and signing payload for an external signer.
+    /// Returns `{ envelope, payload }`.
+    pub fn envelope_payload(&self, author: String, cs_hash: String) -> Result<JsValue, JsValue> {
+        let (envelope, payload) =
+            allod_graph::ops::envelope_payload_parts(&author, &cs_hash).map_err(err)?;
+        let mut map = serde_yaml::Mapping::new();
+        map.insert(serde_yaml::Value::String("envelope".into()), envelope);
+        map.insert(
+            serde_yaml::Value::String("payload".into()),
+            serde_yaml::Value::String(payload),
+        );
+        yaml_to_js(&serde_yaml::Value::Mapping(map))
+    }
+
+    // ---- Git evaluation bindings --------------------------------------------
+
+    /// Evaluate git-substrate policy rules against a proposed change.
+    /// `ops` is a JS array of `[verb, path]` pairs.
+    /// Returns `{ matched: string[], checklist: <serialised Checklist> }`.
+    pub fn git_checklist(
+        &self,
+        repo: String,
+        target_ref: String,
+        ops: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        use allod_core::policy::{self, GitChange};
+
+        // Parse ops: array of [verb, path]
+        let ops_arr = js_array_to_yaml_vec(ops)?;
+        let mut op_pairs: Vec<(String, String)> = Vec::new();
+        for item in ops_arr {
+            match item {
+                serde_yaml::Value::Sequence(seq) => {
+                    let verb = seq.first()
+                        .and_then(serde_yaml::Value::as_str)
+                        .ok_or_else(|| err("op[0] must be a string verb"))?
+                        .to_string();
+                    let path = seq.get(1)
+                        .and_then(serde_yaml::Value::as_str)
+                        .ok_or_else(|| err("op[1] must be a string path"))?
+                        .to_string();
+                    op_pairs.push((verb, path));
+                }
+                other => return Err(err(format!("each op must be [verb, path], got {:?}", other))),
+            }
+        }
+
+        let change = GitChange { repo, target_ref, ops: op_pairs };
+        let policy_doc = self.graph.policy().map_err(err)?;
+        let checklist = policy::evaluate_git(&policy_doc, &change, None).map_err(err)?;
+
+        let matched: Vec<serde_yaml::Value> = checklist
+            .matched_rules
+            .iter()
+            .map(|r| serde_yaml::Value::String(r.clone()))
+            .collect();
+
+        // Serialise the checklist as a plain YAML value for round-tripping through JS.
+        let mut cl_map = serde_yaml::Mapping::new();
+        let reviewers: Vec<serde_yaml::Value> = checklist.reviewers.iter().map(|(role, quorum)| {
+            let mut m = serde_yaml::Mapping::new();
+            m.insert(serde_yaml::Value::String("role".into()), serde_yaml::Value::String(role.clone()));
+            m.insert(serde_yaml::Value::String("quorum".into()), serde_yaml::Value::Number((*quorum).into()));
+            serde_yaml::Value::Mapping(m)
+        }).collect();
+        let attestations: Vec<serde_yaml::Value> = checklist.attestations.iter()
+            .map(|a| serde_yaml::Value::String(a.clone()))
+            .collect();
+        cl_map.insert(
+            serde_yaml::Value::String("matched_rules".into()),
+            serde_yaml::Value::Sequence(matched.clone()),
+        );
+        cl_map.insert(
+            serde_yaml::Value::String("reviewers".into()),
+            serde_yaml::Value::Sequence(reviewers),
+        );
+        cl_map.insert(
+            serde_yaml::Value::String("attestations".into()),
+            serde_yaml::Value::Sequence(attestations),
+        );
+        cl_map.insert(
+            serde_yaml::Value::String("root_required".into()),
+            serde_yaml::Value::Bool(checklist.root_required),
+        );
+
+        let mut result = serde_yaml::Mapping::new();
+        result.insert(
+            serde_yaml::Value::String("matched".into()),
+            serde_yaml::Value::Sequence(matched),
+        );
+        result.insert(
+            serde_yaml::Value::String("checklist".into()),
+            serde_yaml::Value::Mapping(cl_map),
+        );
+        yaml_to_js(&serde_yaml::Value::Mapping(result))
+    }
+
+    /// Check which reviewer requirements are unmet given a set of decision records.
+    /// `checklist` is the plain JS object from `git_checklist().checklist`.
+    /// `decisions` is an array of decision record values.
+    /// Returns `{ unmet: string[] }`.
+    pub fn git_satisfaction(
+        &self,
+        subject: String,
+        checklist: JsValue,
+        decisions: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        use allod_core::policy::{self, Checklist};
+        use std::collections::BTreeSet;
+
+        let cl_val = js_to_yaml(checklist)?;
+        // Reconstruct a Checklist from the serialised form.
+        let matched_rules: BTreeSet<String> = cl_val
+            .get("matched_rules")
+            .and_then(serde_yaml::Value::as_sequence)
+            .map(|seq| seq.iter().filter_map(serde_yaml::Value::as_str).map(String::from).collect())
+            .unwrap_or_default();
+        let reviewers: Vec<(String, u64)> = cl_val
+            .get("reviewers")
+            .and_then(serde_yaml::Value::as_sequence)
+            .map(|seq| {
+                seq.iter().filter_map(|v| {
+                    let role = v.get("role").and_then(serde_yaml::Value::as_str)?.to_string();
+                    let quorum = v.get("quorum").and_then(serde_yaml::Value::as_u64).unwrap_or(1);
+                    Some((role, quorum))
+                }).collect()
+            })
+            .unwrap_or_default();
+        let attestations: Vec<String> = cl_val
+            .get("attestations")
+            .and_then(serde_yaml::Value::as_sequence)
+            .map(|seq| seq.iter().filter_map(serde_yaml::Value::as_str).map(String::from).collect())
+            .unwrap_or_default();
+        let root_required = cl_val
+            .get("root_required")
+            .and_then(serde_yaml::Value::as_bool)
+            .unwrap_or(false);
+
+        let checklist = Checklist { matched_rules, reviewers, attestations, root_required };
+
+        let decisions_vec = js_array_to_yaml_vec(decisions)?;
+        let policy_doc = self.graph.policy().map_err(err)?;
+        let state = self.graph.fold().map_err(err)?;
+        let unmet = policy::reviewers_unmet(&state, &policy_doc, &subject, &checklist, &decisions_vec)
+            .map_err(err)?;
+
+        let unmet_vals: Vec<serde_yaml::Value> = unmet.into_iter()
+            .map(serde_yaml::Value::String)
+            .collect();
+        let mut result = serde_yaml::Mapping::new();
+        result.insert(
+            serde_yaml::Value::String("unmet".into()),
+            serde_yaml::Value::Sequence(unmet_vals),
+        );
+        yaml_to_js(&serde_yaml::Value::Mapping(result))
+    }
+
+    /// Build an unsigned decision record and signing payload for a git subject.
+    /// Returns `{ record, payload }`.
+    pub fn git_decision_payload(
+        &self,
+        subject: String,
+        verdict: String,
+    ) -> Result<JsValue, JsValue> {
+        use allod_core::policy;
+        let policy_doc = self.graph.policy().map_err(err)?;
+        let record =
+            policy::build_decision_record(&policy_doc, &subject, &verdict, &allod_graph::ops::now_iso())
+                .map_err(err)?;
+        let payload = policy::decision_payload(&record).map_err(err)?;
+        let mut map = serde_yaml::Mapping::new();
+        map.insert(serde_yaml::Value::String("record".into()), record);
+        map.insert(
+            serde_yaml::Value::String("payload".into()),
+            serde_yaml::Value::String(payload),
+        );
+        yaml_to_js(&serde_yaml::Value::Mapping(map))
+    }
+
+    /// Attach a decider `{principal, signature}` to a decision record (read-only helper).
+    /// Returns the updated record as a plain JS object.
+    pub fn git_decision_attach(
+        &self,
+        record: JsValue,
+        principal: String,
+        signature: String,
+    ) -> Result<JsValue, JsValue> {
+        use allod_core::policy;
+        let mut record_val = js_to_yaml(record)?;
+        policy::attach_decider(&mut record_val, &principal, &signature);
+        yaml_to_js(&record_val)
+    }
 }
 
 // ---- Shared MemStore bridge -------------------------------------------------

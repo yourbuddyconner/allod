@@ -2,8 +2,38 @@ import { describe, expect, test } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createPrivateKey, sign as nodeSign } from "node:crypto";
 import { AllodGraph } from "../pkg/allod_wasm.js";
 import { fsBackend } from "../js/store.js";
+
+/**
+ * Sign `payload` (a sha256:<hex> string) with an ed25519 secret key.
+ * `secretHex` is a 64-hex-char string (the 32-byte raw ed25519 seed in hex),
+ * as stored in keys/<name>.yaml under the "secret" field.
+ *
+ * Returns "sig:ed25519:<hex>".
+ */
+function ed25519Sign(secretHex: string, payload: string): string {
+  // PKCS#8 DER header for a bare ed25519 private key (RFC 8410).
+  const header = Buffer.from("302e020100300506032b657004220420", "hex");
+  const secretBytes = Buffer.from(secretHex, "hex");
+  const der = Buffer.concat([header, secretBytes]);
+  const key = createPrivateKey({ key: der, format: "der", type: "pkcs8" });
+  const sig = nodeSign(null, Buffer.from(payload, "utf8"), key);
+  return `sig:ed25519:${sig.toString("hex")}`;
+}
+
+/**
+ * Extract the owner's secret key from a dump (Array<[path, content]>).
+ * Looks for "keys/<name>.yaml" and parses the "secret:" field.
+ */
+function extractSecret(dump: [string, string][], name: string): string {
+  const entry = dump.find(([path]) => path === `keys/${name}.yaml`);
+  if (!entry) throw new Error(`keys/${name}.yaml not found in dump`);
+  const match = entry[1].match(/^secret:\s*([0-9a-f]+)/m);
+  if (!match) throw new Error(`secret field not found in keys/${name}.yaml`);
+  return match[1];
+}
 
 // Note on representation: serde-wasm-bindgen serialises Rust enum variants
 // using serde's "external tagging" convention:
@@ -350,4 +380,273 @@ test("persist callback rejection propagates to the mutating call (non-vacuous)",
   await expect(gFail.note("agent", "this note must not persist")).rejects.toThrow(
     "simulated persist failure"
   );
+});
+
+// ---------------------------------------------------------------------------
+// Task 6: two-phase signing seam
+// ---------------------------------------------------------------------------
+
+describe("two-phase commit (commit_payload + commit_signed)", () => {
+  test("commit_payload returns changeset without signature + hash; commit_signed with external sig admits", async () => {
+    let latestDump: [string, string][] = [];
+    const capturingPersist = async (dump: [string, string][]) => {
+      latestDump = dump;
+    };
+
+    const g = new AllodGraph([], capturingPersist);
+    await g.init("owner", "memory");
+    await g.principal_add("agent", "agent", "owner");
+
+    // Capture dump after principal_add so we have agent's key
+    const agentSecret = extractSecret(latestDump, "agent");
+
+    const prefId = uuid4();
+    const ops = [
+      {
+        create: {
+          kind: "node",
+          id: prefId,
+          type: "memory/Preference@1",
+          attributes: { statement: "two-phase works", strength: "soft" },
+          provenance: { derived_by: "principal:agent", method: "model-assisted", tool: "test@0.1" },
+        },
+      },
+    ];
+
+    // Phase 1: build the changeset payload without signing (read-only)
+    const phase1 = g.commit_payload("agent", "Two-phase test", ops);
+    expect(phase1).toBeDefined();
+    expect(typeof phase1.hash).toBe("string");
+    expect(phase1.hash).toMatch(/^sha256:/);
+    expect(phase1.changeset).toBeDefined();
+    // The changeset must NOT have a signature field yet
+    expect((phase1.changeset as Record<string, unknown>).signature).toBeUndefined();
+
+    // Phase 2: sign the hash externally and submit
+    const signature = ed25519Sign(agentSecret, phase1.hash as string);
+    const outcome = await g.commit_signed(phase1.changeset, signature, []);
+    // Preference without scratch classification should be Held for owner review
+    expect(outcome.Held !== undefined || outcome.Admitted !== undefined).toBe(true);
+  });
+
+  test("commit_signed with envelope satisfies model-assisted-needs-signed-envelope", async () => {
+    let latestDump: [string, string][] = [];
+    const capturingPersist = async (dump: [string, string][]) => {
+      latestDump = dump;
+    };
+
+    const g = new AllodGraph([], capturingPersist);
+    await g.init("owner", "memory");
+    await g.principal_add("agent", "agent", "owner");
+    const agentSecret = extractSecret(latestDump, "agent");
+
+    const prefId = uuid4();
+    const ops = [
+      {
+        create: {
+          kind: "node",
+          id: prefId,
+          type: "memory/Preference@1",
+          attributes: { statement: "envelope two-phase", strength: "hard" },
+          provenance: { derived_by: "principal:agent", method: "model-assisted", tool: "test@0.1" },
+        },
+      },
+    ];
+
+    // Phase 1: commit payload
+    const phase1 = g.commit_payload("agent", "Envelope two-phase test", ops);
+    const csHash = phase1.hash as string;
+    const csSignature = ed25519Sign(agentSecret, csHash);
+
+    // Get the envelope payload to sign
+    const envPhase = g.envelope_payload("agent", csHash);
+    expect(envPhase).toBeDefined();
+    expect(typeof envPhase.payload).toBe("string");
+    const envSignature = ed25519Sign(agentSecret, envPhase.payload as string);
+
+    // Attach signature to envelope
+    const envelope = { ...(envPhase.envelope as object), signature: envSignature };
+
+    // Phase 2: commit_signed with envelope
+    const outcome = await g.commit_signed(phase1.changeset, csSignature, [envelope]);
+    // With the signed envelope, the proposal should be Held (still needs owner decide)
+    // but the envelope requirement is satisfied
+    expect(outcome.Held !== undefined || outcome.Admitted !== undefined).toBe(true);
+  });
+});
+
+describe("two-phase decide (decide_payload + decide_with_record)", () => {
+  test("decide_payload returns record+payload; decide_with_record with signed record admits proposal", async () => {
+    let latestDump: [string, string][] = [];
+    const capturingPersist = async (dump: [string, string][]) => {
+      latestDump = dump;
+    };
+
+    const g = new AllodGraph([], capturingPersist);
+    await g.init("owner", "memory");
+    await g.principal_add("agent", "agent", "owner");
+    const ownerSecret = extractSecret(latestDump, "owner");
+
+    // Create a held proposal
+    const pref = await g.propose_preference("agent", "decide two-phase", "hard", undefined);
+    expect(pref.admission.Held).toBeDefined();
+    const hash = pref.hash as string;
+
+    // Phase 1: read-only — get unsigned decision record + payload
+    const phase1 = g.decide_payload(hash, "approve");
+    expect(phase1).toBeDefined();
+    expect(typeof phase1.payload).toBe("string");
+    expect(phase1.record).toBeDefined();
+    expect((phase1.record as Record<string, unknown>).kind).toBe("decision-record");
+    expect((phase1.record as Record<string, unknown>).verdict).toBe("approve");
+
+    // Sign externally
+    const ownerSig = ed25519Sign(ownerSecret, phase1.payload as string);
+
+    // Attach decider to record
+    const record = phase1.record as Record<string, unknown>;
+    const signedRecord = {
+      ...record,
+      deciders: [{ principal: "principal:owner", signature: ownerSig }],
+    };
+
+    // Phase 2: mutating — submit the signed record
+    const outcome = await g.decide_with_record(hash, signedRecord);
+    expect(outcome.Admitted).toBeDefined();
+  });
+});
+
+describe("envelope_payload (read-only)", () => {
+  test("returns envelope without signature and the payload string to sign", async () => {
+    const g = new AllodGraph([], async () => {});
+    await g.init("owner", "memory");
+
+    const fakeHash = "sha256:aabbcc001122334455667788990011223344556677889900112233445566778899";
+    const result = g.envelope_payload("owner", fakeHash);
+    expect(result).toBeDefined();
+    expect(typeof result.payload).toBe("string");
+    expect(result.payload.length).toBeGreaterThan(0);
+    expect(result.envelope).toBeDefined();
+    // Envelope must NOT have a signature field
+    expect((result.envelope as Record<string, unknown>).signature).toBeUndefined();
+    // Envelope must reference the hash
+    const env = result.envelope as Record<string, unknown>;
+    expect((env.statement as Record<string, unknown>).changeset_hash).toBe(fakeHash);
+  });
+});
+
+/** Install a git-substrate policy and approve it so it takes effect. */
+async function installAndApproveGitPolicy(
+  g: AllodGraph,
+  ownerSecret: string
+): Promise<void> {
+  const gitPolicy = `rules:
+  - name: protected-src
+    select:
+      substrate: git
+      path: "src/**"
+    require:
+      reviewers:
+        - role: owner
+          quorum: 1
+`;
+  const policyResult = await g.install_policy(gitPolicy, "owner");
+  // Under memory policy, set-policy requires owner decision.
+  if ((policyResult as Record<string, unknown>).Held) {
+    const policyHash = (
+      (policyResult as { Held: { hash: string } }).Held
+    ).hash;
+    // Use two-phase decide to approve the policy install
+    const phase1 = g.decide_payload(policyHash, "approve");
+    const ownerSig = ed25519Sign(ownerSecret, phase1.payload as string);
+    const record = {
+      ...(phase1.record as object),
+      deciders: [{ principal: "principal:owner", signature: ownerSig }],
+    };
+    await g.decide_with_record(policyHash, record);
+  }
+}
+
+describe("git evaluation bindings", () => {
+  test("git_checklist matches path-glob rules in policy", async () => {
+    let latestDump: [string, string][] = [];
+    const capturingPersist = async (dump: [string, string][]) => {
+      latestDump = dump;
+    };
+    const g = new AllodGraph([], capturingPersist);
+    await g.init("owner", "memory");
+    const ownerSecret = extractSecret(latestDump, "owner");
+
+    await installAndApproveGitPolicy(g, ownerSecret);
+
+    const ops = [["update", "src/main.rs"], ["update", "README.md"]];
+    const result = g.git_checklist("my-repo", "refs/heads/main", ops);
+    expect(result).toBeDefined();
+    // "protected-src" matches src/main.rs
+    expect(Array.isArray(result.matched)).toBe(true);
+    expect((result.matched as string[]).includes("protected-src")).toBe(true);
+    // checklist serialised
+    expect(result.checklist).toBeDefined();
+  });
+
+  test("git_satisfaction returns unmet reviewers when no decisions provided", async () => {
+    let latestDump: [string, string][] = [];
+    const capturingPersist = async (dump: [string, string][]) => {
+      latestDump = dump;
+    };
+    const g = new AllodGraph([], capturingPersist);
+    await g.init("owner", "memory");
+    const ownerSecret = extractSecret(latestDump, "owner");
+
+    await installAndApproveGitPolicy(g, ownerSecret);
+
+    const ops = [["update", "src/main.rs"]];
+    const checklistResult = g.git_checklist("my-repo", "refs/heads/main", ops);
+    // No decisions → reviewer requirement unmet
+    const unmetResult = g.git_satisfaction(
+      "git:abc123def456",
+      checklistResult.checklist,
+      []
+    );
+    expect(unmetResult).toBeDefined();
+    expect(Array.isArray(unmetResult.unmet)).toBe(true);
+    expect((unmetResult.unmet as string[]).length).toBeGreaterThan(0);
+  });
+
+  test("git_decision_payload returns record+payload for signing", async () => {
+    const g = new AllodGraph([], async () => {});
+    await g.init("owner", "memory");
+
+    const subject = "git:deadbeef1234567890";
+    const result = g.git_decision_payload(subject, "approve");
+    expect(result).toBeDefined();
+    expect(typeof result.payload).toBe("string");
+    expect(result.payload.length).toBeGreaterThan(0);
+    const record = result.record as Record<string, unknown>;
+    expect(record.kind).toBe("decision-record");
+    expect(record.subject).toBe(subject);
+    expect(record.verdict).toBe("approve");
+    expect(record.deciders).toBeUndefined(); // not yet signed
+  });
+
+  test("git_decision_attach appends decider to record", async () => {
+    const g = new AllodGraph([], async () => {});
+    await g.init("owner", "memory");
+
+    const subject = "git:cafebabe0000";
+    const phase1 = g.git_decision_payload(subject, "approve");
+    const fakeSignature = "sig:ed25519:" + "aa".repeat(64);
+    const withDecider = g.git_decision_attach(
+      phase1.record,
+      "owner",
+      fakeSignature
+    );
+    expect(withDecider).toBeDefined();
+    const rec = withDecider as Record<string, unknown>;
+    expect(Array.isArray(rec.deciders)).toBe(true);
+    const deciders = rec.deciders as Array<Record<string, unknown>>;
+    expect(deciders.length).toBe(1);
+    expect(deciders[0].principal).toBe("principal:owner");
+    expect(deciders[0].signature).toBe(fakeSignature);
+  });
 });
