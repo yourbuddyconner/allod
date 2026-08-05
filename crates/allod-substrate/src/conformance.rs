@@ -260,4 +260,22 @@ mod tests {
         let fake = Fake { revs, head: "sha256:tip".to_string() };
         check_conformance(&fake, "sha256:tip").unwrap();
     }
+
+    #[test]
+    fn unsigned_authorship_fails_conformance() {
+        struct Unsigned(Fake);
+        impl Substrate for Unsigned {
+            fn revision(&self, h: &str) -> Result<Revision, String> { self.0.revision(h) }
+            fn operation_set(&self, h: &str) -> Result<Vec<serde_yaml::Value>, String> {
+                self.0.operation_set(h)
+            }
+            fn state_hash(&self, h: &str) -> Result<String, String> { self.0.state_hash(h) }
+            fn heads(&self) -> Result<Vec<(String, String)>, String> { self.0.heads() }
+            fn verify_authorship(&self, _h: &str) -> Result<AuthorVerdict, String> {
+                Ok(AuthorVerdict::Unsigned)
+            }
+        }
+        let err = check_conformance(&Unsigned(Fake::good()), "sha256:tip").unwrap_err();
+        assert!(err.contains("unsigned"), "got: {err}");
+    }
 }

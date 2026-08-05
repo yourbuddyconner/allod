@@ -70,10 +70,11 @@ fn cmd_git_eval(args: &[String]) -> Result<(), String> {
     let commitish = pos.get(1).cloned().ok_or("usage: allod git eval <repo-dir> <commit-ish> --target <ref> [--graph <dir>] [--repo <name>] [--json]")?;
     let target_ref = flag(args, "--target").ok_or("--target <ref> is required")?;
 
-    // Defaults.
+    // Defaults. --graph specifies the directory containing .allod/;
+    // Graph::open appends .allod internally.
     let graph_dir = flag(args, "--graph")
         .map(PathBuf::from)
-        .unwrap_or_else(|| repo_dir.join(".allod"));
+        .unwrap_or_else(|| repo_dir.to_path_buf());
     let repo_name = flag(args, "--repo").unwrap_or_else(|| {
         repo_dir
             .file_name()
@@ -188,10 +189,11 @@ fn cmd_git_decide(args: &[String]) -> Result<(), String> {
     let principal = flag(args, "--as").ok_or("--as <principal> is required")?;
     let verdict = flag(args, "--verdict").unwrap_or_else(|| "approve".to_string());
 
-    // Defaults.
+    // Defaults. --graph specifies the directory containing .allod/;
+    // Graph::open appends .allod internally.
     let graph_dir = flag(args, "--graph")
         .map(PathBuf::from)
-        .unwrap_or_else(|| repo_dir.join(".allod"));
+        .unwrap_or_else(|| repo_dir.to_path_buf());
 
     // Resolve commit.
     let sha = resolve_commit(&repo_dir, &commitish)?;

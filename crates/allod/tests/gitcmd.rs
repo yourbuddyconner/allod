@@ -30,10 +30,9 @@ fn eval_decide_eval_loop_goes_green() {
     sh(repo, &["add", "."]);
     sh(repo, &["commit", "-q", "-m", "c1"]);
 
-    // Governance graph beside the repo (schema dir from the workspace).
-    let graph = repo.join(".allod");
+    // Governance graph at the repo root (schema dir from the workspace).
     let schema = concat!(env!("CARGO_MANIFEST_DIR"), "/../../ontologies");
-    let (ok, out) = allod(&["init", graph.to_str().unwrap(), "--owner", "conner", "--schema", schema]);
+    let (ok, out) = allod(&["init", repo.to_str().unwrap(), "--owner", "conner", "--schema", schema]);
     assert!(ok, "init failed: {out}");
 
     // Install the repo policy (fixture file written by this test).
@@ -52,7 +51,7 @@ rules:
     let pfile = repo.join("policy.yaml");
     std::fs::write(&pfile, policy_yaml).unwrap();
     let (ok, out) = allod(&[
-        "install-policy", graph.to_str().unwrap(), pfile.to_str().unwrap(), "--as", "conner",
+        "install-policy", repo.to_str().unwrap(), pfile.to_str().unwrap(), "--as", "conner",
     ]);
     assert!(ok, "install-policy failed: {out}");
 

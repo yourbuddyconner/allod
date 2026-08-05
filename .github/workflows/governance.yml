@@ -24,7 +24,7 @@ jobs:
           echo "## Governance checklist" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           set +e
-          cargo run -q -p allod -- git eval . "$SHA" --target "$TARGET" --repo allod --graph . | tee -a "$GITHUB_STEP_SUMMARY"
+          cargo run -q -p allod -- git eval . "$SHA" --target "$TARGET" --repo allod | tee -a "$GITHUB_STEP_SUMMARY"
           CODE=${PIPESTATUS[0]}
           set -e
           echo '```' >> "$GITHUB_STEP_SUMMARY"
