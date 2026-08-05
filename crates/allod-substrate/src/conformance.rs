@@ -37,24 +37,40 @@ pub fn check_conformance(sub: &dyn Substrate, signed_rev: &str) -> Result<(), St
             ));
         }
 
-        // Property 2: parent-pointer DAG — walk to genesis, no cycles.
-        let mut frontier = vec![head.clone()];
-        let mut seen: BTreeSet<String> = BTreeSet::new();
+        // Property 2: parent-pointer DAG — reach genesis, cycles are errors,
+        // shared ancestors (merges, §3.1) are not. Iterative DFS with an
+        // on-path set: a parent already on the current path is a back edge
+        // (cycle); a parent merely seen before is a cross edge (diamond).
+        let mut stack: Vec<(String, bool)> = vec![(head.clone(), false)];
+        let mut on_path: BTreeSet<String> = BTreeSet::new();
+        let mut done: BTreeSet<String> = BTreeSet::new();
         let mut steps = 0usize;
-        while let Some(h) = frontier.pop() {
-            if !seen.insert(h.clone()) {
+        while let Some((h, exiting)) = stack.pop() {
+            if exiting {
+                on_path.remove(&h);
+                done.insert(h);
+                continue;
+            }
+            if done.contains(&h) {
+                continue;
+            }
+            if on_path.contains(&h) {
                 return Err(format!("conformance: parent DAG cycle at {h}"));
             }
+            on_path.insert(h.clone());
+            stack.push((h.clone(), true));
             steps += 1;
             if steps > MAX_WALK {
                 return Err("conformance: parent walk exceeded limit (broken DAG?)".into());
             }
             let r = sub.revision(&h)?;
             for p in r.parents {
-                if seen.contains(&p) {
+                if on_path.contains(&p) {
                     return Err(format!("conformance: parent DAG cycle at {p}"));
                 }
-                frontier.push(p);
+                if !done.contains(&p) {
+                    stack.push((p, false));
+                }
             }
         }
 
@@ -219,5 +235,29 @@ mod tests {
         }
         let err = check_conformance(&NoSig(Fake::good()), "sha256:tip").unwrap_err();
         assert!(err.contains("authorship"), "got: {err}");
+    }
+
+    #[test]
+    fn diamond_merge_dag_conforms() {
+        // genesis <- left <- tip, genesis <- right <- tip: a merge, not a cycle.
+        let mut revs = BTreeMap::new();
+        revs.insert("sha256:genesis".to_string(), (vec![], "sha256:s0".to_string()));
+        revs.insert(
+            "sha256:left".to_string(),
+            (vec!["sha256:genesis".to_string()], "sha256:s1".to_string()),
+        );
+        revs.insert(
+            "sha256:right".to_string(),
+            (vec!["sha256:genesis".to_string()], "sha256:s2".to_string()),
+        );
+        revs.insert(
+            "sha256:tip".to_string(),
+            (
+                vec!["sha256:left".to_string(), "sha256:right".to_string()],
+                "sha256:s3".to_string(),
+            ),
+        );
+        let fake = Fake { revs, head: "sha256:tip".to_string() };
+        check_conformance(&fake, "sha256:tip").unwrap();
     }
 }
