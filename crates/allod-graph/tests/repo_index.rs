@@ -183,3 +183,31 @@ fn deleting_a_file_removes_inbound_call_edges_from_survivors() {
         }
     }
 }
+
+#[test]
+fn trait_import_is_idempotent() {
+    // Regression: index_state mapped stored kind "interface" back as "trait" so
+    // that the item key matched on re-import.  Without the fix the second import
+    // would not find the existing trait node and would create a duplicate, making
+    // the diff non-empty and the "nothing changed" error never fire.
+    let (graph, _owner) = fixture_graph();
+    let repo = git_fixture();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    std::fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub trait T { fn m(&self); }\npub fn helper() {}\n",
+    )
+    .unwrap();
+    sh(repo.path(), &["add", "-A"]);
+    sh(repo.path(), &["commit", "-q", "-m", "c1"]);
+
+    // First import: populates the graph.
+    import_commit(&graph, repo.path(), "HEAD", "owner").unwrap();
+
+    // Second import of the same commit: must return "nothing changed".
+    let err = import_commit(&graph, repo.path(), "HEAD", "owner").unwrap_err();
+    assert!(
+        err.to_string().contains("nothing changed"),
+        "second import should be idempotent but got: {err}"
+    );
+}

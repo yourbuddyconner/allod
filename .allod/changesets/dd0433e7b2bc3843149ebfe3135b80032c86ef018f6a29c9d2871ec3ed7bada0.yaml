@@ -1,0 +1,635 @@
+kind: changeset
+parents:
+- sha256:9b8144ee3a5a020c5ca228a2233d1d7ef87b9eb2f8aaa6ebe9d06b0d60cbc8c0
+author:
+  principal: principal:conner
+  key: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
+timestamp: 2026-08-05T03:42:52Z
+intent: Derived from commit 85233ed006a6 (43 ops, allod-scan@0.1)
+schema_context: sha256:39e97e90a623fbce025e0a5f7a751f5839f76ef775c72d1985e24dfde9c36c0b
+operations:
+- update:
+    kind: node
+    id: 2c03f5c2-5f92-4e01-bdc1-89549cb1954b
+    prior: sha256:85fc7284c5abac3746ecb403183d4f4ae16d0176706eba8daed7897b1f091af0
+    type: code/SourceFile@1
+    attributes:
+      path: crates/allod-graph/src/repo.rs
+      language: rust
+      blob: git:repo#6a4bd3fd876e12186684bed3a38603e72d941592:crates/allod-graph/src/repo.rs
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 2a306d16-84f5-483b-ab81-73efc20a2f7b
+    prior: sha256:5f83bc40e97ae9cae4edb2b2ed46ec47b0dba82738e77ebd1b2722520bd2485a
+    type: code/SourceFile@1
+    attributes:
+      path: crates/allod/src/main.rs
+      language: rust
+      blob: git:repo#9bb52454c940767defdb2d75f72fb43835f6e1cc:crates/allod/src/main.rs
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: d2e2b5c7-aaeb-40b6-a3cc-2801cc67941d
+    prior: sha256:33b9434a25aa90636aa78c64076e9cf4684f23be46b8a08654b04f137f5f2e0a
+    type: code/SourceFile@1
+    attributes:
+      path: governance/README.md
+      language: markdown
+      blob: git:repo#c61f8dbacf4ab059d55a42ee6a0b0d03ef3771a6:governance/README.md
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 0d6c68e3-c6c0-408a-bcff-6acbce3a021d
+    prior: sha256:89dde06a01974c99a69924ba0ddc01764a026758c95d19f45e79e6d53ed4f632
+    type: code/SourceFile@1
+    attributes:
+      path: governance/policy.yaml
+      language: yaml
+      blob: git:repo#b9309109c99e39ecedd9d40de11b82d3f5ad4e0e:governance/policy.yaml
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 74c22fa3-80ee-46d6-8610-ba7a7455e37a
+    prior: sha256:1371284479b1152b38b370a38ce824d9a9bc4bf3f3ca068bb5d6de82e0cc775e
+    type: code/Function@1
+    attributes:
+      name: content_differs
+      signature: 'fn content_differs(existing: &Value, desired_attrs: &Mapping) -> bool'
+      span: L328-L330
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 2173f736-3743-49d4-9127-54292408ab45
+    prior: sha256:ec150a155b06025662d4ca33e17656f16c4f5fd0bcc163ce42ebff04963540d5
+    type: code/Function@1
+    attributes:
+      name: extract_items
+      signature: 'fn extract_items(text: &str) -> Vec<ExtractedItem>'
+      span: L104-L810
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 46439613-47f2-4bcd-a2da-519813357165
+    prior: sha256:cdd04f91a5f9d2aba2c1b0fa6bcbf460bc44f1990af5f19ae1bc0aa5a40eaf47
+    type: code/Function@1
+    attributes:
+      name: import_commit
+      signature: pub fn import_commit(
+      span: L334-L610
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: e5a4ac01-3727-4749-bcb7-63a13ae5442a
+    prior: sha256:a3df4c23e6cd012800314413b550665143b195a33a720660fbfb1fc4b0530110
+    type: code/Function@1
+    attributes:
+      name: index_state
+      signature: 'fn index_state(state: &State) -> ExistingIndex'
+      span: L179-L302
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: f610116e-02ca-44eb-b11e-009d383af672
+    prior: sha256:14fe9c5e746a6140a35deb94e5fb046959ce88880a51cb1bae978cc6060dc670
+    type: code/Function@1
+    attributes:
+      name: make_sample_repo
+      signature: 'pub fn make_sample_repo(dir: &Path) -> Result<(String, String), AllodError>'
+      span: L776-L810
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 699ab6bc-8994-4dad-9410-3bf3336615a3
+    prior: sha256:a44d84c3c6b3d519adad55779c4b4db0cde3c175fbdeb9c3f84044672a22166d
+    type: code/Function@1
+    attributes:
+      name: node_op
+      signature: 'fn node_op(verb: &str, payload: Mapping) -> Value'
+      span: L320-L324
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: ace283d2-bc45-42ad-8dcc-3f9b60604b12
+    prior: sha256:ab99880278660fa93dde6840dbfe58517e255cc1850d7b4a3305bbe1de850197
+    type: code/Function@1
+    attributes:
+      name: provenance
+      signature: 'fn provenance(indexer: &str, commit: &str) -> Value'
+      span: L308-L318
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 848478c5-c7d6-4d89-9f74-ca760311ccee
+    prior: sha256:f990b3e586a0fbfdce4e2678b7b430086a9f79fd6d422c187f6fcc9ddfaf9d6d
+    type: code/Function@1
+    attributes:
+      name: s
+      signature: 'fn s(v: &str) -> Value'
+      span: L304-L306
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 6f0932eb-5a83-4c01-8322-4d24e82b7a9d
+    prior: sha256:fa8f0ae54b5053011a0d5558d14716149241a8b5cfee6c53a16d16aea419e6d4
+    type: code/Function@1
+    attributes:
+      name: semantic_diff
+      signature: 'pub fn semantic_diff(graph: &Graph, cs_hash: &str) -> Result<SemanticDiff, AllodError>'
+      span: L645-L772
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: f46e27fd-7090-4c6c-bacb-d58e1bc6ec07
+    prior: sha256:02766a7a0805e27e34db4a9987a8420f436f49de969e5ff6e6a59e6012620925
+    type: code/Function@1
+    attributes:
+      name: cmd_agent_add
+      signature: 'fn cmd_agent_add(dir: &Path, name: &str, by: &str) -> Result<(), String>'
+      span: L121-L123
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: d9e9f051-90da-4dbd-965f-5680b64a566b
+    prior: sha256:4f3a5af2dae2d7fe3422d54583e9ec22eb7e1137685a375d86186c1edbdefeaa
+    type: code/Function@1
+    attributes:
+      name: cmd_approve
+      signature: 'fn cmd_approve(dir: &Path, hash: &str, by: &str) -> Result<(), String>'
+      span: L149-L151
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 2ef4dafc-f0ed-4656-b925-0ba64b35b2e9
+    prior: sha256:43efb58bdcd35bd7dcd2aea96435eb44a616f122ba55c5a11534a79de6e222a8
+    type: code/Function@1
+    attributes:
+      name: cmd_checkpoint
+      signature: 'fn cmd_checkpoint(dir: &Path, by: &str) -> Result<(), String>'
+      span: L201-L210
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 1ee603b5-c30d-4b05-b3ff-e7f42cbf0156
+    prior: sha256:7c6c34ce284610e90a5a2d8c172f584a6efaafb78cb3ae7abb6ae12c4bc1426c
+    type: code/Function@1
+    attributes:
+      name: cmd_classify
+      signature: fn cmd_classify(
+      span: L183-L199
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: ae3b34ce-e1b9-4220-9d06-7037895f4bd8
+    prior: sha256:ce5039187f540a3be3b4eaafd8ba91aa1c8ee88ed781cfb89845e7da2a1ef2e5
+    type: code/Function@1
+    attributes:
+      name: cmd_decide
+      signature: 'fn cmd_decide(dir: &Path, hash: &str, by: &str, verdict: &str) -> Result<(), String>'
+      span: L157-L181
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 62e598e9-053e-4306-bf5b-d9c08932af92
+    prior: sha256:6cbab1d2f816b8b3d592102857b85d708b700955ccd42e9957c54e55f4a992ac
+    type: code/Function@1
+    attributes:
+      name: cmd_demo
+      signature: 'fn cmd_demo(dir: &Path, schema_dir: &Path) -> Result<(), String>'
+      span: L331-L371
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 0ffb7384-6c39-4914-bc3f-c98bfb0f2385
+    prior: sha256:6328d163a905a14035fe2370e1661c6ce763e5eb1183f837c5c594b47c5be855
+    type: code/Function@1
+    attributes:
+      name: cmd_demo_code
+      signature: 'fn cmd_demo_code(dir: &Path, schema: &Path) -> Result<(), String>'
+      span: L446-L502
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 0accee17-85ed-49ba-be6f-11893b153b2f
+    prior: sha256:f204e9c7a7f5c9ba27aa09f5a0f08e9c05efde390182e991924d5f116227d07e
+    type: code/Function@1
+    attributes:
+      name: cmd_demo_federation
+      signature: 'fn cmd_demo_federation(dir_a: &Path, dir_b: &Path, schema: &Path) -> Result<(), String>'
+      span: L376-L441
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 8bdd1a16-c047-41a7-9cf0-dcbefd774c18
+    prior: sha256:8ccf4459ce27cddc18efe1600bcef26d6fc046de39815e8e772b787659354f8f
+    type: code/Function@1
+    attributes:
+      name: cmd_envelope
+      signature: 'fn cmd_envelope(dir: &Path, cs_hash: &str, by: &str, tool: &str) -> Result<(), String>'
+      span: L222-L232
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 4d38e365-71a3-41c2-aab7-708716a37c80
+    prior: sha256:7de27b716bf2e1083a1c4eb21681afcb9843a73a73005c9ca4c00f598925570b
+    type: code/Function@1
+    attributes:
+      name: cmd_init_profile
+      signature: fn cmd_init_profile(
+      span: L98-L111
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: node
+    id: 34062fe6-ca58-4f43-a685-d51d864be462
+    type: code/Function@1
+    attributes:
+      name: cmd_install_schema
+      signature: 'fn cmd_install_schema(dir: &Path, pkg: &str, schema_dir: &Path, by: &str) -> Result<(), String>'
+      span: L75-L96
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: 83503fa3-9671-45ba-9bb6-26fd11c293df
+    type: code/declares@1
+    from: node:2a306d16-84f5-483b-ab81-73efc20a2f7b
+    to: node:34062fe6-ca58-4f43-a685-d51d864be462
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 4414e8d9-f32a-4239-aca6-9d0931157a0e
+    prior: sha256:ebbcb099fe07c6c6412e92fff87977db572e8577f3ae180b6b500f3bab6dc2d4
+    type: code/Function@1
+    attributes:
+      name: cmd_log
+      signature: 'fn cmd_log(dir: &Path) -> Result<(), String>'
+      span: L246-L260
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 2b8b1a1c-823b-4edf-a602-cf0735568b07
+    prior: sha256:9a97dbbbac0eead62784a817b3397a6128ef7307570b2d939b17d4da06622336
+    type: code/Function@1
+    attributes:
+      name: cmd_note
+      signature: 'fn cmd_note(dir: &Path, agent: &str, content: &str) -> Result<(String, bool), String>'
+      span: L126-L133
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 1e4b1a91-0916-47f4-a4d3-aa5d573abf5e
+    prior: sha256:9e507adc13dd6bf06714a0725dcb9d2a32ec6f8a8089775efa2b876274b2fb42
+    type: code/Function@1
+    attributes:
+      name: cmd_principal_add
+      signature: 'fn cmd_principal_add(dir: &Path, name: &str, kind: &str, by: &str) -> Result<(), String>'
+      span: L113-L119
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: c766bf82-fe9d-471f-8b32-b88d403717e5
+    prior: sha256:cafcc913256844efef59c482b4fd9a3fbd7e8d35af1d14888a337f58583d4730
+    type: code/Function@1
+    attributes:
+      name: cmd_proposals
+      signature: 'fn cmd_proposals(dir: &Path) -> Result<(), String>'
+      span: L234-L244
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: d428042f-103b-4cbb-9ddb-91e3c6144b27
+    prior: sha256:c3c1631a1cf287c08d572daeff0a370b329f1b05367e0e4f47c05b240c963092
+    type: code/Function@1
+    attributes:
+      name: cmd_propose_preference
+      signature: fn cmd_propose_preference(
+      span: L135-L147
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 53a8f7f9-a854-4829-a304-2b9d213bfdc5
+    prior: sha256:0f8db5fbae36689e41898ff077242ae0314dc204db66fff2cc935258bb461404
+    type: code/Function@1
+    attributes:
+      name: cmd_reject
+      signature: 'fn cmd_reject(dir: &Path, hash: &str, by: &str) -> Result<(), String>'
+      span: L153-L155
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: fba23e7f-9246-4a68-9730-64783797371a
+    prior: sha256:8f8ff4a74fbd2098b1b94e019e1a8e218aa87693d3e17539e740ecc76d7d0563
+    type: code/Function@1
+    attributes:
+      name: cmd_show
+      signature: 'fn cmd_show(dir: &Path) -> Result<(), String>'
+      span: L262-L273
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 61d410fe-a669-48bb-8aed-e204d75a1dcb
+    prior: sha256:164b32fd941328f259addcf6b1c77963da7047ca4936b40f29db80ca0fe841b1
+    type: code/Function@1
+    attributes:
+      name: cmd_trust
+      signature: 'fn cmd_trust(dir: &Path, measurement: &str) -> Result<(), String>'
+      span: L212-L217
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: cffa27ba-548e-4b55-8e89-5e9a2d756e32
+    prior: sha256:0c190f776da1ea4b800559a06aebeafdca40f67012b920edac3022a9140a8447
+    type: code/Function@1
+    attributes:
+      name: cmd_verify
+      signature: 'fn cmd_verify(dir: &Path) -> Result<(), String>'
+      span: L275-L327
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: fcc5d290-6471-4d62-8e9b-7645380fd022
+    prior: sha256:9f28712b12ef896ed78af1216eedfa72e4fce93e49ce58a283bbf86f11b5546c
+    type: code/Function@1
+    attributes:
+      name: flag
+      signature: 'fn flag(args: &[String], name: &str) -> Option<String>'
+      span: L506-L511
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 59723953-b028-4c74-98a9-aa5f0e65d0d0
+    prior: sha256:38d8ca8249a18acdaee08e5eb72b34e962492f62e08bff2632da75b69b8d419e
+    type: code/Function@1
+    attributes:
+      name: main
+      signature: fn main() -> ExitCode
+      span: L530-L703
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- update:
+    kind: node
+    id: 649902a9-53dc-4788-8ace-2ed874a6d5a0
+    prior: sha256:1f9e2b9b88bd828641e6f21d168878bdd0327a91d46a2bd9ec3162b54d56c41b
+    type: code/Function@1
+    attributes:
+      name: positional
+      signature: 'fn positional(args: &[String]) -> Vec<String>'
+      span: L513-L528
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: 8992d30a-0191-4cf5-bb08-e2e60f936942
+    type: code/calls@1
+    from: node:34062fe6-ca58-4f43-a685-d51d864be462
+    to: node:1d774c89-fa9b-4700-847e-aca2d977ef2a
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: 6f8e8c86-a69b-4363-88d5-daa1590a1467
+    type: code/calls@1
+    from: node:34062fe6-ca58-4f43-a685-d51d864be462
+    to: node:518ca40b-db74-4c01-8690-4aef38cc9bc6
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: eeb9d3a3-fc37-4f22-b659-db9397435d41
+    type: code/calls@1
+    from: node:34062fe6-ca58-4f43-a685-d51d864be462
+    to: node:a54a1c0c-6365-40b9-8909-e7e51cc2241b
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: 0271b155-cc0b-4659-879f-6fed4f91baf3
+    type: code/calls@1
+    from: node:34062fe6-ca58-4f43-a685-d51d864be462
+    to: node:b0ce289c-3462-491a-8e88-1789f3b91559
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: 42c31863-a2ab-4a14-a203-96165f598e25
+    type: code/calls@1
+    from: node:34062fe6-ca58-4f43-a685-d51d864be462
+    to: node:e780526c-c4e8-4581-ba7d-e925dd8a9047
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: bce42521-0ac0-4712-a4de-95c7af60a8ed
+    type: code/calls@1
+    from: node:59723953-b028-4c74-98a9-aa5f0e65d0d0
+    to: node:34062fe6-ca58-4f43-a685-d51d864be462
+    provenance:
+      derived_from:
+      - git:#85233ed006a6c1e8b73fea17a00cd23e8a8110b0
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+hash: sha256:dd0433e7b2bc3843149ebfe3135b80032c86ef018f6a29c9d2871ec3ed7bada0
+signature: sig:ed25519:898cb1c803a37e7c2c3334cd322aa2d965ad75b427cd0176784f1b6f28f6112400b5c290fb04719a726cba04cc2d4e4438059c58b168b06d5f639f96aa37310d
