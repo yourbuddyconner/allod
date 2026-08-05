@@ -376,6 +376,14 @@ impl Graph {
     /// changeset) is available for validating the remaining ops in the
     /// same changeset.
     pub fn fold(&self) -> Result<State, String> {
+        self.fold_to(None)
+    }
+
+    /// Fold the chain up to and including the changeset whose hash equals
+    /// `stop`.  When `stop` is `None`, folds the entire chain (equivalent to
+    /// `fold()`).  Returns an error if `stop` names a hash not present in
+    /// the chain.
+    pub fn fold_to(&self, stop: Option<&str>) -> Result<State, String> {
         let chain = self.chain()?;
 
         // Derive the registry per-changeset from state.
@@ -397,6 +405,7 @@ impl Graph {
         let mut state = State::default();
         let mut is_genesis = true;
         let mut reg_cache: Option<Registry> = None;
+        let mut stop_matched = stop.is_none();
         for cs in &chain {
             let touches_meta = changeset_touches_meta(&state, cs);
             // Invalidate the cache whenever this changeset touches meta nodes —
@@ -429,6 +438,21 @@ impl Graph {
                     get_str(cs, "hash").unwrap_or("?")
                 )
             })?;
+
+            if let Some(target) = stop {
+                if get_str(cs, "hash").unwrap_or("") == target {
+                    stop_matched = true;
+                    break;
+                }
+            }
+        }
+
+        if !stop_matched {
+            // stop is Some here (stop.is_none() → stop_matched = true above)
+            return Err(format!(
+                "revision {} is not in the chain",
+                stop.unwrap_or("?")
+            ));
         }
 
         Ok(state)
@@ -782,6 +806,60 @@ mod tests {
         assert!(graph.read_evidence("sha256:ab").unwrap().is_none());
         graph.write_evidence("sha256:ab", &cs).unwrap();
         assert!(graph.read_evidence("sha256:ab").unwrap().is_some());
+    }
+
+    /// TDD: fold_to(Some(hash)) stops after applying the named changeset.
+    #[test]
+    fn fold_to_stops_at_the_named_revision() {
+        // Arrange: genesis schema + 2 non-meta changesets (cs1 creates node a, cs2 creates node b)
+        let docs = memory_docs();
+        let policy = memory_policy();
+        let mut id_gen = seq_id();
+        let schema_ops = compile_schema_ops(&docs, Some(&policy), &mut id_gen)
+            .expect("compile_schema_ops");
+
+        let mut user_attrs = serde_yaml::Mapping::new();
+        user_attrs.insert(s("display_name"), s("owner"));
+        user_attrs.insert(s("keys"), Value::Sequence(vec![]));
+        let user_op = create_node_op("user-owner", "core/User@1", user_attrs);
+        let mut genesis_ops = schema_ops;
+        genesis_ops.push(user_op);
+        let (cs0, hash0) = raw_changeset(None, genesis_ops);
+
+        // cs1: creates node a (memory/Note with id "a")
+        let mut attrs_a = serde_yaml::Mapping::new();
+        attrs_a.insert(s("content"), s("node a"));
+        let op_a = create_node_op("a", "memory/Note@1", attrs_a);
+        let (cs1, cs1_hash) = raw_changeset(Some(&hash0), vec![op_a]);
+
+        // cs2: creates node b (memory/Note with id "b")
+        let mut attrs_b = serde_yaml::Mapping::new();
+        attrs_b.insert(s("content"), s("node b"));
+        let op_b = create_node_op("b", "memory/Note@1", attrs_b);
+        let (cs2, cs2_hash) = raw_changeset(Some(&cs1_hash), vec![op_b]);
+
+        let graph = Graph::with_store(Box::new(MemStore::new()));
+        graph.write_meta("test-fold-to", &[]).unwrap();
+        graph.append_changeset(&cs0, &hash0, None).unwrap();
+        graph.append_changeset(&cs1, &cs1_hash, None).unwrap();
+        graph.append_changeset(&cs2, &cs2_hash, None).unwrap();
+
+        // Assert:
+        let full = graph.fold_to(None).unwrap();
+        let at_cs1 = graph.fold_to(Some(&cs1_hash)).unwrap();
+        assert!(full.get_live("node", "b").is_some());
+        assert!(at_cs1.get_live("node", "b").is_none(), "cs2 must not be applied");
+        assert!(at_cs1.get_live("node", "a").is_some());
+        assert_eq!(
+            graph.fold().unwrap().state_hash().unwrap(),
+            full.state_hash().unwrap(),
+            "fold() must equal fold_to(None)"
+        );
+        let err = match graph.fold_to(Some("sha256:nope")) {
+            Err(e) => e,
+            Ok(_) => panic!("fold_to unknown hash must fail"),
+        };
+        assert!(err.contains("not in the chain"), "got: {err}");
     }
 
     #[test]
