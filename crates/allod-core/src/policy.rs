@@ -466,6 +466,83 @@ pub fn envelope_payload(envelope: &Value) -> Result<String, String> {
     Ok(sha256_hex("envelope", &canonical_cbor(&preimage)?))
 }
 
+/// Check the reviewer requirements of a checklist against decision
+/// records whose `subject` equals the given subject (§4.3 step 4).
+/// Native admission passes the changeset hash; the git path (§3.3)
+/// passes `git:<commit-sha>`. Returns unmet strings; empty means
+/// satisfied.
+pub fn reviewers_unmet(
+    parent: &State,
+    policy: &Value,
+    subject: &str,
+    checklist: &Checklist,
+    decisions: &[Value],
+) -> Result<Vec<String>, String> {
+    let pctx = policy_context(policy)?;
+    let mut unmet = Vec::new();
+    for (role, quorum) in &checklist.reviewers {
+        let bindings: Vec<String> = policy
+            .get("roles")
+            .and_then(|r| r.get(role.as_str()))
+            .and_then(Value::as_sequence)
+            .map(|seq| {
+                seq.iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut approvals: BTreeSet<String> = BTreeSet::new();
+        for record in decisions {
+            if get_str(record, "subject") != Some(subject)
+                || get_str(record, "verdict") != Some("approve")
+            {
+                continue;
+            }
+            if get_str(record, "policy_context") != Some(pctx.as_str()) {
+                continue;
+            }
+            let payload = decision_payload(record)?;
+            let deciders = record
+                .get("deciders")
+                .and_then(Value::as_sequence)
+                .cloned()
+                .unwrap_or_default();
+            for decider in &deciders {
+                let Some(principal) = get_str(decider, "principal") else { continue };
+                if !bindings.contains(&principal.to_string()) {
+                    continue;
+                }
+                let Some(signature) = get_str(decider, "signature") else { continue };
+                let Some((_, obj)) = parent.find_principal(principal) else { continue };
+                let keys = obj
+                    .content
+                    .get("attributes")
+                    .and_then(|a| a.get("keys"))
+                    .and_then(Value::as_sequence)
+                    .cloned()
+                    .unwrap_or_default();
+                let verified = keys.iter().any(|record| {
+                    get_str(record, "status") == Some("active")
+                        && get_str(record, "public").is_some_and(|public| {
+                            sign::verify(public, &payload, signature).is_ok()
+                        })
+                });
+                if verified {
+                    approvals.insert(principal.to_string());
+                }
+            }
+        }
+        if (approvals.len() as u64) < *quorum {
+            unmet.push(format!(
+                "reviewers: role {role} needs quorum {quorum}, have {}",
+                approvals.len()
+            ));
+        }
+    }
+    Ok(unmet)
+}
+
 pub struct Satisfaction {
     pub unmet: Vec<String>,
     /// Honest downgrades, e.g. an `evidence: none` envelope (§5.2).
@@ -545,7 +622,6 @@ pub fn check_satisfied_with(
     trusted_measurements: &[String],
 ) -> Result<Satisfaction, String> {
     let (cs_hash, _, _, _) = changeset_hash(cs)?;
-    let pctx = policy_context(policy)?;
     let mut unmet = Vec::new();
     let mut degraded = Vec::new();
 
@@ -555,66 +631,7 @@ pub fn check_satisfied_with(
         ));
     }
 
-    for (role, quorum) in &checklist.reviewers {
-        let bindings: Vec<String> = policy
-            .get("roles")
-            .and_then(|r| r.get(role.as_str()))
-            .and_then(Value::as_sequence)
-            .map(|seq| {
-                seq.iter()
-                    .filter_map(Value::as_str)
-                    .map(String::from)
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut approvals: BTreeSet<String> = BTreeSet::new();
-        for record in decisions {
-            if get_str(record, "subject") != Some(cs_hash.as_str())
-                || get_str(record, "verdict") != Some("approve")
-            {
-                continue;
-            }
-            if get_str(record, "policy_context") != Some(pctx.as_str()) {
-                continue;
-            }
-            let payload = decision_payload(record)?;
-            let deciders = record
-                .get("deciders")
-                .and_then(Value::as_sequence)
-                .cloned()
-                .unwrap_or_default();
-            for decider in &deciders {
-                let Some(principal) = get_str(decider, "principal") else { continue };
-                if !bindings.contains(&principal.to_string()) {
-                    continue;
-                }
-                let Some(signature) = get_str(decider, "signature") else { continue };
-                let Some((_, obj)) = parent.find_principal(principal) else { continue };
-                let keys = obj
-                    .content
-                    .get("attributes")
-                    .and_then(|a| a.get("keys"))
-                    .and_then(Value::as_sequence)
-                    .cloned()
-                    .unwrap_or_default();
-                let verified = keys.iter().any(|record| {
-                    get_str(record, "status") == Some("active")
-                        && get_str(record, "public").is_some_and(|public| {
-                            sign::verify(public, &payload, signature).is_ok()
-                        })
-                });
-                if verified {
-                    approvals.insert(principal.to_string());
-                }
-            }
-        }
-        if (approvals.len() as u64) < *quorum {
-            unmet.push(format!(
-                "reviewers: role {role} needs quorum {quorum}, have {}",
-                approvals.len()
-            ));
-        }
-    }
+    unmet.extend(reviewers_unmet(parent, policy, &cs_hash, checklist, decisions)?);
 
     for class in &checklist.attestations {
         let mut satisfied = false;
@@ -1144,6 +1161,84 @@ rules:
         assert_eq!(
             cl.reviewers,
             vec![("code-owner".to_string(), 1), ("security".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn reviewers_unmet_binds_to_the_given_subject() {
+        use crate::sign::Keypair;
+        use crate::fold::{Obj, State};
+        use crate::model::revision_hash;
+
+        // Build a state with a principal "principal:conner" whose key is active.
+        let kp = Keypair::generate("conner");
+        let mut state = State::default();
+        let key_entry = mk(&[
+            ("public", s(&kp.public_hex())),
+            ("status", s("active")),
+        ]);
+        let mut user_attrs = serde_yaml::Mapping::new();
+        user_attrs.insert(s("display_name"), s("conner"));
+        user_attrs.insert(s("keys"), Value::Sequence(vec![key_entry]));
+        user_attrs.insert(s("status"), s("active"));
+        let content = mk(&[
+            ("kind", s("node")),
+            ("id", s("conner")),
+            ("type", s("core/User@1")),
+            ("attributes", Value::Mapping(user_attrs)),
+        ]);
+        let rev = revision_hash(&content).unwrap();
+        state.objects.insert(
+            ("node".to_string(), "conner".to_string()),
+            Obj { content, rev, deleted: false, redacted: false },
+        );
+
+        let policy = git_policy();
+        let pctx = policy_context(&policy).unwrap();
+        let subject = "git:abc123deadbeef";
+
+        // Build a decision record whose subject is `subject` and is signed by conner.
+        let record_without_sig = mk(&[
+            ("subject", s(subject)),
+            ("policy_context", s(&pctx)),
+            ("verdict", s("approve")),
+            ("timestamp", s("2026-08-04T00:00:00Z")),
+        ]);
+        let payload = decision_payload(&record_without_sig).unwrap();
+        let signature = kp.sign(&payload);
+        let decider = mk(&[
+            ("principal", s("principal:conner")),
+            ("signature", s(&signature)),
+        ]);
+        let record = mk(&[
+            ("subject", s(subject)),
+            ("policy_context", s(&pctx)),
+            ("verdict", s("approve")),
+            ("timestamp", s("2026-08-04T00:00:00Z")),
+            ("deciders", Value::Sequence(vec![decider])),
+        ]);
+
+        // Checklist: code-owner role, quorum 1.
+        let checklist = Checklist {
+            reviewers: vec![("code-owner".to_string(), 1)],
+            attestations: vec![],
+            root_required: false,
+            matched_rules: Default::default(),
+        };
+
+        // Correct subject: expect empty (satisfied).
+        let result = reviewers_unmet(&state, &policy, subject, &checklist, &[record.clone()]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty(), "expected satisfied with correct subject");
+
+        // Wrong subject: expect unmet.
+        let result2 = reviewers_unmet(&state, &policy, "git:OTHER", &checklist, &[record]);
+        assert!(result2.is_ok());
+        let unmet = result2.unwrap();
+        assert_eq!(
+            unmet,
+            vec!["reviewers: role code-owner needs quorum 1, have 0"],
+            "expected unmet with wrong subject"
         );
     }
 }
