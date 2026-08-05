@@ -410,6 +410,9 @@ pub fn propose_preference(
 pub fn decide_payload(graph: &Graph, hash: &str, verdict: &str) -> Result<(Value, String), AllodError> {
     use allod_core::policy;
 
+    // Guard: proposal must exist before doing anything else.
+    graph.read_proposal(hash).map_err(|_| AllodError::ProposalNotFound(hash.to_string()))?;
+
     let evidence = graph.read_proposal_evidence(hash).map_err(AllodError::from)?;
     let decisions: Vec<Value> = evidence
         .get("decisions")

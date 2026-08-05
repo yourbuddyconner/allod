@@ -739,3 +739,50 @@ fn two_phase_decide_equals_internal_decide() {
     // The stored record must equal what we attached.
     assert_eq!(&decisions[0], &record, "stored evidence record must equal attached record");
 }
+
+#[test]
+fn decide_payload_bogus_hash_returns_proposal_not_found() {
+    use allod_graph::AllodError;
+    let graph = common::init_memory_graph();
+    let result = flows::decide_payload(&graph, "sha256:deadbeefdeadbeefdeadbeefdeadbeef", "approve");
+    match result {
+        Err(AllodError::ProposalNotFound(h)) => {
+            assert!(h.contains("deadbeef"), "error message should contain the bogus hash fragment");
+        }
+        other => panic!("expected ProposalNotFound, got {:?}", other),
+    }
+}
+
+#[test]
+fn two_phase_decide_reject_path() {
+    // Full two-phase decide with verdict "reject":
+    // decide_payload → sign → attach_decider → decide_with_record → Rejected.
+    // Evidence must be written with the reject record.
+    let graph = common::init_memory_graph();
+    flows::principal_add(&graph, "a8", "agent", "o").unwrap();
+    let r = flows::propose_preference(&graph, "a8", "prefer darkness", "soft", None).unwrap();
+    let hash = &r.hash;
+
+    // Phase 1: build the unsigned payload.
+    let (mut record, payload) = flows::decide_payload(&graph, hash, "reject").expect("decide_payload");
+    assert_eq!(record.get("verdict").and_then(serde_yaml::Value::as_str), Some("reject"));
+
+    // Sign and attach.
+    let signer = graph.signer("o").expect("signer");
+    let signature = signer.sign(&payload).expect("sign");
+    allod_core::policy::attach_decider(&mut record, "o", &signature);
+
+    // Phase 2: apply the signed record.
+    let outcome = flows::decide_with_record(&graph, hash, record.clone()).expect("decide_with_record");
+    assert!(matches!(outcome, DecisionOutcome::Rejected), "expected Rejected, got {:?}", std::mem::discriminant(&outcome));
+
+    // Proposal is still on disk (not removed), and evidence contains the reject record.
+    let evidence = graph.read_proposal_evidence(hash).expect("read_proposal_evidence");
+    let decisions = evidence.get("decisions").and_then(serde_yaml::Value::as_sequence).expect("decisions");
+    assert!(!decisions.is_empty(), "evidence must contain the reject decision record");
+    assert_eq!(
+        decisions[0].get("verdict").and_then(serde_yaml::Value::as_str),
+        Some("reject"),
+        "stored decision record must have verdict=reject"
+    );
+}
