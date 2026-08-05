@@ -123,13 +123,23 @@ impl FileBackend {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("cannot create key dir {}: {e}", dir.display()))?;
         let path = dir.join(format!("{}.yaml", kp.name));
-        if path.exists() {
-            return Err(format!("key already exists at {}", path.display()));
-        }
         let yaml_value = kp.to_yaml();
         let contents = serde_yaml::to_string(&yaml_value)
             .map_err(|e| format!("cannot serialize key: {e}"))?;
-        std::fs::write(&path, contents)
+        // Use create_new so the no-overwrite check is atomic (no TOCTOU).
+        use std::io::Write as _;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    format!("key already exists at {}", path.display())
+                } else {
+                    format!("cannot create key file {}: {e}", path.display())
+                }
+            })?;
+        file.write_all(contents.as_bytes())
             .map_err(|e| format!("cannot write key file {}: {e}", path.display()))?;
         Ok(KeyHandle::File {
             path,
@@ -294,7 +304,7 @@ mod tests {
         let be = FileBackend { create_dir: tmp.clone(), fallbacks: vec![] };
         let kp = crate::sign::Keypair::generate("alice");
         let expected_public = kp.public_hex();
-        let handle = be.store("sha256:feed", &kp).unwrap();
+        let _handle = be.store("sha256:feed", &kp).unwrap();
         // Path layout: <create_dir>/feed/alice.yaml
         assert!(tmp.join("feed").join("alice.yaml").is_file());
         let resolved = be.resolve("sha256:feed", "alice").unwrap();
