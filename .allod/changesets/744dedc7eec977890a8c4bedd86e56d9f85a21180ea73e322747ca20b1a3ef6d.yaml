@@ -1,0 +1,56 @@
+kind: changeset
+parents:
+- sha256:fb87f9fc7620ee71461d5118622b239582d14cb1b1e5f385924fae9ec2e4cfbe
+author:
+  principal: principal:conner
+  key: sha256:d704bde7aff981c918e3dc5c73180208894b06879008d977047f159346ed4e0b
+timestamp: 2026-08-05T02:18:56Z
+intent: Install schema package (0 doc(s))
+schema_context: sha256:3b5e5accca9f0e84c26eee1a73a958e944d23b8be24ec99df88f399f354ce1a4
+operations:
+- update:
+    kind: node
+    id: cc893322-54c8-459c-a10f-e4784e20d4f2
+    type: meta/Policy@1
+    attributes:
+      name: repo-governance
+      definition: |
+        policy: repo-governance
+        version: 1
+        default_posture: restricted
+        roles:
+          code-owner:
+          - principal:conner
+        rules:
+        - name: main-requires-review
+          select:
+            substrate: git
+            repo: allod
+            target_ref: refs/heads/main
+          require:
+            reviewers:
+              role: code-owner
+              quorum: 1
+        - name: workflows-require-review
+          select:
+            substrate: git
+            repo: allod
+            target_ref: refs/heads/*
+            path: .github/workflows/*
+          require:
+            reviewers:
+              role: code-owner
+              quorum: 1
+        - name: governance-requires-review
+          select:
+            substrate: git
+            repo: allod
+            target_ref: refs/heads/main
+            path: governance/*
+          require:
+            reviewers:
+              role: code-owner
+              quorum: 1
+    prior: sha256:0755f2a2bb71375910b09128c5f55a80e49c471e551b1c7bd47c6fa252b05c6b
+hash: sha256:744dedc7eec977890a8c4bedd86e56d9f85a21180ea73e322747ca20b1a3ef6d
+signature: sig:ed25519:b8ce5faa3c4d620ead7d1736bea81c88d593ac8fb8614223f79fdbaf57ea0c40b8b49a1529494deb75307503cab769d6cf67e39d5e925e6c76ca907899aade02

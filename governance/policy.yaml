@@ -1,0 +1,30 @@
+# repo-governance — the allod repository's own advisory review policy
+# (projection form, §2.5). Evaluated by `allod git eval` in CI; the
+# check is advisory (not a required status). Failing is the designed
+# steady state until decisions land (design doc, CI section).
+policy: repo-governance
+version: 1
+default_posture: restricted
+roles:
+  code-owner: [ "principal:conner" ]
+rules:
+
+  # Every change targeting main needs one code-owner decision (§3.3;
+  # the CODEOWNERS + branch-protection shape, portable and signed).
+  - name: main-requires-review
+    select: { substrate: git, repo: "allod", target_ref: "refs/heads/main" }
+    require:
+      reviewers: { role: code-owner, quorum: 1 }
+
+  # CI definitions are the gate's own substrate: changes to workflows
+  # need review on every branch, not only main.
+  - name: workflows-require-review
+    select: { substrate: git, repo: "allod", target_ref: "refs/heads/*", path: ".github/workflows/*" }
+    require:
+      reviewers: { role: code-owner, quorum: 1 }
+
+  # The governance graph and policy govern themselves: reviewed on main.
+  - name: governance-requires-review
+    select: { substrate: git, repo: "allod", target_ref: "refs/heads/main", path: "governance/*" }
+    require:
+      reviewers: { role: code-owner, quorum: 1 }

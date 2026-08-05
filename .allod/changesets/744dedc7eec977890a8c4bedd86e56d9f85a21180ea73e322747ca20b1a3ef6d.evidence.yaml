@@ -1,0 +1,10 @@
+decisions:
+- kind: decision-record
+  subject: sha256:744dedc7eec977890a8c4bedd86e56d9f85a21180ea73e322747ca20b1a3ef6d
+  policy_context: sha256:18be20cdb9136bff400422b5c3318735e3942220b12af91a28ee21718c3269b6
+  verdict: approve
+  timestamp: 2026-08-05T02:18:56Z
+  deciders:
+  - principal: principal:conner
+    signature: sig:ed25519:5f21301be30c40c15d2e74ca467d7893fa1c12753c268a6c3d6bc75147637f3d9b3f4176d7e4c28bc91148773c6eab0dde322ba3945434683067d557ceb1d306
+envelopes: []

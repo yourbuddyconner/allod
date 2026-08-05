@@ -1,2 +1,4 @@
 .DS_Store
 /target
+# governance graph signing keys — never committed
+.allod/keys/
