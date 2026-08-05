@@ -188,7 +188,7 @@ Each independently shippable, in order:
    adapter, `flows::verify` integrity/authorship consuming the trait.
    Policy consumes substrate-derived operation sets starting in
    milestone 2, where the second implementation exists. Zero behavior
-   change. Plan: `docs/superpowers/plans/2026-08-04-substrate-refactor.md`.
+   change. Plan: `docs/superpowers/plans/2026-08-04-substrate-refactor.md`. **Status: done.**
 2. **Git evaluation + CI action.** `allod-substrate-git`, policy
    unstub, `allod git eval`, advisory check on allod's own PRs with
    path/ref rules. `review` ontology package drafted.
