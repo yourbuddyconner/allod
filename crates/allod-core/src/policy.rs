@@ -325,6 +325,115 @@ pub fn evaluate(
     Ok(checklist)
 }
 
+// ---------------- git-substrate evaluation (§3.3) ----------------
+
+/// Minimal glob: `*` matches any run of characters (including `/`),
+/// everything else is literal. Rule patterns in §3.3 policies key on
+/// repo, path, and branch shapes; this is the whole grammar.
+pub fn glob_match(pattern: &str, text: &str) -> bool {
+    fn inner(p: &[u8], t: &[u8]) -> bool {
+        match p.first() {
+            None => t.is_empty(),
+            Some(b'*') => {
+                (0..=t.len()).any(|i| inner(&p[1..], &t[i..]))
+            }
+            Some(c) => t.first() == Some(c) && inner(&p[1..], &t[1..]),
+        }
+    }
+    inner(pattern.as_bytes(), text.as_bytes())
+}
+
+/// A git changeset viewed for policy evaluation (§3.3): the repo name,
+/// the ref the change targets, and the deterministic operation set as
+/// (verb, path) pairs with verb in create|update|delete.
+pub struct GitChange {
+    pub repo: String,
+    pub target_ref: String,
+    pub ops: Vec<(String, String)>,
+}
+
+/// Evaluate a git change against policy rules whose `select` carries
+/// `substrate: git` (§4.1, §3.3). Change-level keys `repo` and
+/// `target_ref` glob-match the change; op-level keys `path` and
+/// `operation` must co-match at least one op. Requirements union as in
+/// `evaluate`. `root_required` is never set here: default-posture
+/// fall-through is a native-substrate concept, and the advisory git
+/// path reports matched requirements only.
+pub fn evaluate_git(policy: &Value, change: &GitChange) -> Result<Checklist, String> {
+    let rules = policy
+        .get("rules")
+        .and_then(Value::as_sequence)
+        .ok_or("policy needs rules")?;
+    let mut checklist = Checklist::default();
+    for rule in rules {
+        let (Some(name), Some(select), Some(require)) = (
+            get_str(rule, "name"),
+            rule.get("select"),
+            rule.get("require"),
+        ) else {
+            continue;
+        };
+        if get_str(select, "substrate") != Some("git") {
+            continue;
+        }
+        if let Some(repo_pat) = get_str(select, "repo") {
+            if !glob_match(repo_pat, &change.repo) {
+                continue;
+            }
+        }
+        if let Some(ref_pat) = get_str(select, "target_ref") {
+            if !glob_match(ref_pat, &change.target_ref) {
+                continue;
+            }
+        }
+        let path_pat = get_str(select, "path");
+        let verbs: Option<Vec<&str>> = select.get("operation").map(|ops| match ops {
+            Value::Sequence(seq) => seq.iter().filter_map(Value::as_str).collect(),
+            other => other.as_str().into_iter().collect(),
+        });
+        let op_matches = |(verb, path): &(String, String)| -> bool {
+            if let Some(pat) = path_pat {
+                if !glob_match(pat, path) {
+                    return false;
+                }
+            }
+            if let Some(vs) = &verbs {
+                if !vs.contains(&verb.as_str()) {
+                    return false;
+                }
+            }
+            true
+        };
+        if !change.ops.iter().any(op_matches) {
+            continue;
+        }
+        checklist.matched_rules.insert(name.to_string());
+        if let Some(reviewers) = require.get("reviewers") {
+            let entries: Vec<&Value> = match reviewers {
+                Value::Sequence(seq) => seq.iter().collect(),
+                other => vec![other],
+            };
+            for entry in entries {
+                if let Some(role) = get_str(entry, "role") {
+                    let quorum = entry.get("quorum").and_then(Value::as_u64).unwrap_or(1);
+                    let req = (role.to_string(), quorum);
+                    if !checklist.reviewers.contains(&req) {
+                        checklist.reviewers.push(req);
+                    }
+                }
+            }
+        }
+        if let Some(att) = require.get("attestation_required") {
+            if let Some(class) = get_str(att, "attester_class") {
+                if !checklist.attestations.contains(&class.to_string()) {
+                    checklist.attestations.push(class.to_string());
+                }
+            }
+        }
+    }
+    Ok(checklist)
+}
+
 // ---------------- decision records and envelopes ----------------
 
 /// The payload every decider signs (§4.3): the hash of the record's
@@ -923,6 +1032,103 @@ rules:
             checklist.matched_rules.contains("schema-changes-gated"),
             "delete of meta/EntityType must match the define-type rule; matched: {:?}",
             checklist.matched_rules
+        );
+    }
+
+    // ---- git evaluation (§3.3 selectors) ----
+
+    fn git_policy() -> Value {
+        serde_yaml::from_str(
+            r#"
+policy: repo-policy
+version: 1
+default_posture: restricted
+roles:
+  code-owner: [ "principal:conner" ]
+  security:   [ "principal:conner" ]
+rules:
+  - name: main-requires-review
+    select: { substrate: git, repo: "allod", target_ref: "refs/heads/main" }
+    require:
+      reviewers: { role: code-owner, quorum: 1 }
+  - name: workflows-need-security
+    select: { substrate: git, repo: "*", target_ref: "refs/heads/*", path: ".github/workflows/*" }
+    require:
+      reviewers: { role: security, quorum: 1 }
+  - name: native-only-rule
+    select: { type: "memory/Preference" }
+    require:
+      reviewers: { role: code-owner, quorum: 1 }
+"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn glob_match_star_and_literal() {
+        assert!(glob_match("refs/heads/main", "refs/heads/main"));
+        assert!(glob_match("refs/heads/*", "refs/heads/feat/x"));
+        assert!(glob_match("*", "anything/at/all"));
+        assert!(glob_match(".github/workflows/*", ".github/workflows/ci.yml"));
+        assert!(!glob_match("refs/heads/main", "refs/heads/dev"));
+        assert!(!glob_match(".github/workflows/*", "src/lib.rs"));
+        assert!(glob_match("a*c*e", "abcde"));
+        assert!(!glob_match("a*c*e", "abcdf"));
+    }
+
+    #[test]
+    fn evaluate_git_matches_ref_rule_and_skips_native_rules() {
+        let change = GitChange {
+            repo: "allod".into(),
+            target_ref: "refs/heads/main".into(),
+            ops: vec![("update".into(), "crates/allod-core/src/policy.rs".into())],
+        };
+        let cl = evaluate_git(&git_policy(), &change).unwrap();
+        assert!(cl.matched_rules.contains("main-requires-review"));
+        assert!(!cl.matched_rules.contains("native-only-rule"));
+        assert_eq!(cl.reviewers, vec![("code-owner".to_string(), 1)]);
+        assert!(!cl.root_required);
+    }
+
+    #[test]
+    fn evaluate_git_path_rule_needs_a_touching_op() {
+        let policy = git_policy();
+        let touches = GitChange {
+            repo: "allod".into(),
+            target_ref: "refs/heads/feat/x".into(),
+            ops: vec![("create".into(), ".github/workflows/governance.yml".into())],
+        };
+        let cl = evaluate_git(&policy, &touches).unwrap();
+        assert!(cl.matched_rules.contains("workflows-need-security"));
+
+        let misses = GitChange {
+            repo: "allod".into(),
+            target_ref: "refs/heads/feat/x".into(),
+            ops: vec![("update".into(), "README.md".into())],
+        };
+        let cl = evaluate_git(&policy, &misses).unwrap();
+        assert!(!cl.matched_rules.contains("workflows-need-security"));
+        // feat branch: main rule doesn't match either.
+        assert!(cl.matched_rules.is_empty());
+        assert!(cl.reviewers.is_empty());
+    }
+
+    #[test]
+    fn evaluate_git_unions_requirements_without_duplicates() {
+        let change = GitChange {
+            repo: "allod".into(),
+            target_ref: "refs/heads/main".into(),
+            ops: vec![
+                ("update".into(), ".github/workflows/ci.yml".into()),
+                ("update".into(), ".github/workflows/release-core.yml".into()),
+            ],
+        };
+        let cl = evaluate_git(&git_policy(), &change).unwrap();
+        assert!(cl.matched_rules.contains("main-requires-review"));
+        assert!(cl.matched_rules.contains("workflows-need-security"));
+        assert_eq!(
+            cl.reviewers,
+            vec![("code-owner".to_string(), 1), ("security".to_string(), 1)]
         );
     }
 }
