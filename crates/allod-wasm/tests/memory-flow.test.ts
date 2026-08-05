@@ -706,4 +706,154 @@ describe("git evaluation bindings", () => {
     const unmetAfter = g.git_satisfaction(subject, checklistResult.checklist, [signedRecord]);
     expect((unmetAfter.unmet as string[]).length).toBe(0);
   });
+
+  test("git_checklist matches region-keyed rules via code graph nodes", async () => {
+    // Mirrors the Rust evaluate_git_region_reaches_through_derived_paths test in
+    // crates/allod-core/src/policy.rs (§8.3 region reach).
+    //
+    // Graph structure:
+    //   node:f1  — code/SourceFile@1, path "src/pay.rs"
+    //   node:fn1 — code/Function@1
+    //   edge:e1  — code/declares@1, from node:f1 → node:fn1
+    //   classification — term "security/critical" on node:fn1
+    //
+    // Policy: permissive default + one git rule selecting region "security/critical".
+    // Expected: ops touching src/pay.rs → rule matched; ops on src/other.rs → not matched.
+    let latestDump: [string, string][] = [];
+    const capturingPersist = async (dump: [string, string][]) => {
+      latestDump = dump;
+    };
+    const g = new AllodGraph([], capturingPersist);
+    await g.init("owner", "memory");
+    const ownerSecret = extractSecret(latestDump, "owner");
+
+    // Helper: approve a Held changeset as owner.
+    const approveHeld = async (result: unknown) => {
+      const r = result as Record<string, unknown>;
+      if (r.Held) {
+        const hash = (r.Held as { hash: string }).hash;
+        const phase1 = g.decide_payload(hash, "approve");
+        const sig = ed25519Sign(ownerSecret, phase1.payload as string);
+        const record = {
+          ...(phase1.record as object),
+          deciders: [{ principal: "principal:owner", signature: sig }],
+        };
+        await g.decide_with_record(hash, record);
+      }
+    };
+
+    // Step 1: Install minimal code-schema types and the security taxonomy.
+    // Both will be Held under the memory policy (schema-changes-are-serious),
+    // then approved by the owner.
+    //
+    // We install a stripped-down "code" ontology (no external-ref blob attribute,
+    // no import chain) whose type names match those used by path_regions() in
+    // allod-core/src/policy.rs:  code/SourceFile, code/Function, code/declares.
+    const codeSchemaYaml = `code:
+  ontology: code
+  version: 1
+  entity_types:
+    SourceFile:
+      attributes:
+        path: { type: string, required: true }
+    Function:
+      attributes:
+        name: { type: string, required: true }
+  edge_types:
+    declares:
+      domain: SourceFile
+      range: [Function]
+      cardinality: one-to-many
+security-taxonomy:
+  taxonomy: security-taxonomy
+  version: 1
+  terms:
+    - { name: security, parents: [] }
+    - { name: "security/critical", parents: [security] }
+`;
+    const schemaResult = await g.install_package(codeSchemaYaml, "owner");
+    await approveHeld(schemaResult);
+
+    // Step 2: Install a permissive policy that has a git region rule.
+    // default_posture: permissive means node/edge/classification commits by the
+    // owner are admitted immediately without review after this policy takes effect.
+    const regionPolicy = `policy: region-git-test
+version: 1
+default_posture: permissive
+roles:
+  owner:
+    - principal:owner
+rules:
+  - name: region-critical
+    select:
+      substrate: git
+      region: "security/critical"
+    require:
+      reviewers: { role: owner, quorum: 1 }
+`;
+    const policyResult = await g.install_policy(regionPolicy, "owner");
+    // Under the memory policy, set-policy is schema-changes-are-serious → Held.
+    await approveHeld(policyResult);
+
+    // Now the permissive region policy is active.
+    // Commit a code/SourceFile@1 node (path "src/pay.rs").
+    const f1Id = uuid4();
+    const f1Op = {
+      create: {
+        kind: "node",
+        id: f1Id,
+        type: "code/SourceFile@1",
+        attributes: { path: "src/pay.rs" },
+      },
+    };
+    const f1Result = await g.commit("owner", "Add SourceFile node", [f1Op], []);
+    expect((f1Result as Record<string, unknown>).Admitted).toBeDefined();
+
+    // Commit a code/Function@1 node.
+    const fn1Id = uuid4();
+    const fn1Op = {
+      create: {
+        kind: "node",
+        id: fn1Id,
+        type: "code/Function@1",
+        attributes: { name: "pay" },
+      },
+    };
+    const fn1Result = await g.commit("owner", "Add Function node", [fn1Op], []);
+    expect((fn1Result as Record<string, unknown>).Admitted).toBeDefined();
+
+    // Commit a code/declares@1 edge from f1 → fn1.
+    const e1Id = uuid4();
+    const e1Op = {
+      create: {
+        kind: "edge",
+        id: e1Id,
+        type: "code/declares@1",
+        from: `node:${f1Id}`,
+        to: `node:${fn1Id}`,
+      },
+    };
+    const e1Result = await g.commit("owner", "Add declares edge", [e1Op], []);
+    expect((e1Result as Record<string, unknown>).Admitted).toBeDefined();
+
+    // Classify the Function node into "security/critical".
+    // Under the permissive policy this is admitted immediately.
+    const clsResult = await g.classify(fn1Id, "security/critical", "owner", "human-reviewed");
+    expect((clsResult as Record<string, unknown>).Admitted).toBeDefined();
+
+    // git_checklist: touching src/pay.rs must match region-critical
+    // (the SourceFile is classified transitively via the declares edge).
+    const hitsResult = g.git_checklist("my-repo", "refs/heads/main", [
+      ["update", "src/pay.rs"],
+    ]);
+    expect(Array.isArray(hitsResult.matched)).toBe(true);
+    expect((hitsResult.matched as string[]).includes("region-critical")).toBe(true);
+
+    // git_checklist: touching an unclassified file must NOT match region-critical.
+    const missResult = g.git_checklist("my-repo", "refs/heads/main", [
+      ["update", "src/other.rs"],
+    ]);
+    expect(Array.isArray(missResult.matched)).toBe(true);
+    expect((missResult.matched as string[]).includes("region-critical")).toBe(false);
+  });
 });
