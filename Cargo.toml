@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/allod", "crates/allod-core", "crates/allod-graph", "crates/allod-lint", "crates/allod-substrate", "crates/allod-vectors", "crates/allod-wasm"]
+members = ["crates/allod", "crates/allod-core", "crates/allod-graph", "crates/allod-lint", "crates/allod-substrate", "crates/allod-substrate-git", "crates/allod-vectors", "crates/allod-wasm"]
 resolver = "2"

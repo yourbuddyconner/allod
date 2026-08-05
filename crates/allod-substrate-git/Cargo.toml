@@ -1,0 +1,13 @@
+[package]
+name = "allod-substrate-git"
+version = "0.1.0"
+edition = "2021"
+description = "GitSubstrate: Substrate trait over the git CLI; decisions in refs/notes/allod-decisions"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+allod-substrate = { path = "../allod-substrate" }
+serde_yaml = "0.9"
+
+[dev-dependencies]
+tempfile = "3"

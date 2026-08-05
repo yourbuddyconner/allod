@@ -56,6 +56,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "allod-substrate-git"
+version = "0.1.0"
+dependencies = [
+ "allod-substrate",
+ "serde_yaml",
+ "tempfile",
+]
+
+[[package]]
 name = "allod-vectors"
 version = "0.1.0"
 dependencies = [
