@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 allod-core = { path = "../allod-core" }
 serde_yaml = "0.9"
+
+[dev-dependencies]
+allod-graph = { path = "../allod-graph" }
