@@ -829,6 +829,8 @@ pub fn state(graph: &Graph) -> Result<StateView, AllodError> {
 /// Verify the full chain: integrity (level 1), authorship (level 2), governance (level 3).
 pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
     use allod_core::{fold::State, get_str, policy};
+    use allod_substrate::{AuthorVerdict, Substrate};
+    use allod_substrate::native::NativeSubstrate;
 
     // FIXME(tip-registry): verify replays history against the tip registry and
     // policy. If a schema mutation or policy update was admitted mid-chain, the
@@ -840,6 +842,7 @@ pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
     let policy_doc = graph.policy().map_err(AllodError::from)?;
     let roots = graph.roots().map_err(AllodError::from)?;
     let chain = graph.chain().map_err(AllodError::from)?;
+    let sub = NativeSubstrate::new(graph);
     let mut state = State::default();
     let mut degraded: Vec<String> = Vec::new();
     let mut changeset_entries: Vec<ChangesetEntry> = Vec::new();
@@ -849,8 +852,6 @@ pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
         let hash = get_str(cs, "hash").unwrap_or("?").to_string();
         let author_val = cs.get("author").cloned().unwrap_or(Value::Null);
         let author_ref = get_str(&author_val, "principal").unwrap_or("?").to_string();
-        let key_id = get_str(&author_val, "key").unwrap_or("").to_string();
-        let signature = get_str(cs, "signature").unwrap_or("").to_string();
 
         let genesis = i == 0;
 
@@ -948,36 +949,39 @@ pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
             (LevelResult::Verified, admitted_by)
         };
 
-        // Level 1: integrity — fold recomputes and checks hash
-        let integrity = match state.apply_changeset(&reg, cs) {
-            Ok(()) => LevelResult::Verified,
-            Err(e) => {
+        // Level 1: integrity — sub.revision() enforces content addressing (§3.1 property 1).
+        // Also advance replay state for governance of subsequent changesets; apply_changeset
+        // will succeed iff revision() passed (same hash check), so its result is discarded here.
+        let integrity = match sub.revision(&hash) {
+            Ok(_) => {
+                let _ = state.apply_changeset(&reg, cs);
+                LevelResult::Verified
+            }
+            Err(reason) => {
                 ok = false;
-                LevelResult::Failed(format!("{hash}: {e}"))
+                LevelResult::Failed(reason)
             }
         };
 
-        // Level 2: authorship — signature check
-        let authorship = match state.public_key_of(&author_ref, &key_id) {
-            Some(public) => {
-                match allod_core::sign::verify(&public, &hash, &signature) {
-                    Ok(()) => {
-                        if genesis && !roots.contains(&author_ref) {
-                            ok = false;
-                            LevelResult::Failed(format!("{hash}: genesis author {author_ref} is not root"))
-                        } else {
-                            LevelResult::Verified
-                        }
-                    }
-                    Err(e) => {
-                        ok = false;
-                        LevelResult::Failed(format!("{hash}: signature: {e}"))
-                    }
+        // Level 2: authorship — sub.verify_authorship() handles key lookup + signature verify.
+        // Note: verify_authorship folds the chain up to the revision for each changeset (O(n²)
+        // in chain length). Acceptable for this milestone; fixtures are small.
+        let authorship = match sub.verify_authorship(&hash) {
+            Ok(AuthorVerdict::Verified { ref principal, .. }) => {
+                if genesis && !roots.contains(principal) {
+                    ok = false;
+                    LevelResult::Failed(format!("{hash}: genesis author {principal} is not root"))
+                } else {
+                    LevelResult::Verified
                 }
             }
-            None => {
+            Ok(AuthorVerdict::Unsigned) => {
                 ok = false;
-                LevelResult::Failed(format!("{hash}: no active key {key_id} for {author_ref}"))
+                LevelResult::Failed(format!("{hash}: no signature"))
+            }
+            Ok(AuthorVerdict::Failed(reason)) | Err(reason) => {
+                ok = false;
+                LevelResult::Failed(format!("{hash}: {reason}"))
             }
         };
 

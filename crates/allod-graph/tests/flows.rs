@@ -125,6 +125,101 @@ fn verify_governance_failure_has_real_reason() {
     }
 }
 
+/// Pinning test: verify report verdicts must be identical before and after the
+/// substrate rewire (Task 5). Run green first, stay green after.
+#[test]
+fn verify_report_is_stable_across_substrate_rewire() {
+    use allod_graph::flows::LevelResult;
+    use allod_core::store::Graph as CoreGraph;
+    use allod_graph::flows;
+    use allod_core::get_str;
+    use tempfile::TempDir;
+
+    // ── Part 1: clean graph ──
+    // Every changeset must report integrity=Verified and authorship=Verified.
+    {
+        let graph = common::init_memory_graph();
+        flows::principal_add(&graph, "agent", "agent", "o").unwrap();
+        flows::note(&graph, "agent", "pinning content").unwrap();
+        let prop = flows::propose_preference(&graph, "agent", "prefer pinning", "soft", None).unwrap();
+        flows::decide(&graph, &prop.hash, "o", "approve").unwrap();
+
+        let report = flows::verify(&graph).expect("verify clean graph");
+        assert!(report.ok, "clean graph must verify ok");
+        for cs_entry in &report.changesets {
+            assert!(
+                matches!(cs_entry.integrity, LevelResult::Verified),
+                "clean graph: integrity not Verified for {}", cs_entry.hash
+            );
+            assert!(
+                matches!(cs_entry.authorship, LevelResult::Verified),
+                "clean graph: authorship not Verified for {}", cs_entry.hash
+            );
+        }
+    }
+
+    // ── Part 2: corrupted changeset → integrity failure ──
+    // We use a filesystem-backed graph so we can overwrite the changeset YAML.
+    //
+    // Current behavior (pre-rewire): graph.registry() folds the whole chain
+    // and fails fast when it detects the hash mismatch, so flows::verify returns
+    // Err rather than a VerifyReport. After the substrate rewire, verify uses
+    // sub.revision() per-changeset in the loop, so it returns Ok(report) with
+    // integrity=Failed for the tampered entry.
+    //
+    // This test accepts both behaviors so it passes before AND after the rewire.
+    {
+        let tmp = TempDir::new().expect("tempdir");
+        let graph_dir = tmp.path();
+        // Graph::create(dir) sets up FsStore at dir/.allod
+        let graph = CoreGraph::create(graph_dir).expect("create fs graph");
+        let profile = flows::profile_from_dir("memory",
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ontologies"))
+            .expect("profile_from_dir");
+        flows::init(&graph, "o", profile).expect("init");
+        flows::principal_add(&graph, "agent", "agent", "o").unwrap();
+        flows::note(&graph, "agent", "some note for pinning").unwrap();
+
+        // Identify the last changeset (the note).
+        let chain = graph.chain().expect("chain");
+        let last_cs = chain.last().expect("at least one cs");
+        let last_hash = get_str(last_cs, "hash").expect("hash").to_string();
+        let short = last_hash.strip_prefix("sha256:").unwrap_or(&last_hash);
+
+        // Overwrite the changeset file to break its content address.
+        // FsStore roots at graph_dir/.allod so changesets live there.
+        let cs_path = graph_dir.join(".allod").join("changesets").join(format!("{short}.yaml"));
+        let original = std::fs::read_to_string(&cs_path).expect("read changeset file");
+        // Change the timestamp field without touching the hash field.
+        // changeset_hash() includes the timestamp in its preimage, so when
+        // flows::verify re-reads the chain the recomputed hash won't match
+        // the stored hash field → apply_changeset returns Err → integrity=Failed.
+        let tampered = original.replace("timestamp:", "timestamp: TAMPERED #");
+        assert_ne!(tampered, original, "tamper must change the file — no 'timestamp:' in changeset?");
+        std::fs::write(&cs_path, &tampered).expect("write tampered changeset");
+
+        // Verify must detect the corruption. Pre-rewire: verify returns Err (fold
+        // fails fast). Post-rewire: verify returns Ok(report) with integrity=Failed.
+        match flows::verify(&graph) {
+            Err(_) => {
+                // Pre-rewire behavior: fold failure propagates as Err. Acceptable.
+            }
+            Ok(report) => {
+                // Post-rewire behavior: integrity failure captured in the report.
+                assert!(!report.ok, "tampered graph must not verify ok");
+                let failed_entry = report.changesets.iter()
+                    .find(|cs| cs.hash == last_hash)
+                    .expect("tampered changeset appears in report");
+                assert!(
+                    matches!(failed_entry.integrity, LevelResult::Failed(_)),
+                    "tampered changeset must have integrity=Failed, got: {:?}",
+                    std::mem::discriminant(&failed_entry.integrity)
+                );
+            }
+        }
+    }
+}
+
 // ---- Task 4b stubs (will be implemented one by one) ----
 
 // ---- trust ----
