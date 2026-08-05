@@ -274,7 +274,7 @@ fn build_changeset(
     ops: Vec<Value>,
     state: &mut State,
     schema_state: &mut SchemaState,
-    signer: &Keypair,
+    signer: &allod_core::keys::Signer<'_>,
 ) -> Result<Built, String> {
     let mut cs = yaml(header);
     let map = cs.as_mapping_mut().ok_or("changeset template must be a map")?;
@@ -283,7 +283,7 @@ fn build_changeset(
     if let Some(map) = cs.as_mapping_mut() {
         map.insert(
             Value::String("signature".into()),
-            Value::String(signer.sign(&hash)),
+            Value::String(signer.sign(&hash)?),
         );
     }
     if let Some(map) = cs.as_mapping_mut() {
@@ -311,8 +311,14 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
 
     let doc_bytes = b"hello, vectors\n";
     let doc_hash = plain_sha256(doc_bytes);
-    let owner = Keypair::from_secret_hex("vector-owner", OWNER_SECRET)?;
-    let owner_key_id = owner.key_id();
+    // Keep the raw keypair for key_id/public_hex lookups and key_yaml formatting;
+    // wrap in Signer::local for all signing operations (including build_changeset).
+    let owner_kp = Keypair::from_secret_hex("vector-owner", OWNER_SECRET)?;
+    let owner_key_id = owner_kp.key_id();
+    let owner_public_hex = owner_kp.public_hex();
+    let owner = allod_core::keys::Signer::local(
+        Keypair::from_secret_hex("vector-owner", OWNER_SECRET)?,
+    );
     let mut state = State::default();
     let mut schema_state = SchemaState::default();
 
@@ -522,13 +528,16 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
         );
     }
     let pctx = allod_core::policy::policy_context(&policy)?;
-    let agent = Keypair::from_secret_hex("vector-agent", AGENT_SECRET)?;
+    let agent_kp = Keypair::from_secret_hex("vector-agent", AGENT_SECRET)?;
+    let agent_key_id = agent_kp.key_id();
+    let agent_public_hex = agent_kp.public_hex();
+    let agent = allod_core::keys::Signer::local(
+        Keypair::from_secret_hex("vector-agent", AGENT_SECRET)?,
+    );
 
-    let key_yaml = |kp: &Keypair| {
+    let key_yaml_parts = |key_id: &str, public: &str| {
         format!(
-            "{{ key_id: \"{}\", algorithm: \"ed25519\", public: \"{}\", status: \"active\" }}",
-            kp.key_id(),
-            kp.public_hex()
+            "{{ key_id: \"{key_id}\", algorithm: \"ed25519\", public: \"{public}\", status: \"active\" }}"
         )
     };
     // Governance genesis: schema_context = GENESIS_SCHEMA_CONTEXT (empty parent).
@@ -540,14 +549,14 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
          id: \"00000000-0000-4000-8000-000000000010\", type: \"core/User@1\", \
          attributes: {{ display_name: \"vector-owner\", status: \"active\", \
          keys: [ {} ] }} }} }} ] }}",
-        owner.key_id(),
-        key_yaml(&owner)
+        owner_key_id,
+        key_yaml_parts(&owner_key_id, &owner_public_hex)
     ));
     let (g1_hash, _, _, _) = changeset_hash(&g1)?;
     let mut g1 = g1;
     if let Some(m) = g1.as_mapping_mut() {
         m.insert(Value::String("hash".into()), Value::String(g1_hash.clone()));
-        m.insert(Value::String("signature".into()), Value::String(owner.sign(&g1_hash)));
+        m.insert(Value::String("signature".into()), Value::String(owner.sign(&g1_hash)?));
     }
     // g2: schema_context = GENESIS_SCHEMA_CONTEXT (g1 contains no meta nodes,
     // so schema subgraph of parent state is still empty).
@@ -561,14 +570,14 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
          attributes: {{ display_name: \"vector-agent\", status: \"active\", \
          keys: [ {} ], \
          delegated_by: \"node:00000000-0000-4000-8000-000000000010\" }} }} }} ] }}",
-        owner.key_id(),
-        key_yaml(&agent)
+        owner_key_id,
+        key_yaml_parts(&agent_key_id, &agent_public_hex)
     ));
     let (g2_hash, _, _, _) = changeset_hash(&g2)?;
     let mut g2 = g2;
     if let Some(m) = g2.as_mapping_mut() {
         m.insert(Value::String("hash".into()), Value::String(g2_hash.clone()));
-        m.insert(Value::String("signature".into()), Value::String(owner.sign(&g2_hash)));
+        m.insert(Value::String("signature".into()), Value::String(owner.sign(&g2_hash)?));
     }
     let mut audit_state = FoldState::default();
     audit_state.apply_changeset(&reg, &g1)?;
@@ -588,17 +597,17 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
          id: \"00000000-0000-4000-8000-000000000013\", \
          subject: \"node:00000000-0000-4000-8000-000000000012\", term: \"work@1\", \
          asserted_by: \"principal:vector-agent\", basis: \"manual\" }} }} ] }}",
-        agent.key_id()
+        agent_key_id
     ));
     let (p_hash, _, _, _) = changeset_hash(&proposal)?;
     let mut proposal = proposal;
     if let Some(m) = proposal.as_mapping_mut() {
         m.insert(Value::String("hash".into()), Value::String(p_hash.clone()));
-        m.insert(Value::String("signature".into()), Value::String(agent.sign(&p_hash)));
+        m.insert(Value::String("signature".into()), Value::String(agent.sign(&p_hash)?));
     }
     let checklist =
         allod_core::policy::evaluate(&reg, &policy, &audit_state, &proposal, "agent")?;
-    let decision = |signer: &Keypair, principal: &str| -> Result<Value, String> {
+    let decision = |signer: &allod_core::keys::Signer<'_>, principal: &str| -> Result<Value, String> {
         let mut record = yaml(&format!(
             "{{ kind: decision-record, subject: \"{p_hash}\", policy_context: \"{pctx}\", \
              verdict: approve, timestamp: \"2026-08-02T01:03:00Z\" }}"
@@ -609,7 +618,7 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
                 Value::String("deciders".into()),
                 yaml(&format!(
                     "[ {{ principal: \"{principal}\", signature: \"{}\" }} ]",
-                    signer.sign(&payload)
+                    signer.sign(&payload)?
                 )),
             );
         }
@@ -736,10 +745,10 @@ fn generate(out_dir: &Path, ontologies_dir: &Path) -> Result<(), String> {
     signing.insert(Value::String("note".into()), Value::String(
         "RFC 8032 test keys; deterministic, never for real graphs".into()));
     signing.insert(Value::String("owner_secret_hex".into()), Value::String(OWNER_SECRET.into()));
-    signing.insert(Value::String("owner_public_hex".into()), Value::String(owner.public_hex()));
-    signing.insert(Value::String("owner_key_id".into()), Value::String(owner.key_id()));
+    signing.insert(Value::String("owner_public_hex".into()), Value::String(owner_public_hex.clone()));
+    signing.insert(Value::String("owner_key_id".into()), Value::String(owner_key_id.clone()));
     signing.insert(Value::String("agent_secret_hex".into()), Value::String(AGENT_SECRET.into()));
-    signing.insert(Value::String("agent_public_hex".into()), Value::String(agent.public_hex()));
+    signing.insert(Value::String("agent_public_hex".into()), Value::String(agent_public_hex.clone()));
     vectors.insert(Value::String("signing".into()), Value::Mapping(signing));
 
     let mut governance = Mapping::new();

@@ -100,9 +100,9 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
     use allod_core::sign::Keypair;
 
     let kp = Keypair::generate(owner);
-    // Genesis: no graph_id yet, so store in-repo (.allod/keys/) for compatibility.
-    // After write_meta establishes the graph_id, signer() falls back to load_key here.
-    graph.save_key(&kp).map_err(AllodError::from)?;
+
+    // Extract key record and public hex before any move of kp.
+    let key_rec = crate::ops::key_record(&kp);
 
     // Bind owner into every policy role before compiling schema ops.
     if let Some(roles) = profile.policy.get_mut("roles").and_then(Value::as_mapping_mut) {
@@ -122,7 +122,7 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
     let owner_node = crate::ops::uuid4();
     let mut attrs = serde_yaml::Mapping::new();
     attrs.insert(Value::String("display_name".into()), Value::String(owner.into()));
-    attrs.insert(Value::String("keys".into()), Value::Sequence(vec![crate::ops::key_record(&kp)]));
+    attrs.insert(Value::String("keys".into()), Value::Sequence(vec![key_rec]));
     attrs.insert(Value::String("status".into()), Value::String("active".into()));
     let node_op = crate::ops::create_node_op(&owner_node, "core/User@1", Value::Mapping(attrs), None);
 
@@ -134,6 +134,8 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
         "Genesis: root authority {owner}, core + {} schema, {}-local policy",
         profile.name, profile.name
     );
+    // Clone kp before consuming it into the Signer so we can call create_key afterwards.
+    let kp_clone = Keypair::from_yaml(&kp.to_yaml()).map_err(AllodError::from)?;
     let genesis_signer = allod_core::keys::Signer::local(kp);
     let (cs, hash) = crate::ops::build_changeset(graph, &genesis_signer, &intent, genesis_ops)?;
 
@@ -143,7 +145,12 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
     // registry path inside fold(), which handles this case correctly. We do not attempt
     // a manual apply here — integrity is verified on the first fold() call.
     graph.append_changeset(&cs, &hash, None).map_err(AllodError::from)?;
+
+    // write_meta establishes the graph_id so create_key can resolve the XDG path.
+    // Both write_meta and create_key must succeed before we admit, so a failure here
+    // leaves the graph in an unusable state — the caller should discard it.
     graph.write_meta(&hash, &[format!("principal:{owner}")]).map_err(AllodError::from)?;
+    graph.create_key(&kp_clone).map_err(AllodError::from)?;
 
     Ok(InitResult {
         graph_id: hash,

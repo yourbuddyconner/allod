@@ -213,7 +213,7 @@ fn cmd_git_decide(args: &[String]) -> Result<(), String> {
     // Open graph.
     let graph = Graph::open(&graph_dir)?;
     let policy = graph.policy()?;
-    let kp = graph.load_key(&principal)?;
+    let signer = graph.signer(&principal).map_err(|e| e.to_string())?;
 
     // Build the decision record (mirrors flows::decide exactly).
     let mut record = serde_yaml::Mapping::new();
@@ -248,7 +248,7 @@ fn cmd_git_decide(args: &[String]) -> Result<(), String> {
     );
     decider.insert(
         Value::String("signature".into()),
-        Value::String(kp.sign(&payload)),
+        Value::String(signer.sign(&payload).map_err(|e| e.to_string())?),
     );
     if let Some(map) = record.as_mapping_mut() {
         map.insert(

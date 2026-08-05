@@ -580,10 +580,21 @@ mod tests {
     use crate::model::changeset_hash;
     use crate::schemaops::compile_schema_ops;
 
+    /// Serialization lock: set_var is process-wide; prevent races with parallel tests.
+    static SIGNER_TEST_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+
     #[test]
     fn signer_resolves_xdg_then_legacy_then_store() {
+        let _guard = SIGNER_TEST_LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap();
         // Graph in a temp dir; ALLOD_KEYS_DIR pointed at another temp dir.
-        let root = std::env::temp_dir().join(format!("allod-store-signer-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!(
+            "allod-store-signer-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0),
+        ));
         let _ = std::fs::remove_dir_all(&root);
         std::env::set_var("ALLOD_KEYS_DIR", root.join("xdg"));
         let gdir = root.join("g");

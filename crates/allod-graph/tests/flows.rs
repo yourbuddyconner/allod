@@ -595,3 +595,55 @@ fn ec2_entity_type_governance_flow() {
         .collect();
     assert!(report.ok, "verify should be ok after EC2 flow; failed changesets: {:?}", failed_hashes);
 }
+
+// Serialization lock for tests that set ALLOD_KEYS_DIR (process-wide env var).
+static KEYS_DIR_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+
+/// After `flows::init` on a filesystem graph, the owner key must exist under
+/// `$ALLOD_KEYS_DIR/<graph-id-component>/` and must NOT exist under `.allod/keys/`.
+#[test]
+fn init_writes_owner_key_to_xdg_backend_not_repo() {
+    let _guard = KEYS_DIR_LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap();
+
+    // Unique temp root per run to avoid leftover state.
+    let root = std::env::temp_dir().join(format!(
+        "allod-init-key-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0),
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let xdg_dir = root.join("xdg");
+    let graph_dir = root.join("repo");
+
+    std::env::set_var("ALLOD_KEYS_DIR", &xdg_dir);
+
+    let graph = allod_core::store::Graph::create(&graph_dir).expect("Graph::create");
+    let profile = flows::profile_from_dir("memory", &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ontologies"))
+        .expect("profile_from_dir");
+    let result = flows::init(&graph, "alice", profile).expect("flows::init");
+
+    // Derive the graph-id-component from the genesis hash.
+    let graph_id = &result.graph_id;
+    let component = allod_core::keys::graph_dir_component(graph_id);
+
+    // Key must exist in XDG path.
+    let xdg_key = xdg_dir.join(&component).join("alice.yaml");
+    assert!(
+        xdg_key.is_file(),
+        "owner key should be at XDG path {}, but it is not",
+        xdg_key.display()
+    );
+
+    // Key must NOT exist in the repo-local .allod/keys/ directory.
+    let repo_key = graph_dir.join(".allod/keys/alice.yaml");
+    assert!(
+        !repo_key.exists(),
+        "owner key must not be at repo-local path {}, but it is",
+        repo_key.display()
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}

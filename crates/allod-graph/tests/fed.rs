@@ -41,7 +41,7 @@ fn federation_grant_bundle_import_revoke() {
     // B registers A as a peer.
     let a_meta = graph_a.meta().expect("graph_a meta");
     let a_graph_id = allod_core::get_str(&a_meta, "graph_id").expect("graph_id").to_string();
-    let a_key = graph_a.load_key("o").expect("load_key o").public_hex();
+    let a_key = graph_a.signer("o").expect("signer o").public_hex().expect("public_hex o");
     peer_add(&graph_b, "conner-memory", &a_graph_id, &a_key, "dana");
 
     let b_meta = graph_b.meta().expect("graph_b meta");
@@ -155,7 +155,7 @@ fn verify_bundle_intact_and_tampered() {
 
     let a_meta = graph_a.meta().expect("graph_a meta");
     let a_graph_id = allod_core::get_str(&a_meta, "graph_id").expect("graph_id").to_string();
-    let a_key = graph_a.load_key("o").expect("load_key o").public_hex();
+    let a_key = graph_a.signer("o").expect("signer o").public_hex().expect("public_hex o");
     fed::peer_add(&graph_b, "conner-verify", &a_graph_id, &a_key, "dana").expect("peer_add");
 
     let b_meta = graph_b.meta().expect("graph_b meta");
