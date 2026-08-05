@@ -41,7 +41,7 @@ fn yaml(s: &str) -> Value {
 
 fn load_ontology_docs(dir: &Path) -> Result<BTreeMap<String, Value>, String> {
     let loaded = allod_core::load_dir(dir);
-    for issue in &loaded.issues {
+    if let Some(issue) = loaded.issues.iter().next() {
         return Err(format!(
             "{}: {}: {}",
             issue.path.display(),
@@ -61,7 +61,7 @@ fn load_ontology_docs(dir: &Path) -> Result<BTreeMap<String, Value>, String> {
 /// Load ontology docs AND taxonomy docs (for compile_schema_ops which handles both).
 fn load_all_schema_docs(dir: &Path) -> Result<Vec<(String, Value)>, String> {
     let loaded = allod_core::load_dir(dir);
-    for issue in &loaded.issues {
+    if let Some(issue) = loaded.issues.iter().next() {
         return Err(format!(
             "{}: {}: {}",
             issue.path.display(),

@@ -1,10 +1,47 @@
 # Key backends: file, macOS Keychain, YubiKey — and the passkey boundary
 
 Date: 2026-08-04
-Status: approved design. File + Keychain implement in milestone 4
-(foundation sub-project); YubiKey PIV implements later behind the same
-interface. Companion to the freehold milestone-4 design
+Status: implemented (file + keychain); YubiKey PIV deferred. Companion to
+the freehold milestone-4 design
 (`freehold: docs/specs/2026-08-04-governed-review-surface-design.md`).
+
+## Deviations from this spec
+
+**Signer wrapper (additive).** A `Signer` struct wraps `Box<dyn KeyBackend
++ KeyHandle>` into a single call-site value with methods `name`, `sign`,
+`public_hex`, and `key_id`. Not in the spec; callers use `Signer` rather
+than calling the trait directly. `Keypair` remains the file backend's
+internal type.
+
+**Default creation backend: file on all platforms.** The spec says the
+default resolution order on macOS is `[keychain, file]`. Shipped resolution
+order for lookup is `[keychain, file]` on macOS as specified, but creation
+always targets the file backend on all platforms. Keychain creation requires
+an explicit `key_backends` list in `graph.yaml` (or `allod key migrate --to
+keychain`). `Graph` tracks a `create_backend_idx` for this.
+
+**Keychain ACL: shipped without biometric attachment.** `security-framework`
+3.x cannot attach `SecAccessControl` to generic-password items at creation
+time. The shipped keychain backend stores the item without a biometric ACL;
+retrieval is gated only by login-keychain unlock (password prompt on a
+locked keychain). Touch ID is not currently enforced. The spec's honesty
+note ("the platform decides based on code signature and entitlements")
+anticipates this path.
+
+**CLI surface: no `key enroll`.** The spec mentions `allod key enroll
+--backend yubikey-piv`. YubiKey PIV is deferred; `allod key enroll` was
+not implemented. Shipped: `allod key where <dir> --as <principal>` and
+`allod key migrate [--to keychain]`.
+
+**Wasm two-phase seam: extended bindings.** The spec describes
+`decision_payload` and a changeset preimage builder. Shipped additionally:
+`commit_payload`/`commit_signed`, `decide_payload`/`decide_with_record`,
+`envelope_payload`, plus freehold M4 git bindings
+`git_checklist`/`git_satisfaction`/`git_decision_payload`/`git_decision_attach`.
+The wasm-internal file-signing path (`commit`/`decide`) is unchanged and
+additive.
+
+**YubiKey PIV + WebAuthn: not implemented.** Deferred per spec.
 
 ## Goal
 

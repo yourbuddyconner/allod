@@ -84,6 +84,36 @@ integration test:
   grant, proves the shared data is genuine, and shows that sharing stops
   after the grant is revoked.
 
+## Keys
+
+Allod signing keys live outside your graph repositories. By default they
+are stored at `~/.local/share/allod/keys/<graph-id>/<principal>.yaml`
+(XDG_DATA_HOME is respected). On macOS, keys may also be stored in the
+login keychain (service `allod`, account `<graph-id>/<principal>`).
+
+Two commands manage keys once a graph exists:
+
+```
+allod key where <dir> --as <principal>
+```
+
+Reports where the key for `<principal>` in the graph at `<dir>` currently
+lives and which backend holds it.
+
+```
+allod key migrate <dir> --as <principal> [--to keychain]
+```
+
+Moves a key from its current location. Without `--to`, it moves a
+repo-local key (`.allod/keys/`) to the XDG path. With `--to keychain`
+(macOS only), it moves the key into the login keychain and removes the
+file copy.
+
+`allod init` always writes a `.gitignore` entry for `.allod/keys/`
+regardless of backend, so repo-local keys are never accidentally committed.
+
+To override the file backend root for testing: `ALLOD_KEYS_DIR=/path allod …`.
+
 ## Specification contents
 
 | Part | File | Conformance |
