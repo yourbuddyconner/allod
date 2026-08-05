@@ -34,15 +34,12 @@ fn init_migrate_where_roundtrip() {
     assert!(!g.join(".allod/keys/o.yaml").exists(), "key must not be repo-local");
 
     // where reports the backend where the key was stored.
-    // On macOS the keychain backend is first in the default chain, so init stores
-    // the owner key in the keychain; on other platforms it goes to the file backend.
+    // Key creation always defaults to the file backend (XDG path) on all platforms.
+    // Resolution order differs: keychain is checked first on macOS, but creation targets file.
     let out = allod(&["key", "where", g_s, "--as", "o"], &keys);
     assert!(out.status.success(), "key where failed: {}", String::from_utf8_lossy(&out.stderr));
     let text = String::from_utf8_lossy(&out.stdout).to_string();
-    #[cfg(target_os = "macos")]
-    assert!(text.contains("keychain:") || text.contains("file:"), "got: {text}");
-    #[cfg(not(target_os = "macos"))]
-    assert!(text.contains("file:"), "got: {text}");
+    assert!(text.contains("file:"), "default init must create at file backend, got: {text}");
 
     // Simulate a legacy repo-local key, then migrate it.
     let legacy_dir = g.join(".allod/keys");
