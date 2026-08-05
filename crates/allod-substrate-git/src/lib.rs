@@ -140,7 +140,14 @@ impl Substrate for GitSubstrate {
         let raw = if rev.parents.is_empty() {
             git(&self.repo, &["diff-tree", "--no-renames", "--root", "-r", "--raw", sha])?
         } else {
-            git(&self.repo, &["diff-tree", "--no-renames", "-r", "--raw", sha])?
+            // For non-root commits (including merge commits with multiple parents),
+            // use the explicit two-tree form against the first parent only (§3.3).
+            // `git diff-tree <sha>` alone emits nothing for merge commits; the
+            // two-tree form `<parent> <sha>` always works regardless of parent count.
+            let first_parent = rev.parents[0]
+                .strip_prefix("sha1:")
+                .unwrap_or(&rev.parents[0]);
+            git(&self.repo, &["diff-tree", "--no-renames", "-r", "--raw", first_parent, sha])?
         };
 
         let null_sha = "0000000000000000000000000000000000000000";
@@ -276,7 +283,7 @@ impl Substrate for GitSubstrate {
 // ── public helpers ────────────────────────────────────────────────────────────
 
 /// Flatten an operation set (as returned by [`Substrate::operation_set`])
-/// into `(verb, path)` pairs for use with [`allod_core::policy::GitChange`].
+/// into the `(verb, path)` pairs that policy's GitChange consumes.
 ///
 /// Each operation is a mapping `{ <verb>: { id: <path>, … } }`. Malformed
 /// entries are silently skipped.
@@ -319,15 +326,15 @@ pub fn resolve_commit(repo_dir: &Path, commitish: &str) -> Result<String, String
 pub fn read_decisions(repo_dir: &Path, sha: &str) -> Result<Vec<Value>, String> {
     let result = git(repo_dir, &["notes", "--ref=allod-decisions", "show", sha]);
     match result {
-        Err(e) if e.contains("found no note") || e.contains("No note found") => {
+        Err(e)
+            if e.contains("found no note")
+                || e.contains("No note found")
+                || e.contains("No note")
+                || e.contains("no note") =>
+        {
             return Ok(vec![])
         }
         Err(e) => {
-            // Also tolerate "object … is not a commit" or other benign
-            // "no note" variants — git's exact message varies by version.
-            if e.contains("No note") || e.contains("no note") || e.contains("not found") {
-                return Ok(vec![]);
-            }
             return Err(e);
         }
         Ok(body) => {

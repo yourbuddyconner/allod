@@ -6,7 +6,7 @@ use allod_substrate::{AuthorVerdict, Substrate};
 use allod_substrate_git::{
     append_decision, op_paths, read_decisions, resolve_commit, GitSubstrate,
 };
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 fn sh(dir: &Path, cmd: &str, args: &[&str]) {
@@ -130,4 +130,67 @@ fn decision_notes_round_trip_without_rewriting_the_commit() {
 
     // The decided commit is untouched: same sha still at HEAD.
     assert_eq!(rev(tmp.path(), "HEAD"), *sha);
+}
+
+/// Build a repo with a no-ff merge commit: main has c1, feature branch adds
+/// feature.txt, then merges into main with --no-ff. Returns (dir, feature_sha,
+/// merge_sha) with sha1: prefixes.
+fn fixture_with_merge() -> (tempfile::TempDir, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let d = tmp.path();
+    let git = |args: &[&str]| sh(d, "git", args);
+    git(&["init", "-q", "-b", "main"]);
+    git(&["config", "user.email", "test@allod.dev"]);
+    git(&["config", "user.name", "Fixture"]);
+    git(&["config", "commit.gpgsign", "false"]);
+
+    // Initial commit on main.
+    std::fs::write(d.join("base.txt"), "base\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "c1 base"]);
+
+    // Create and switch to feature branch, add feature.txt.
+    git(&["checkout", "-q", "-b", "feature"]);
+    std::fs::write(d.join("feature.txt"), "feature content\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "add feature.txt"]);
+    let feature_sha = rev(d, "HEAD");
+
+    // Merge feature into main with --no-ff to produce a merge commit.
+    git(&["checkout", "-q", "main"]);
+    git(&["merge", "--no-ff", "-q", "-m", "Merge feature branch", "feature"]);
+    let merge_sha = rev(d, "HEAD");
+
+    (tmp, format!("sha1:{feature_sha}"), format!("sha1:{merge_sha}"))
+}
+
+#[test]
+fn merge_commit_operation_set_equals_first_parent_diff() {
+    let (tmp, _feature_sha, merge_sha) = fixture_with_merge();
+    let sub = GitSubstrate::new(tmp.path());
+
+    // The merge commit's operation set must reflect what the merged branch
+    // contributed (feature.txt added) — not be empty.
+    let merge_ops = sub.operation_set(&merge_sha).unwrap();
+    let merge_pairs = op_paths(&merge_ops);
+
+    assert!(
+        !merge_pairs.is_empty(),
+        "merge commit operation set must not be empty"
+    );
+    assert!(
+        merge_pairs.contains(&("create".to_string(), "feature.txt".to_string())),
+        "merge commit must show feature.txt as created; got: {merge_pairs:?}"
+    );
+
+    // Must equal the first-parent diff (only feature.txt changed relative to main).
+    assert_eq!(merge_pairs.len(), 1, "only feature.txt was added by the merge");
+
+    // Determinism: two calls return identical serialized output.
+    let merge_ops2 = sub.operation_set(&merge_sha).unwrap();
+    assert_eq!(
+        serde_yaml::to_string(&merge_ops).unwrap(),
+        serde_yaml::to_string(&merge_ops2).unwrap(),
+        "merge operation set must be deterministic"
+    );
 }
