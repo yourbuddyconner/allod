@@ -11,6 +11,7 @@ pub mod canon;
 pub mod docstore;
 pub mod fold;
 pub mod hash;
+pub mod keys;
 pub mod loader;
 pub mod meta;
 pub mod model;
