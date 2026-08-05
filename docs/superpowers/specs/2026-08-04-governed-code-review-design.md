@@ -90,7 +90,11 @@ span-identity matching across commits.
 
 ### Indexer
 
-Crate `allod-index-code`, implementing §8.3:
+Partly built already: `crates/allod-graph/src/repo.rs` (behind the
+`native` feature) implements commit-aligned `import_commit`, a
+deterministic Rust line-scan extractor (`allod-scan@0.1`), and
+`semantic_diff`. Milestone 3 extracts this into `allod-index-code` and
+extends it rather than starting fresh. Target shape, per §8.3:
 
 - File-granular for all languages: Repository and SourceFile nodes with
   `git:` external refs. Function-level for Rust via syn: Function/Type
@@ -181,7 +185,10 @@ table is the seed for later bidirectional sync.
 Each independently shippable, in order:
 
 1. **Substrate refactor.** `allod-substrate` trait, `NativeSubstrate`
-   adapter, fold/policy consuming the trait. Zero behavior change.
+   adapter, `flows::verify` integrity/authorship consuming the trait.
+   Policy consumes substrate-derived operation sets starting in
+   milestone 2, where the second implementation exists. Zero behavior
+   change. Plan: `docs/superpowers/plans/2026-08-04-substrate-refactor.md`.
 2. **Git evaluation + CI action.** `allod-substrate-git`, policy
    unstub, `allod git eval`, advisory check on allod's own PRs with
    path/ref rules. `review` ontology package drafted.
