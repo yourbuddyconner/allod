@@ -206,7 +206,7 @@ Each independently shippable, in order:
 
 Milestone 4 is where Appendix F runs end to end: push a branch → CI
 evaluates and holds → Inbox shows the semantic diff → decide → decision
-record lands in `.allod/` → check goes green.
+record lands in `refs/notes/allod-decisions` → check goes green.
 
 ## Error handling and edge cases
 

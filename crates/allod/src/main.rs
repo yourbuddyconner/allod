@@ -665,7 +665,9 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("error: {err}");
+            if !err.is_empty() {
+                eprintln!("error: {err}");
+            }
             ExitCode::FAILURE
         }
     }

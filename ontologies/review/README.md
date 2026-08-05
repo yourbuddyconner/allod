@@ -4,14 +4,13 @@ This package defines the vocabulary for modeling code reviews as typed graph dat
 (spec §4.4). A Review carries a verdict—approve, approve-with-comments, or
 request-changes—over a ChangeRequest from the eng ontology. ReviewComments anchor
 prose feedback to specific locations in code through `git:` external references,
-forming a thread of discussion and resolution.
+replies_to links comments into threads.
 
 Reviews may originate from external sources (GitHub, GitLab, Gerrit, etc.).
 Comments ingested from an external host carry an `external_source` and
 `external_id` for deduplication, plus a `claimed_author` field that records the
 identity claimed by the external system. This is unsigned provenance—useful for
-audit and ingestion dedup—distinct from principal-signed reviews that a future
-version of the system may support.
+audit and ingestion dedup—distinct from principal-signed reviews.
 
 Three design rules shape the package:
 
