@@ -2073,7 +2073,7 @@ operations:
           span:
             type: string
           status:
-            type: enum<open|resolved|wont-fix>
+            type: enum<open|resolved|wont-fix|tombstoned>
           external_source:
             type: string
           external_id:
@@ -3264,18 +3264,18 @@ operations:
     term: workspace/curated@1
     asserted_by: principal:vector-author
     basis: manual
-signature: sig:ed25519:417e84fdb8e5eee178f293dcc648acdc168cbaf891737e1a06125cb3878e74c212f96dc90b0861b3fbf2ff67baf4e661b3df38985731b3669b315132d7646705
-hash: sha256:51f67a13a37a6ef24a959d8664f55e29007ed0f0ca21cd7c16c192b0e01e1213
+signature: sig:ed25519:cc1490a11e3e01c63f4ebf0a2c8ff3aa6e489a88c039dc3006c72936ed1141019b1006a5a31a7348d7ca4698ec64ddf315ca4978fcc7a49eefbe78484610980e
+hash: sha256:37060656baee311fc007987b273f0f2099b620319efd8440aff15dd95272b566
 ---
 kind: changeset
 parents:
-- sha256:51f67a13a37a6ef24a959d8664f55e29007ed0f0ca21cd7c16c192b0e01e1213
+- sha256:37060656baee311fc007987b273f0f2099b620319efd8440aff15dd95272b566
 author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:01:00Z
 intent: Rename Ada; retire Grace
-schema_context: sha256:9f4c855e4bb5cb8857185517361a97ff5bb489c8dcc439467f9a4d94b943c941
+schema_context: sha256:11de1cf124f162a5e1b2c600278ba69a174784f80ac7b0d5841973ac95806dda
 operations:
 - update:
     kind: node
@@ -3288,18 +3288,18 @@ operations:
     kind: node
     id: 00000000-1000-4000-8000-000000000002
     prior: sha256:5c982e87bccc0cba99f7c65b0a9190259bb1009f2f7630b0b052147f635990de
-signature: sig:ed25519:c6789dadc25c2f1e5516dd7363605f323b48acbf8e80f5510d40e46280ce5ba0230805364327cf69b9460ebc2157ab80c0e7caedffa60a3fbaa278f955f46a07
-hash: sha256:4faa7b52cb5f9379134f07935f67a08a0bb92b3cab88a4bd914eb56d3fdba0dd
+signature: sig:ed25519:b1ac030666c6cc261c01987a85be88e2e2c401cfae2e869d2aacd0d1697c609628e9d5e25f2029cdd4d6bf818cb0964404da685618c1fa8831ad8021db441c06
+hash: sha256:062a0ae0c3815c62c593f6c964b6de9d8849879688b42c8c976449ff33c09f2e
 ---
 kind: changeset
 parents:
-- sha256:4faa7b52cb5f9379134f07935f67a08a0bb92b3cab88a4bd914eb56d3fdba0dd
+- sha256:062a0ae0c3815c62c593f6c964b6de9d8849879688b42c8c976449ff33c09f2e
 author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:02:00Z
 intent: A note about Ada, labeled
-schema_context: sha256:9f4c855e4bb5cb8857185517361a97ff5bb489c8dcc439467f9a4d94b943c941
+schema_context: sha256:11de1cf124f162a5e1b2c600278ba69a174784f80ac7b0d5841973ac95806dda
 operations:
 - create:
     kind: node
@@ -3320,18 +3320,18 @@ operations:
     term: workspace/curated@1
     asserted_by: principal:vector-author
     basis: manual
-signature: sig:ed25519:5c295a0c17dc35486a0206b3de9016777f4b39cfd14f8639d584d46bad731f7b26e3b0dc1fd7859d9093914f6c320c0829be86c6225746c0478c0b2111ef4207
-hash: sha256:acb60ed6896da6afc6661d26cafcb47541d1e0266fdd6f0ec8cbcbe3123c63b6
+signature: sig:ed25519:846e5f363dc83137b602d7cd90b97fac7bd1cca5870d4f81531a923946b8b15a097ba80cfe4f26c58f24a178b0ffd01676fc85f451b3395c802a61f9828e7c00
+hash: sha256:7905154cabe01b17a41bf3a494b76e02e6d3c3573221c4d24095d5fe247b9d91
 ---
 kind: changeset
 parents:
-- sha256:acb60ed6896da6afc6661d26cafcb47541d1e0266fdd6f0ec8cbcbe3123c63b6
+- sha256:7905154cabe01b17a41bf3a494b76e02e6d3c3573221c4d24095d5fe247b9d91
 author:
   principal: principal:vector-author
   key: sha256:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9
 timestamp: 2026-08-02T00:03:00Z
 intent: 'Schema mutation: add vectors/Annotation entity type'
-schema_context: sha256:9f4c855e4bb5cb8857185517361a97ff5bb489c8dcc439467f9a4d94b943c941
+schema_context: sha256:11de1cf124f162a5e1b2c600278ba69a174784f80ac7b0d5841973ac95806dda
 operations:
 - create:
     kind: node
@@ -3343,5 +3343,5 @@ operations:
       definition: |
         attributes:
           body: {type: string, required: true}
-signature: sig:ed25519:041a0e4f602a9f77bdc773ae0355a8ea54512950d2f72e02c34a11281c4fdbb28ecca93d59f9531834b686903402d1b54ae315bd39f1c00e4781c408ff8a2e0c
-hash: sha256:adc60a524ab57f26776fdfa19517e42fcbfe00b26ee9dbcf31fff582f0f5cbf0
+signature: sig:ed25519:6a2800a4b265ff2e0b7768e23b1094446cb06334154b6a49f3bcff9744e02798e0c4aa9cb23290b3914b42124dde7aaf4ce9bdcb4d1d9396e7ff921b6e4bee02
+hash: sha256:bbceda548e69fdf4fbab60f770aa63c1f5fc4de27136c91540e8d8c6d31c910d
