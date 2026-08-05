@@ -139,18 +139,20 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
     let genesis_signer = allod_core::keys::Signer::local(kp);
     let (cs, hash) = crate::ops::build_changeset(graph, &genesis_signer, &intent, genesis_ops)?;
 
+    // Admission is the point of no return. write_meta and create_key must both
+    // succeed before we call append_changeset so that a create_key failure does
+    // not leave the graph with an admitted genesis but no accessible owner key.
+    // The hash is already known (build_changeset returns it), so write_meta can
+    // establish the graph_id before the changeset is appended to the log.
+    graph.write_meta(&hash, &[format!("principal:{owner}")]).map_err(AllodError::from)?;
+    graph.create_key(&kp_clone).map_err(AllodError::from)?;
+
     // Self-admit genesis (§4.6): append directly without policy check.
     // The genesis changeset defines schema (meta-node ops) AND uses those types in the
     // same changeset (core/User for the owner node). Validation uses the speculative
     // registry path inside fold(), which handles this case correctly. We do not attempt
     // a manual apply here — integrity is verified on the first fold() call.
     graph.append_changeset(&cs, &hash, None).map_err(AllodError::from)?;
-
-    // write_meta establishes the graph_id so create_key can resolve the XDG path.
-    // Both write_meta and create_key must succeed before we admit, so a failure here
-    // leaves the graph in an unusable state — the caller should discard it.
-    graph.write_meta(&hash, &[format!("principal:{owner}")]).map_err(AllodError::from)?;
-    graph.create_key(&kp_clone).map_err(AllodError::from)?;
 
     Ok(InitResult {
         graph_id: hash,

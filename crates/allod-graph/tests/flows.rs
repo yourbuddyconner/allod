@@ -647,3 +647,51 @@ fn init_writes_owner_key_to_xdg_backend_not_repo() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// When `create_key` fails (simulated by making `ALLOD_KEYS_DIR` a plain file so
+/// `create_dir_all` returns ENOTDIR), `flows::init` must return `Err` and the graph
+/// must have no HEAD — admission must not have happened before the failure.
+#[test]
+fn init_create_key_failure_leaves_no_head() {
+    let _guard = KEYS_DIR_LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap();
+
+    let root = std::env::temp_dir().join(format!(
+        "allod-init-key-fail-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0),
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+
+    // Make ALLOD_KEYS_DIR point to a regular FILE instead of a directory.
+    // FileBackend::store calls create_dir_all(<keys_dir>/<component>), which
+    // will fail with ENOTDIR because the parent is a file, not a directory.
+    let xdg_as_file = root.join("xdg-as-file");
+    std::fs::write(&xdg_as_file, b"not a directory").unwrap();
+    std::env::set_var("ALLOD_KEYS_DIR", &xdg_as_file);
+
+    let graph_dir = root.join("repo");
+    let graph = allod_core::store::Graph::create(&graph_dir).expect("Graph::create");
+    let profile = flows::profile_from_dir(
+        "memory",
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ontologies"),
+    )
+    .expect("profile_from_dir");
+
+    // init must fail because create_key cannot write under the non-directory ALLOD_KEYS_DIR.
+    let result = flows::init(&graph, "alice", profile);
+    assert!(result.is_err(), "init must return Err when create_key fails");
+
+    // The graph must have no HEAD: admission must not have occurred before the failure.
+    let head = graph.head().expect("head() must not itself error");
+    assert!(
+        head.is_none(),
+        "graph must have no HEAD after create_key failure; got: {:?}",
+        head
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
