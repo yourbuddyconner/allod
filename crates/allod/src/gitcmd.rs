@@ -109,14 +109,17 @@ fn cmd_git_eval(args: &[String]) -> Result<(), String> {
     // Open graph and evaluate.
     let graph = Graph::open(&graph_dir)?;
     let policy = graph.policy()?;
-    let checklist: Checklist = evaluate_git(&policy, &change)?;
+
+    // Fold graph state and build registry for derived-graph region reach (§8.3)
+    // and for principal lookup in reviewers_unmet.
+    let state = graph.fold()?;
+    let reg = graph.registry()?;
+    let checklist: Checklist = evaluate_git(&policy, &change, Some((&state, &reg)))?;
 
     // Read decisions.
     let subject = format!("git:{sha}");
     let decisions = read_decisions(&repo_dir, &sha)?;
 
-    // Fold graph state for principal lookup in reviewers_unmet.
-    let state = graph.fold()?;
     let unmet = reviewers_unmet(&state, &policy, &subject, &checklist, &decisions)?;
 
     if json_mode {

@@ -16,7 +16,7 @@ use crate::model::changeset_hash;
 use crate::registry::Registry;
 use crate::{bare, canonical_cbor, get_str, sign};
 use serde_yaml::{Mapping, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default, Debug)]
 pub struct Checklist {
@@ -358,6 +358,74 @@ pub struct GitChange {
     pub ops: Vec<(String, String)>,
 }
 
+/// For every live `code/SourceFile` node in `state`: collect its own
+/// classifications plus the classifications of every live node reachable
+/// via one live `code/declares` edge (§8.3 file-granular reach); expand
+/// each term through `reg.term_closure`; key by the file's `path`
+/// attribute. An in-region item makes its whole declaring file in-region.
+fn path_regions(state: &State, reg: &Registry) -> BTreeMap<String, BTreeSet<String>> {
+    let mut result: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+    // Collect all live `code/declares` edges: from → to targets.
+    // key: "node:<file-id>", value: vec of "node:<item-id>"
+    let mut declares: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for ((kind, _), obj) in &state.objects {
+        if kind != "edge" || obj.deleted {
+            continue;
+        }
+        let tref = get_str(&obj.content, "type").unwrap_or("");
+        if bare(tref) != "code/declares" {
+            continue;
+        }
+        let Some(from) = get_str(&obj.content, "from") else { continue };
+        let Some(to) = get_str(&obj.content, "to") else { continue };
+        declares
+            .entry(from.to_string())
+            .or_default()
+            .push(to.to_string());
+    }
+
+    // Walk live `code/SourceFile` nodes.
+    for ((kind, id), obj) in &state.objects {
+        if kind != "node" || obj.deleted {
+            continue;
+        }
+        let tref = get_str(&obj.content, "type").unwrap_or("");
+        if bare(tref) != "code/SourceFile" {
+            continue;
+        }
+        let Some(path) = obj
+            .content
+            .get("attributes")
+            .and_then(|a| get_str(a, "path"))
+        else {
+            continue;
+        };
+
+        let file_ref = format!("node:{id}");
+        let mut raw_terms: Vec<String> = state.classifications_of(&file_ref);
+
+        // One hop via `code/declares` edges.
+        if let Some(targets) = declares.get(&file_ref) {
+            for target in targets {
+                if let Some((_, _)) = state.resolve_ref(target) {
+                    raw_terms.extend(state.classifications_of(target));
+                }
+            }
+        }
+
+        // Expand each term through the ancestor closure.
+        let mut regions = BTreeSet::new();
+        for term in raw_terms {
+            regions.extend(reg.term_closure(&term));
+        }
+
+        result.insert(path.to_string(), regions);
+    }
+
+    result
+}
+
 /// Evaluate a git change against policy rules whose `select` carries
 /// `substrate: git` (§4.1, §3.3). Change-level keys `repo` and
 /// `target_ref` glob-match the change; op-level keys `path` and
@@ -365,7 +433,16 @@ pub struct GitChange {
 /// `evaluate`. `root_required` is never set here: default-posture
 /// fall-through is a native-substrate concept, and the advisory git
 /// path reports matched requirements only.
-pub fn evaluate_git(policy: &Value, change: &GitChange) -> Result<Checklist, String> {
+///
+/// The `derived` parameter supplies the derived-graph context (§8.3):
+/// when `Some`, a `region:` key on a rule is satisfied when `path_regions`
+/// for the matching op's path contains `bare(region)`. When `None`,
+/// region-keyed git rules never match (today's behavior).
+pub fn evaluate_git(
+    policy: &Value,
+    change: &GitChange,
+    derived: Option<(&State, &Registry)>,
+) -> Result<Checklist, String> {
     let rules = policy
         .get("rules")
         .and_then(Value::as_sequence)
@@ -392,6 +469,22 @@ pub fn evaluate_git(policy: &Value, change: &GitChange) -> Result<Checklist, Str
                 continue;
             }
         }
+        // If the rule has a `region:` key and no derived context was
+        // supplied, this rule can never match on the git substrate.
+        let region_term = get_str(select, "region");
+        if region_term.is_some() && derived.is_none() {
+            continue;
+        }
+
+        // Build path→regions index lazily (once per evaluate_git call,
+        // but only when at least one rule requires it).
+        let pr: Option<BTreeMap<String, BTreeSet<String>>> =
+            if region_term.is_some() {
+                derived.map(|(st, rg)| path_regions(st, rg))
+            } else {
+                None
+            };
+
         let path_pat = get_str(select, "path");
         let verbs: Option<Vec<&str>> = select.get("operation").map(|ops| match ops {
             Value::Sequence(seq) => seq.iter().filter_map(Value::as_str).collect(),
@@ -405,6 +498,14 @@ pub fn evaluate_git(policy: &Value, change: &GitChange) -> Result<Checklist, Str
             }
             if let Some(vs) = &verbs {
                 if !vs.contains(&verb.as_str()) {
+                    return false;
+                }
+            }
+            // region: key must match this specific op's path.
+            if let Some(rterm) = region_term {
+                let empty = BTreeSet::new();
+                let file_regions = pr.as_ref().and_then(|m| m.get(path)).unwrap_or(&empty);
+                if !file_regions.contains(bare(rterm)) {
                     return false;
                 }
             }
@@ -1115,7 +1216,7 @@ rules:
             target_ref: "refs/heads/main".into(),
             ops: vec![("update".into(), "crates/allod-core/src/policy.rs".into())],
         };
-        let cl = evaluate_git(&git_policy(), &change).unwrap();
+        let cl = evaluate_git(&git_policy(), &change, None).unwrap();
         assert!(cl.matched_rules.contains("main-requires-review"));
         assert!(!cl.matched_rules.contains("native-only-rule"));
         assert_eq!(cl.reviewers, vec![("code-owner".to_string(), 1)]);
@@ -1130,7 +1231,7 @@ rules:
             target_ref: "refs/heads/feat/x".into(),
             ops: vec![("create".into(), ".github/workflows/governance.yml".into())],
         };
-        let cl = evaluate_git(&policy, &touches).unwrap();
+        let cl = evaluate_git(&policy, &touches, None).unwrap();
         assert!(cl.matched_rules.contains("workflows-need-security"));
 
         let misses = GitChange {
@@ -1138,7 +1239,7 @@ rules:
             target_ref: "refs/heads/feat/x".into(),
             ops: vec![("update".into(), "README.md".into())],
         };
-        let cl = evaluate_git(&policy, &misses).unwrap();
+        let cl = evaluate_git(&policy, &misses, None).unwrap();
         assert!(!cl.matched_rules.contains("workflows-need-security"));
         // feat branch: main rule doesn't match either.
         assert!(cl.matched_rules.is_empty());
@@ -1155,7 +1256,7 @@ rules:
                 ("update".into(), ".github/workflows/release-core.yml".into()),
             ],
         };
-        let cl = evaluate_git(&git_policy(), &change).unwrap();
+        let cl = evaluate_git(&git_policy(), &change, None).unwrap();
         assert!(cl.matched_rules.contains("main-requires-review"));
         assert!(cl.matched_rules.contains("workflows-need-security"));
         assert_eq!(
@@ -1239,6 +1340,184 @@ rules:
             unmet,
             vec!["reviewers: role code-owner needs quorum 1, have 0"],
             "expected unmet with wrong subject"
+        );
+    }
+
+    // ── §8.3 region reach in evaluate_git ──────────────────────────────────
+
+    /// Build a State + Registry fixture for region-reach tests.
+    ///
+    /// State contains:
+    ///   - node:f1  — code/SourceFile, path "src/pay.rs"
+    ///   - node:fn1 — code/Function (the declared item)
+    ///   - edge:e1  — code/declares, from "node:f1" to "node:fn1"
+    ///   - classification:c1 — term "workspace/scratch" on node:fn1
+    ///     (item-level: region comes from the declared item)
+    ///
+    /// Registry: meta_registry (term_closure returns the term itself for
+    /// any term not in a taxonomy — sufficient for these tests).
+    fn region_reach_fixture_item_classified() -> (State, Registry) {
+        let mut state = State::default();
+        let reg = meta_registry();
+
+        // SourceFile node f1
+        let f1_content = mk(&[
+            ("kind", s("node")),
+            ("id", s("f1")),
+            ("type", s("code/SourceFile@1")),
+            ("attributes", mk(&[("path", s("src/pay.rs"))])),
+        ]);
+        let f1_rev = crate::model::revision_hash(&f1_content).unwrap();
+        state.objects.insert(
+            ("node".to_string(), "f1".to_string()),
+            Obj { content: f1_content, rev: f1_rev, deleted: false, redacted: false },
+        );
+
+        // Function node fn1
+        let fn1_content = mk(&[
+            ("kind", s("node")),
+            ("id", s("fn1")),
+            ("type", s("code/Function@1")),
+            ("attributes", mk(&[("name", s("pay"))])),
+        ]);
+        let fn1_rev = crate::model::revision_hash(&fn1_content).unwrap();
+        state.objects.insert(
+            ("node".to_string(), "fn1".to_string()),
+            Obj { content: fn1_content, rev: fn1_rev, deleted: false, redacted: false },
+        );
+
+        // declares edge e1: f1 -> fn1
+        let e1_content = mk(&[
+            ("kind", s("edge")),
+            ("id", s("e1")),
+            ("type", s("code/declares@1")),
+            ("from", s("node:f1")),
+            ("to", s("node:fn1")),
+        ]);
+        let e1_rev = crate::model::revision_hash(&e1_content).unwrap();
+        state.objects.insert(
+            ("edge".to_string(), "e1".to_string()),
+            Obj { content: e1_content, rev: e1_rev, deleted: false, redacted: false },
+        );
+
+        // classification c1: workspace/scratch on node:fn1 (item-level)
+        let c1_content = mk(&[
+            ("kind", s("classification")),
+            ("id", s("c1")),
+            ("subject", s("node:fn1")),
+            ("term", s("workspace/scratch")),
+        ]);
+        let c1_rev = crate::model::revision_hash(&c1_content).unwrap();
+        state.objects.insert(
+            ("classification".to_string(), "c1".to_string()),
+            Obj { content: c1_content, rev: c1_rev, deleted: false, redacted: false },
+        );
+
+        (state, reg)
+    }
+
+    fn region_git_policy() -> Value {
+        serde_yaml::from_str(r#"
+policy: region-test-policy
+version: 1
+default_posture: permissive
+roles:
+  security: ["principal:sec"]
+rules:
+  - name: region-rule
+    select:
+      substrate: git
+      region: "workspace/scratch"
+    require:
+      reviewers: { role: security, quorum: 1 }
+"#).unwrap()
+    }
+
+    #[test]
+    fn evaluate_git_region_reaches_through_derived_paths() {
+        // Classification on the declared item (fn1) inside the file (f1).
+        // Touching src/pay.rs must match the region rule; touching
+        // src/other.rs must not; passing None must not.
+        let (state, reg) = region_reach_fixture_item_classified();
+        let policy = region_git_policy();
+
+        let change_hits = GitChange {
+            repo: "r".into(),
+            target_ref: "refs/heads/main".into(),
+            ops: vec![("update".into(), "src/pay.rs".into())],
+        };
+        let cl = evaluate_git(&policy, &change_hits, Some((&state, &reg))).unwrap();
+        assert!(
+            cl.matched_rules.contains("region-rule"),
+            "touching the classified file must match the region rule; matched: {:?}",
+            cl.matched_rules
+        );
+
+        let change_misses = GitChange {
+            repo: "r".into(),
+            target_ref: "refs/heads/main".into(),
+            ops: vec![("update".into(), "src/other.rs".into())],
+        };
+        let cl = evaluate_git(&policy, &change_misses, Some((&state, &reg))).unwrap();
+        assert!(
+            !cl.matched_rules.contains("region-rule"),
+            "touching a different file must NOT match the region rule; matched: {:?}",
+            cl.matched_rules
+        );
+
+        // Without derived context the region rule never matches.
+        let cl = evaluate_git(&policy, &change_hits, None).unwrap();
+        assert!(
+            !cl.matched_rules.contains("region-rule"),
+            "without derived context the region rule must NOT match; matched: {:?}",
+            cl.matched_rules
+        );
+    }
+
+    #[test]
+    fn evaluate_git_region_reaches_file_level_classification_too() {
+        // Classification on the FILE node itself (not the declared item).
+        // Touching src/pay.rs must still match.
+        let mut state = State::default();
+        let reg = meta_registry();
+
+        // SourceFile node f1
+        let f1_content = mk(&[
+            ("kind", s("node")),
+            ("id", s("f1")),
+            ("type", s("code/SourceFile@1")),
+            ("attributes", mk(&[("path", s("src/pay.rs"))])),
+        ]);
+        let f1_rev = crate::model::revision_hash(&f1_content).unwrap();
+        state.objects.insert(
+            ("node".to_string(), "f1".to_string()),
+            Obj { content: f1_content, rev: f1_rev, deleted: false, redacted: false },
+        );
+
+        // classification directly on node:f1 (file-level)
+        let c1_content = mk(&[
+            ("kind", s("classification")),
+            ("id", s("c1")),
+            ("subject", s("node:f1")),
+            ("term", s("workspace/scratch")),
+        ]);
+        let c1_rev = crate::model::revision_hash(&c1_content).unwrap();
+        state.objects.insert(
+            ("classification".to_string(), "c1".to_string()),
+            Obj { content: c1_content, rev: c1_rev, deleted: false, redacted: false },
+        );
+
+        let policy = region_git_policy();
+        let change = GitChange {
+            repo: "r".into(),
+            target_ref: "refs/heads/main".into(),
+            ops: vec![("update".into(), "src/pay.rs".into())],
+        };
+        let cl = evaluate_git(&policy, &change, Some((&state, &reg))).unwrap();
+        assert!(
+            cl.matched_rules.contains("region-rule"),
+            "file-level classification must also match the region rule; matched: {:?}",
+            cl.matched_rules
         );
     }
 }
