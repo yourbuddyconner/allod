@@ -261,11 +261,12 @@ fn index_state(state: &State) -> ExistingIndex {
             let item_kind = if tref == "code/Function" {
                 "fn".to_string()
             } else {
-                obj.content
+                // "interface" in the graph corresponds to "trait" in extracted source items.
+                let stored = obj.content
                     .get("attributes")
                     .and_then(|a| get_str(a, "kind"))
-                    .unwrap_or("struct")
-                    .to_string()
+                    .unwrap_or("struct");
+                if stored == "interface" { "trait".to_string() } else { stored.to_string() }
             };
             let key = (path, item_kind, name.to_string());
             item_key_of_id.insert(id.clone(), key.clone());

@@ -1,0 +1,19 @@
+kind: changeset
+parents:
+- sha256:9c9b4503eabc1b356ee8db38dae3523079657df07e5193b6cbffef99ea066253
+author:
+  principal: principal:conner
+  key: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
+timestamp: 2026-08-05T03:32:27Z
+intent: Classify node:b6d4433f-167a-4c43-98d2-9e52d6dbfe3b as security/critical@1
+schema_context: sha256:39e97e90a623fbce025e0a5f7a751f5839f76ef775c72d1985e24dfde9c36c0b
+operations:
+- create:
+    kind: classification
+    id: 4f305666-30d4-4ec1-983d-50d97c0e6133
+    subject: node:b6d4433f-167a-4c43-98d2-9e52d6dbfe3b
+    term: security/critical@1
+    asserted_by: principal:conner
+    basis: manual
+hash: sha256:9b8144ee3a5a020c5ca228a2233d1d7ef87b9eb2f8aaa6ebe9d06b0d60cbc8c0
+signature: sig:ed25519:423ac8b63c8efc5e66ee0ca1a678081b220872c5d3a58249d3e5c7fd7bb7e98a13bfefe4b5e44f3079c6488f4c9279282d2aa7079afe3ec90b11813228e51a0f

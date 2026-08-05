@@ -70,6 +70,31 @@ fn cmd_init(dir: &Path, owner: &str, schema_dir: &Path) -> Result<(), String> {
     cmd_init_profile(dir, owner, schema_dir, "memory")
 }
 
+/// Install additional schema package docs into an existing graph.
+/// Used to add the `code` package to a graph initialized with the `memory` profile.
+fn cmd_install_schema(dir: &Path, pkg: &str, schema_dir: &Path, by: &str) -> Result<(), String> {
+    use allod_graph::flows::{install_package, profile_from_dir};
+    use allod_graph::ops::Admission;
+
+    // Load the named docs from the schema dir (no policy — preserve existing policy).
+    let profile = profile_from_dir(pkg, schema_dir).map_err(|e| e.to_string())?;
+    let graph = Graph::open(dir)?;
+    let admission = install_package(&graph, &profile.docs, None, by)
+        .map_err(|e| e.to_string())?;
+    match &admission {
+        Admission::Admitted { hash, .. } => {
+            println!(
+                "  ✓ schema package {pkg} admitted {}",
+                short(hash)
+            );
+        }
+        Admission::Held { hash, .. } => {
+            println!("  ⧗ schema package held as proposal {}", short(hash));
+        }
+    }
+    Ok(())
+}
+
 fn cmd_init_profile(
     dir: &Path,
     owner: &str,
@@ -637,6 +662,10 @@ fn main() -> ExitCode {
                 gitcmd::cmd_install_policy(&dir, std::path::Path::new(policy_file), &by)
             }
             _ => Err("usage: allod install-policy <graph-dir> <policy-file> --as <principal>".into()),
+        },
+        "install-schema" => match (dir, pos.get(1), flag(rest, "--as")) {
+            (Some(dir), Some(pkg), Some(by)) => cmd_install_schema(&dir, pkg, &schema, &by),
+            _ => Err("usage: allod install-schema <graph-dir> <pkg> --as <principal> [--schema <ontologies-dir>]".into()),
         },
         "export-md" => match (dir, pos.get(1)) {
             (Some(dir), Some(out)) => md::export(&dir, Path::new(out)),

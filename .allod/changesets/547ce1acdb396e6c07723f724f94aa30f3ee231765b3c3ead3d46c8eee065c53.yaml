@@ -1,0 +1,482 @@
+kind: changeset
+parents:
+- sha256:3816b44f67ff6279c3a5806275ba9b0768d5acf4d19cde639501a9ea5b57094b
+author:
+  principal: principal:conner
+  key: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
+timestamp: 2026-08-05T03:29:41Z
+intent: Install schema package (3 doc(s))
+schema_context: sha256:2d09c6036cb7b013612d3a60fc442241154800d81c56ab8665a22a1a08e4d1e5
+operations:
+- create:
+    kind: node
+    id: f61829a6-9618-4dcc-a9e2-a20939593fdf
+    type: meta/EntityType@1
+    attributes:
+      name: Person
+      package: core
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          emails:
+            type: list<string>
+          affiliation:
+            type: node-ref
+            target: Company
+- create:
+    kind: node
+    id: 0b353aa9-b83b-4bb6-bea2-18cbb002360d
+    type: meta/EntityType@1
+    attributes:
+      name: Company
+      package: core
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          domains:
+            type: list<string>
+- create:
+    kind: node
+    id: fad66c45-bfa3-4bdf-9e04-c6dae1653ae1
+    type: meta/EntityType@1
+    attributes:
+      name: User
+      package: core
+      definition: |
+        attributes:
+          display_name:
+            type: string
+            required: true
+          keys:
+            type: list<KeyRecord>
+            required: true
+          status:
+            type: enum<active|suspended>
+- create:
+    kind: node
+    id: 6d72a7a9-b13c-4e06-832c-7931e81ced09
+    type: meta/EntityType@1
+    attributes:
+      name: Service
+      package: core
+      definition: |
+        attributes:
+          display_name:
+            type: string
+            required: true
+          keys:
+            type: list<KeyRecord>
+            required: true
+          status:
+            type: enum<active|suspended>
+- create:
+    kind: node
+    id: e79cc450-645b-4290-8b85-f47b7abc6290
+    type: meta/EntityType@1
+    attributes:
+      name: Agent
+      package: core
+      definition: |
+        attributes:
+          display_name:
+            type: string
+            required: true
+          keys:
+            type: list<KeyRecord>
+            required: true
+          status:
+            type: enum<active|suspended>
+          delegated_by:
+            type: node-ref
+            target: User
+            required: true
+          scope:
+            type: selector
+- create:
+    kind: node
+    id: ee9d5da2-b5a4-434e-b074-9f75c10e5f8e
+    type: meta/EntityType@1
+    attributes:
+      name: Peer
+      package: core
+      definition: |
+        attributes:
+          graph_id:
+            type: string
+            required: true
+          root_keys:
+            type: list<string>
+            required: true
+          locators:
+            type: list<string>
+          trust_basis:
+            type: enum<out-of-band|tofu|attested>
+- create:
+    kind: node
+    id: 67f1261f-a814-4bb1-8efe-2781bccb1df7
+    type: meta/EntityType@1
+    attributes:
+      name: Grant
+      package: core
+      definition: |
+        attributes:
+          audience:
+            type: string
+            required: true
+          scope:
+            type: selector
+            required: true
+          rights:
+            type: list<enum<state|history|subscribe>>
+            required: true
+          valid_from:
+            type: timestamp
+          valid_until:
+            type: timestamp
+- create:
+    kind: node
+    id: 07fc0f17-bcf4-4add-80c6-7ed3b9364eca
+    type: meta/EdgeType@1
+    attributes:
+      name: employs
+      package: core
+      definition: |
+        domain: Company
+        range: Person
+        cardinality: one-to-many
+- create:
+    kind: node
+    id: c9df25af-2eea-4178-9808-02236d5cee43
+    type: meta/EdgeType@1
+    attributes:
+      name: knows
+      package: core
+      definition: |
+        domain: Person
+        range: Person
+        cardinality: many-to-many
+        attributes:
+          since:
+            type: date
+- create:
+    kind: node
+    id: 25ccd7be-3964-41ef-91ac-8e21bd5d877b
+    type: meta/Struct@1
+    attributes:
+      name: KeyRecord
+      package: core
+      definition: |
+        key_id:
+          type: string
+          required: true
+        algorithm:
+          type: string
+          required: true
+        public:
+          type: string
+          required: true
+        valid_from:
+          type: timestamp
+        valid_until:
+          type: timestamp
+        status:
+          type: enum<active|rotated|revoked>
+          required: true
+- create:
+    kind: node
+    id: de9199db-8c54-4b50-b83a-b82344d3223b
+    type: meta/EntityType@1
+    attributes:
+      name: Repository
+      package: code
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          origin:
+            type: string
+          default_branch:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: cd0d8e66-b47b-4192-b6c3-fd0b10e36e4f
+    type: meta/EntityType@1
+    attributes:
+      name: SourceFile
+      package: code
+      definition: |
+        attributes:
+          path:
+            type: string
+            required: true
+          language:
+            type: string
+          blob:
+            type: external-ref
+            required: true
+      imports:
+      - core
+- create:
+    kind: node
+    id: ad1416fc-16d8-49b2-bb20-fb1851940202
+    type: meta/EntityType@1
+    attributes:
+      name: Module
+      package: code
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          path:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 94896a3c-e67e-4948-af83-08627aa854a7
+    type: meta/EntityType@1
+    attributes:
+      name: Function
+      package: code
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          signature:
+            type: string
+          span:
+            type: string
+      imports:
+      - core
+- create:
+    kind: node
+    id: 2f90c90e-5e87-424c-bc14-41834eb9848b
+    type: meta/EntityType@1
+    attributes:
+      name: Type
+      package: code
+      definition: |
+        attributes:
+          name:
+            type: string
+            required: true
+          kind:
+            type: enum<struct|class|enum|interface|alias>
+      imports:
+      - core
+- create:
+    kind: node
+    id: ecdb82b5-c588-4062-a8a7-bacb11dac274
+    type: meta/EdgeType@1
+    attributes:
+      name: in_repo
+      package: code
+      definition: |
+        domain: SourceFile
+        range: Repository
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: cd6f5509-c59a-40be-8458-c64809e6e51d
+    type: meta/EdgeType@1
+    attributes:
+      name: in_module
+      package: code
+      definition: |
+        domain: SourceFile
+        range: Module
+        cardinality: many-to-one
+      imports:
+      - core
+- create:
+    kind: node
+    id: 618d53c5-f72c-4ba7-9c86-2b3433ce2702
+    type: meta/EdgeType@1
+    attributes:
+      name: declares
+      package: code
+      definition: |
+        domain: SourceFile
+        range:
+        - Function
+        - Type
+        cardinality: one-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: daa157a0-cf29-4ab7-a38f-5d8679759d6f
+    type: meta/EdgeType@1
+    attributes:
+      name: imports
+      package: code
+      definition: |
+        domain:
+        - SourceFile
+        - Module
+        range:
+        - SourceFile
+        - Module
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 3689127c-864d-47aa-963b-4c6b21690bf3
+    type: meta/EdgeType@1
+    attributes:
+      name: calls
+      package: code
+      definition: |
+        domain: Function
+        range: Function
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: f68e2ec0-4f8f-40bb-a043-f563c079f1f5
+    type: meta/EdgeType@1
+    attributes:
+      name: references
+      package: code
+      definition: |
+        domain:
+        - Function
+        - Type
+        range:
+        - Function
+        - Type
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 51f3ab95-b8bf-47ce-baaf-d0b594cdb06e
+    type: meta/EdgeType@1
+    attributes:
+      name: implements
+      package: code
+      definition: |
+        domain: Type
+        range: Type
+        cardinality: many-to-many
+      imports:
+      - core
+- create:
+    kind: node
+    id: 8e64bd27-8466-4f8b-94f0-b4051df50d00
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: change
+      taxonomy: eng
+      parents: []
+- create:
+    kind: node
+    id: 7e319b3c-42b4-424b-b9da-c627f2735c06
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: change/standard
+      taxonomy: eng
+      parents:
+      - change
+- create:
+    kind: node
+    id: 9de573e0-8e88-4651-8c57-f782b857bdfb
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: change/high-risk
+      taxonomy: eng
+      parents:
+      - change
+- create:
+    kind: node
+    id: 038dd809-0094-42de-849a-6e1d492cec2d
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: change/emergency
+      taxonomy: eng
+      parents:
+      - change
+- create:
+    kind: node
+    id: 1749424b-6f7b-474e-96a1-5e844ce79ce0
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: security
+      taxonomy: eng
+      parents: []
+- create:
+    kind: node
+    id: 272171d1-3fe4-4567-81eb-dd713992df15
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: security/critical
+      taxonomy: eng
+      parents:
+      - security
+- create:
+    kind: node
+    id: e015235e-f64a-48f2-81b0-fe8ed5bb345c
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: reliability
+      taxonomy: eng
+      parents: []
+- create:
+    kind: node
+    id: 85c14e88-abfe-4784-b899-ec598a8fcfb0
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: reliability/tier-0
+      taxonomy: eng
+      parents:
+      - reliability
+- create:
+    kind: node
+    id: c2208da0-a598-4dd1-ba04-f2bd03599624
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: reliability/tier-1
+      taxonomy: eng
+      parents:
+      - reliability
+- create:
+    kind: node
+    id: 5759333e-03e5-495d-b4d1-844625c43862
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: ops
+      taxonomy: eng
+      parents: []
+- create:
+    kind: node
+    id: 97d96672-7ce0-4f95-a8e8-a777d0cb2dcd
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: ops/incident
+      taxonomy: eng
+      parents:
+      - ops
+- create:
+    kind: node
+    id: e3ed61f5-66ac-4bc3-95da-d3dd429c926e
+    type: meta/TaxonomyTerm@1
+    attributes:
+      name: ops/postmortem
+      taxonomy: eng
+      parents:
+      - ops
+hash: sha256:547ce1acdb396e6c07723f724f94aa30f3ee231765b3c3ead3d46c8eee065c53
+signature: sig:ed25519:4d49dd9a51cbab5bc7cd83166b622482232b7081c782229a29b67e39297a368977d8b2c029583f927797458b4fdcd06bef1e2b8c520b9e59ed3455ae4bbca208

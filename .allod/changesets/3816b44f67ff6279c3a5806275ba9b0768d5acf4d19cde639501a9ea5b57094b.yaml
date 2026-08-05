@@ -1,0 +1,64 @@
+kind: changeset
+parents:
+- sha256:371880bf439c2389fed70a677ef39df34c20d85010e30dc0e2f1b92736918ace
+author:
+  principal: principal:conner
+  key: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
+timestamp: 2026-08-05T03:25:26Z
+intent: Install schema package (0 doc(s))
+schema_context: sha256:b27fcd7d499abd1d7eb1ee98cc3872821f090190fc4e78aad59670201c3339a4
+operations:
+- update:
+    kind: node
+    id: 88c1afe4-2120-4d00-b68c-83a914300232
+    type: meta/Policy@1
+    attributes:
+      name: repo-governance
+      definition: |
+        policy: repo-governance
+        version: 1
+        default_posture: restricted
+        roles:
+          code-owner:
+          - principal:conner
+        rules:
+        - name: main-requires-review
+          select:
+            substrate: git
+            repo: allod
+            target_ref: refs/heads/main
+          require:
+            reviewers:
+              role: code-owner
+              quorum: 1
+        - name: workflows-require-review
+          select:
+            substrate: git
+            repo: allod
+            target_ref: refs/heads/*
+            path: .github/workflows/*
+          require:
+            reviewers:
+              role: code-owner
+              quorum: 1
+        - name: governance-requires-review
+          select:
+            substrate: git
+            repo: allod
+            target_ref: refs/heads/main
+            path: governance/*
+          require:
+            reviewers:
+              role: code-owner
+              quorum: 1
+        - name: security-critical-code
+          select:
+            substrate: git
+            region: security/critical
+          require:
+            reviewers:
+              role: code-owner
+              quorum: 1
+    prior: sha256:9eb45b0b536710598df3a31076ca4065dc0444bfe418ba43a1e61efc4088198c
+hash: sha256:3816b44f67ff6279c3a5806275ba9b0768d5acf4d19cde639501a9ea5b57094b
+signature: sig:ed25519:390c5ae8eaee5214ee10e1ba06ed702d769d82000e2a92e1a4672bf3dbff31269ba497f5d93cd1107a4cec65ac9162f5b554bde65b349788a444929aac564502

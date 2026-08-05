@@ -28,3 +28,11 @@ rules:
     select: { substrate: git, repo: "allod", target_ref: "refs/heads/main", path: "governance/*" }
     require:
       reviewers: { role: code-owner, quorum: 1 }
+
+  # Region reach over the derived code graph (§8.3): any change that
+  # touches a path from which a security/critical-classified subject
+  # derives needs review, on every branch.
+  - name: security-critical-code
+    select: { substrate: git, region: "security/critical" }
+    require:
+      reviewers: { role: code-owner, quorum: 1 }

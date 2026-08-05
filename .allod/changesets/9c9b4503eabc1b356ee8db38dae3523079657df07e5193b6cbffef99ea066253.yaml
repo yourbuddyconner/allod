@@ -1,0 +1,78 @@
+kind: changeset
+parents:
+- sha256:dcbcbfaf6ef83fee7ce03ee33264cde3464e487584302615b0db5070f061863d
+author:
+  principal: principal:conner
+  key: sha256:6a59b8e4684781aaa5292dec77d82934df9a7d309210b42847f9ebd78139ac82
+timestamp: 2026-08-05T03:29:57Z
+intent: Derived from commit 09d652faf79e (8 ops, allod-scan@0.1)
+schema_context: sha256:39e97e90a623fbce025e0a5f7a751f5839f76ef775c72d1985e24dfde9c36c0b
+operations:
+- create:
+    kind: node
+    id: 87bc6d03-d87d-49c8-9415-edd4c29135ed
+    type: code/Type@1
+    attributes:
+      name: DocStore
+      kind: interface
+    provenance:
+      derived_from:
+      - git:#09d652faf79e007b25ab7b4e2089e312043b1264
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: de997de4-348a-4629-9158-53fc53d3ee3d
+    type: code/declares@1
+    from: node:9d177b4f-5915-4c95-8bd2-4f68ff2213e7
+    to: node:87bc6d03-d87d-49c8-9415-edd4c29135ed
+    provenance:
+      derived_from:
+      - git:#09d652faf79e007b25ab7b4e2089e312043b1264
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: node
+    id: 10ebec6c-e7a5-401f-ac8f-ff46d3d14212
+    type: code/Type@1
+    attributes:
+      name: Substrate
+      kind: interface
+    provenance:
+      derived_from:
+      - git:#09d652faf79e007b25ab7b4e2089e312043b1264
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- create:
+    kind: edge
+    id: 2af46a68-4980-4a5b-bcfd-faa9a0265c60
+    type: code/declares@1
+    from: node:f9928e68-1b61-4710-abca-3be7f6df7d5e
+    to: node:10ebec6c-e7a5-401f-ac8f-ff46d3d14212
+    provenance:
+      derived_from:
+      - git:#09d652faf79e007b25ab7b4e2089e312043b1264
+      derived_by: principal:conner
+      method: deterministic
+      tool: allod-scan@0.1
+- delete:
+    kind: edge
+    id: 73cc3756-663a-4c79-b81e-a53ce80081c9
+    prior: sha256:51759309d2541861ba0d757d981be6f6e9cd9cf40c69a2765558421433d47d31
+- delete:
+    kind: node
+    id: 0e5fb251-f43d-4f43-abe6-1834dff37c88
+    prior: sha256:9fdfabe206ba929f98963fb8a5a6f82fcc96b1ec86eadfa85080d4ccc8fe3953
+- delete:
+    kind: edge
+    id: 14b67012-a431-49de-9518-53b0df9f9760
+    prior: sha256:7ee9f9ed7d5950daed6ce2b023b7783edccf277aadbcd2e4abb0773283ed27b0
+- delete:
+    kind: node
+    id: ba3f7237-8756-4d01-ae5e-8058dc42b745
+    prior: sha256:bd3b88b735217ac28c6da3bf17958edf7d149a6e140378deb2f083d525a0489d
+hash: sha256:9c9b4503eabc1b356ee8db38dae3523079657df07e5193b6cbffef99ea066253
+signature: sig:ed25519:20213ac7d51c69bc7ab28bc310ac8a52236e90bcbaf116c3c277075fa2d8faafce730b7a18dfaf7ee9b1b8c558d8a3fe76b8a05b219243ee0f7fe425219d160b
