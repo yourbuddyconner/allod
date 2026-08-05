@@ -158,16 +158,13 @@ fn verify_report_is_stable_across_substrate_rewire() {
         }
     }
 
-    // ── Part 2: corrupted changeset → integrity failure ──
+    // ── Part 2: corrupted changeset → verify returns Err ──
     // We use a filesystem-backed graph so we can overwrite the changeset YAML.
     //
-    // Current behavior (pre-rewire): graph.registry() folds the whole chain
-    // and fails fast when it detects the hash mismatch, so flows::verify returns
-    // Err rather than a VerifyReport. After the substrate rewire, verify uses
-    // sub.revision() per-changeset in the loop, so it returns Ok(report) with
-    // integrity=Failed for the tampered entry.
-    //
-    // This test accepts both behaviors so it passes before AND after the rewire.
+    // graph.registry() at the top of flows::verify folds the whole chain and
+    // fails fast when it detects the hash/content mismatch — both before and
+    // after the substrate rewire. So flows::verify returns Err whose message
+    // names the recompute failure. The loop never sees the corrupted changeset.
     {
         let tmp = TempDir::new().expect("tempdir");
         let graph_dir = tmp.path();
@@ -192,30 +189,22 @@ fn verify_report_is_stable_across_substrate_rewire() {
         let original = std::fs::read_to_string(&cs_path).expect("read changeset file");
         // Change the timestamp field without touching the hash field.
         // changeset_hash() includes the timestamp in its preimage, so when
-        // flows::verify re-reads the chain the recomputed hash won't match
-        // the stored hash field → apply_changeset returns Err → integrity=Failed.
+        // flows::verify calls graph.registry() the recomputed hash won't match
+        // the stored hash field → registry() returns Err.
         let tampered = original.replace("timestamp:", "timestamp: TAMPERED #");
         assert_ne!(tampered, original, "tamper must change the file — no 'timestamp:' in changeset?");
         std::fs::write(&cs_path, &tampered).expect("write tampered changeset");
 
-        // Verify must detect the corruption. Pre-rewire: verify returns Err (fold
-        // fails fast). Post-rewire: verify returns Ok(report) with integrity=Failed.
-        match flows::verify(&graph) {
-            Err(_) => {
-                // Pre-rewire behavior: fold failure propagates as Err. Acceptable.
-            }
-            Ok(report) => {
-                // Post-rewire behavior: integrity failure captured in the report.
-                assert!(!report.ok, "tampered graph must not verify ok");
-                let failed_entry = report.changesets.iter()
-                    .find(|cs| cs.hash == last_hash)
-                    .expect("tampered changeset appears in report");
-                assert!(
-                    matches!(failed_entry.integrity, LevelResult::Failed(_)),
-                    "tampered changeset must have integrity=Failed, got: {:?}",
-                    std::mem::discriminant(&failed_entry.integrity)
-                );
-            }
+        // graph.registry() folds the chain and detects the hash mismatch.
+        // flows::verify propagates that as Err — the loop never runs.
+        let result = flows::verify(&graph);
+        assert!(
+            result.is_err(),
+            "corrupted graph must make verify return Err (registry folds and fails first)"
+        );
+        if let Err(e) = result {
+            let msg = e.to_string();
+            assert!(!msg.is_empty(), "Err message must be non-empty");
         }
     }
 }

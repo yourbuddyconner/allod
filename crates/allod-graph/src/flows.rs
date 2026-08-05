@@ -949,14 +949,21 @@ pub fn verify(graph: &Graph) -> Result<VerifyReport, AllodError> {
             (LevelResult::Verified, admitted_by)
         };
 
-        // Level 1: integrity — sub.revision() enforces content addressing (§3.1 property 1).
-        // Also advance replay state for governance of subsequent changesets; apply_changeset
-        // will succeed iff revision() passed (same hash check), so its result is discarded here.
+        // Level 1: integrity — sub.revision() enforces content addressing
+        // (§3.1 property 1); apply_changeset additionally rejects schema
+        // violations, prior-revision mismatches, and dangling references
+        // (§3.2.4), and advances the replay state for later changesets.
+        // Today graph.registry() at the top already folds the whole chain
+        // and errors first on any such changeset, so the Failed arms below
+        // are a backstop, not the primary path.
         let integrity = match sub.revision(&hash) {
-            Ok(_) => {
-                let _ = state.apply_changeset(&reg, cs);
-                LevelResult::Verified
-            }
+            Ok(_) => match state.apply_changeset(&reg, cs) {
+                Ok(()) => LevelResult::Verified,
+                Err(e) => {
+                    ok = false;
+                    LevelResult::Failed(format!("{hash}: {e}"))
+                }
+            },
             Err(reason) => {
                 ok = false;
                 LevelResult::Failed(reason)

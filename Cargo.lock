@@ -28,6 +28,7 @@ name = "allod-graph"
 version = "0.1.0"
 dependencies = [
  "allod-core",
+ "allod-substrate",
  "getrandom 0.2.17",
  "js-sys",
  "rand",
@@ -42,6 +43,15 @@ name = "allod-lint"
 version = "0.1.0"
 dependencies = [
  "allod-core",
+ "serde_yaml",
+]
+
+[[package]]
+name = "allod-substrate"
+version = "0.1.0"
+dependencies = [
+ "allod-core",
+ "allod-graph",
  "serde_yaml",
 ]
 
