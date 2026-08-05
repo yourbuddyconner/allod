@@ -18,7 +18,7 @@ That script calls `allod init`, `allod install-policy`, and `allod verify` once 
 
 ## Decisions
 
-Decisions are stored as git notes under `refs/notes/allod-decisions`.
+Decisions are stored in two forms depending on the target. Native graph changesets record their decision evidence in `.allod/changesets/<hash>.evidence.yaml` alongside the changeset; decisions about git commits travel as git notes under `refs/notes/allod-decisions` so CI can read them without rewriting the decided commit.
 
 Push: `git push origin refs/notes/allod-decisions`
 
