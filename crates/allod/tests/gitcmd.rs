@@ -82,3 +82,49 @@ rules:
     ]);
     assert!(ok);
 }
+
+#[test]
+fn git_index_materializes_and_is_idempotent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    sh(repo, &["init", "-q", "-b", "main"]);
+    sh(repo, &["config", "user.email", "t@allod.dev"]);
+    sh(repo, &["config", "user.name", "T"]);
+
+    // Create a Rust source file to be indexed.
+    std::fs::write(repo.join("main.rs"), "fn foo() {}\n").unwrap();
+    sh(repo, &["add", "."]);
+    sh(repo, &["commit", "-q", "-m", "c1"]);
+
+    // Initialize with code profile to support repository/sourcefile/function indexing.
+    let schema = concat!(env!("CARGO_MANIFEST_DIR"), "/../../ontologies");
+    let (ok, out) = allod(&[
+        "init-code",
+        repo.to_str().unwrap(),
+        "--owner",
+        "conner",
+        "--schema",
+        schema,
+    ]);
+    assert!(ok, "init-code failed: {out}");
+
+    // 1. First index: should succeed and print admission
+    let (ok, out) = allod(&[
+        "git", "index", repo.to_str().unwrap(), "HEAD", "--as", "conner",
+    ]);
+    assert!(ok, "first index failed: {out}");
+    assert!(
+        out.contains("admitted") || out.contains("held"),
+        "admission outcome not found in: {out}"
+    );
+
+    // 2. Second index: should succeed and print "up to date"
+    let (ok, out) = allod(&[
+        "git", "index", repo.to_str().unwrap(), "HEAD", "--as", "conner",
+    ]);
+    assert!(ok, "second index failed: {out}");
+    assert!(
+        out.contains("up to date"),
+        "up to date message not found in: {out}"
+    );
+}

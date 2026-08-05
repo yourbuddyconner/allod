@@ -1,4 +1,4 @@
-//! `allod git eval` and `allod git decide` — advisory governance over git commits.
+//! `allod git eval`, `allod git decide`, and `allod git index` — advisory governance over git commits.
 //!
 //! # eval
 //! Resolves a commit-ish to its full SHA, builds a [`GitChange`], evaluates it
@@ -11,11 +11,18 @@
 //! Builds a signed decision record in exactly the same shape that
 //! `reviewers_unmet` verifies (matching `flows::decide`), and appends it to
 //! the `refs/notes/allod-decisions` note for the resolved SHA.
+//!
+//! # index
+//! Materializes the derived graph for a commit by calling `import_commit`,
+//! which scans the commit tree to extract code entities and admit or hold
+//! the changeset according to the graph's policy. Idempotent: re-running
+//! on the same commit reports "up to date" if nothing changed.
 
 use allod_core::policy::{
     decision_payload, evaluate_git, policy_context, reviewers_unmet, Checklist, GitChange,
 };
 use allod_core::store::Graph;
+use allod_graph::repo as repo_lib;
 use allod_substrate::Substrate;
 use allod_substrate_git::{append_decision, op_paths, read_decisions, resolve_commit, GitSubstrate};
 use serde_yaml::Value;
@@ -56,8 +63,9 @@ pub fn cmd_git(args: &[String]) -> Result<(), String> {
     match sub.as_str() {
         "eval" => cmd_git_eval(rest),
         "decide" => cmd_git_decide(rest),
+        "index" => cmd_git_index(rest),
         _ => Err(format!(
-            "usage: allod git eval|decide …\n  unknown subcommand: {sub}"
+            "usage: allod git eval|decide|index …\n  unknown subcommand: {sub}"
         )),
     }
 }
@@ -251,6 +259,49 @@ fn cmd_git_decide(args: &[String]) -> Result<(), String> {
 
     println!("  ✓ decision recorded: {subject} → {verdict}");
     Ok(())
+}
+
+// ── index ────────────────────────────────────────────────────────────────────
+
+fn cmd_git_index(args: &[String]) -> Result<(), String> {
+    let pos = positional(args);
+    let repo_dir = pos.first().map(PathBuf::from).ok_or("usage: allod git index <repo-dir> <commit-ish> --as <principal> [--graph <dir>]")?;
+    let commitish = pos.get(1).cloned().ok_or("usage: allod git index <repo-dir> <commit-ish> --as <principal> [--graph <dir>]")?;
+    let principal = flag(args, "--as").ok_or("--as <principal> is required")?;
+
+    // Defaults. --graph specifies the directory containing .allod/;
+    // Graph::open appends .allod internally.
+    let graph_dir = flag(args, "--graph")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_dir.to_path_buf());
+
+    // Open graph and import the commit.
+    let graph = Graph::open(&graph_dir)?;
+    match repo_lib::import_commit(&graph, &repo_dir, &commitish, &principal) {
+        Ok((hash, admitted)) => {
+            // Print admission outcome.
+            let admitted_str = if admitted {
+                "admitted"
+            } else {
+                "held"
+            };
+            println!(
+                "  ✓ indexed {} ({}) — derivation {} at {}",
+                allod_graph::ops::short(&hash),
+                admitted_str,
+                if admitted { "admitted" } else { "pending" },
+                commitish
+            );
+            Ok(())
+        }
+        Err(e) if e.to_string().contains("nothing changed") => {
+            // Resolve the commit to get its SHA for the message.
+            let sha = resolve_commit(&repo_dir, &commitish)?;
+            println!("  up to date — no derivation ops for {}", &sha[..12.min(sha.len())]);
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
