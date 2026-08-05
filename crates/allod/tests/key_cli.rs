@@ -33,10 +33,15 @@ fn init_migrate_where_roundtrip() {
     assert!(gi.contains("keys/"));
     assert!(!g.join(".allod/keys/o.yaml").exists(), "key must not be repo-local");
 
-    // where reports the file backend.
+    // where reports the backend where the key was stored.
+    // On macOS the keychain backend is first in the default chain, so init stores
+    // the owner key in the keychain; on other platforms it goes to the file backend.
     let out = allod(&["key", "where", g_s, "--as", "o"], &keys);
-    assert!(out.status.success());
+    assert!(out.status.success(), "key where failed: {}", String::from_utf8_lossy(&out.stderr));
     let text = String::from_utf8_lossy(&out.stdout).to_string();
+    #[cfg(target_os = "macos")]
+    assert!(text.contains("keychain:") || text.contains("file:"), "got: {text}");
+    #[cfg(not(target_os = "macos"))]
     assert!(text.contains("file:"), "got: {text}");
 
     // Simulate a legacy repo-local key, then migrate it.

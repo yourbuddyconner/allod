@@ -625,19 +625,21 @@ fn init_writes_owner_key_to_xdg_backend_not_repo() {
         .expect("profile_from_dir");
     let result = flows::init(&graph, "alice", profile).expect("flows::init");
 
-    // Derive the graph-id-component from the genesis hash.
-    let graph_id = &result.graph_id;
-    let component = allod_core::keys::graph_dir_component(graph_id);
+    // On macOS, the keychain backend is first in the default chain, so init stores
+    // the owner key in the keychain rather than the XDG file path.
+    // On other platforms the key must be at the XDG file path.
+    #[cfg(not(target_os = "macos"))]
+    {
+        let component = allod_core::keys::graph_dir_component(&result.graph_id);
+        let xdg_key = xdg_dir.join(&component).join("alice.yaml");
+        assert!(
+            xdg_key.is_file(),
+            "owner key should be at XDG path {}, but it is not",
+            xdg_key.display()
+        );
+    }
 
-    // Key must exist in XDG path.
-    let xdg_key = xdg_dir.join(&component).join("alice.yaml");
-    assert!(
-        xdg_key.is_file(),
-        "owner key should be at XDG path {}, but it is not",
-        xdg_key.display()
-    );
-
-    // Key must NOT exist in the repo-local .allod/keys/ directory.
+    // Key must NOT exist in the repo-local .allod/keys/ directory on any platform.
     let repo_key = graph_dir.join(".allod/keys/alice.yaml");
     assert!(
         !repo_key.exists(),
@@ -651,7 +653,13 @@ fn init_writes_owner_key_to_xdg_backend_not_repo() {
 /// When `create_key` fails (simulated by making `ALLOD_KEYS_DIR` a plain file so
 /// `create_dir_all` returns ENOTDIR), `flows::init` must return `Err` and the graph
 /// must have no HEAD — admission must not have happened before the failure.
+///
+/// On macOS the keychain backend is first in the default chain and does not use
+/// `ALLOD_KEYS_DIR`, so this simulation technique does not apply.  The test is
+/// intentionally skipped on macOS; the invariant (init atomicity) is still correct
+/// on macOS but requires a different failure injection point.
 #[test]
+#[cfg(not(target_os = "macos"))]
 fn init_create_key_failure_leaves_no_head() {
     let _guard = KEYS_DIR_LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap();
 

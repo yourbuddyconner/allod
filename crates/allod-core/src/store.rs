@@ -29,6 +29,15 @@ pub struct Graph {
 fn default_backends(dir: &Path) -> Vec<Box<dyn crate::keys::KeyBackend>> {
     use crate::keys::FileBackend;
     let legacy_keys = dir.join(".allod/keys");
+    #[cfg(target_os = "macos")]
+    {
+        use crate::keys_keychain::KeychainBackend;
+        return vec![
+            Box::new(KeychainBackend::new()),
+            Box::new(FileBackend::platform_default(vec![legacy_keys])),
+        ];
+    }
+    #[cfg(not(target_os = "macos"))]
     vec![Box::new(FileBackend::platform_default(vec![legacy_keys]))]
 }
 
@@ -177,6 +186,15 @@ impl Graph {
                             use crate::keys::FileBackend;
                             let legacy_keys = dir.join(".allod/keys");
                             chain.push(Box::new(FileBackend::platform_default(vec![legacy_keys])));
+                        }
+                        #[cfg(target_os = "macos")]
+                        Some("keychain") => {
+                            use crate::keys_keychain::KeychainBackend;
+                            chain.push(Box::new(KeychainBackend::new()));
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        Some("keychain") => {
+                            return Err("key backend \"keychain\" is macOS-only".into());
                         }
                         Some(other) => {
                             return Err(format!("unknown key backend {other:?} (not built on this platform)"));
@@ -598,8 +616,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::env::set_var("ALLOD_KEYS_DIR", root.join("xdg"));
         let gdir = root.join("g");
-        let graph = Graph::create(&gdir).unwrap();
+        let mut graph = Graph::create(&gdir).unwrap();
         graph.write_meta("sha256:cafe", &[]).unwrap();
+        // Override the backend chain to use file-only for this test — we are testing
+        // the XDG→legacy→store fallback, not the macOS keychain integration.
+        // (Keychain integration is tested separately in keys_keychain::tests.)
+        {
+            use crate::keys::FileBackend;
+            let legacy_keys = gdir.join(".allod/keys");
+            graph.set_key_backends(vec![
+                Box::new(FileBackend::platform_default(vec![legacy_keys])),
+            ]);
+        }
         // (a) create_key goes to the XDG path, keyed by graph id.
         let kp = Keypair::generate("alice");
         let public = kp.public_hex();

@@ -12,6 +12,8 @@ pub mod docstore;
 pub mod fold;
 pub mod hash;
 pub mod keys;
+#[cfg(target_os = "macos")]
+pub mod keys_keychain;
 pub mod loader;
 pub mod meta;
 pub mod model;

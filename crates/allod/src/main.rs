@@ -145,6 +145,7 @@ fn cmd_key(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_key_where(dir: &Path, principal: &str) -> Result<(), String> {
+    use allod_core::keys::KeyBackend as _;
     let graph = Graph::open(dir)?;
     let graph_id = graph
         .meta()
@@ -153,8 +154,18 @@ fn cmd_key_where(dir: &Path, principal: &str) -> Result<(), String> {
         .and_then(|v| v.as_str().map(String::from))
         .ok_or("could not read graph_id from graph.yaml")?;
     let legacy_keys = dir.join(".allod/keys");
-    let backend = allod_core::keys::FileBackend::platform_default(vec![legacy_keys]);
-    let handle = backend.resolve(&graph_id, principal)?;
+
+    // Try backends in priority order: keychain (macOS) then file.
+    #[cfg(target_os = "macos")]
+    {
+        let kc = allod_core::keys_keychain::KeychainBackend::new();
+        if let Ok(handle) = kc.resolve(&graph_id, principal) {
+            println!("{}", handle.describe());
+            return Ok(());
+        }
+    }
+    let file_backend = allod_core::keys::FileBackend::platform_default(vec![legacy_keys]);
+    let handle = file_backend.resolve(&graph_id, principal)?;
     println!("{}", handle.describe());
     Ok(())
 }
@@ -163,7 +174,7 @@ fn cmd_key_migrate(dir: &Path, principal: &str, to: Option<&str>) -> Result<(), 
     if let Some(dest) = to {
         if dest == "keychain" {
             #[cfg(target_os = "macos")]
-            return Err("keychain backend not built yet".into());
+            return cmd_key_migrate_to_keychain(dir, principal);
             #[cfg(not(target_os = "macos"))]
             return Err("keychain backend is macOS-only".into());
         }
@@ -215,6 +226,96 @@ fn cmd_key_migrate(dir: &Path, principal: &str, to: Option<&str>) -> Result<(), 
         .map_err(|e| format!("cannot remove {}: {e}", legacy_path.display()))?;
 
     println!("moved {} -> {}", legacy_path.display(), dest_path.display());
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn cmd_key_migrate_to_keychain(dir: &Path, principal: &str) -> Result<(), String> {
+    use allod_core::keys_keychain::KeychainBackend;
+
+    let graph = Graph::open(dir)?;
+    let graph_id = graph
+        .meta()
+        .map_err(|e| format!("could not read graph_id from graph.yaml: {e}"))?
+        .get("graph_id")
+        .and_then(|v| v.as_str().map(String::from))
+        .ok_or("could not read graph_id from graph.yaml")?;
+
+    // Locate the source key: try XDG first, then legacy in-repo path.
+    // We resolve through a FILE-only backend (no keychain in the chain) so
+    // we don't accidentally consider an already-migrated keychain item as the source.
+    let legacy_dir = dir.join(".allod/keys");
+    let file_backend = allod_core::keys::FileBackend::platform_default(vec![legacy_dir.clone()]);
+    let source_handle = file_backend
+        .resolve(&graph_id, principal)
+        .map_err(|_| {
+            // Build a descriptive error that names both paths the caller should check.
+            let xdg_path = {
+                let d = if let Ok(d) = std::env::var("ALLOD_KEYS_DIR") {
+                    std::path::PathBuf::from(d)
+                } else if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+                    std::path::PathBuf::from(xdg).join("allod/keys")
+                } else {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                    std::path::PathBuf::from(home).join(".local/share/allod/keys")
+                };
+                d.join(allod_core::keys::graph_dir_component(&graph_id))
+                    .join(format!("{principal}.yaml"))
+            };
+            let legacy_path = legacy_dir.join(format!("{principal}.yaml"));
+            format!(
+                "no file key for {principal:?} (searched {} and {})",
+                xdg_path.display(),
+                legacy_path.display()
+            )
+        })?;
+
+    // The source path (for the "moved ... -> ..." message and deletion).
+    let source_path = match &source_handle {
+        allod_core::keys::KeyHandle::File { path, .. } => path.clone(),
+        allod_core::keys::KeyHandle::Keychain { .. } => {
+            return Err("source handle is already in keychain — nothing to migrate".into());
+        }
+    };
+
+    // Load the keypair from the file.
+    use allod_core::keys::KeyBackend as _;
+    let kp_public = file_backend.public(&source_handle)?;
+    // Re-read the raw YAML to reconstruct the Keypair (we need the secret).
+    let contents = std::fs::read_to_string(&source_path)
+        .map_err(|e| format!("cannot read {}: {e}", source_path.display()))?;
+    let doc: serde_yaml::Value = serde_yaml::from_str(&contents)
+        .map_err(|e| format!("cannot parse key YAML {}: {e}", source_path.display()))?;
+    let kp = allod_core::sign::Keypair::from_yaml(&doc)?;
+
+    // Store in keychain.
+    let kc = KeychainBackend::new();
+    let kc_handle = kc.store(&graph_id, &kp)?;
+    let account = match &kc_handle {
+        allod_core::keys::KeyHandle::Keychain { account, .. } => account.clone(),
+        allod_core::keys::KeyHandle::File { .. } => unreachable!(),
+    };
+
+    // Verify the keychain item resolves and the public key matches.
+    let resolved = kc.resolve(&graph_id, principal)?;
+    let kc_public = kc.public(&resolved)?;
+    if kc_public != kp_public {
+        // Roll back: remove the keychain item before returning the error.
+        let _ = kc.delete(&graph_id, principal);
+        return Err(format!(
+            "keychain verification failed: public key mismatch after store"
+        ));
+    }
+
+    // Delete the source file only after successful store + verify.
+    std::fs::remove_file(&source_path)
+        .map_err(|e| format!("cannot remove {}: {e}", source_path.display()))?;
+
+    println!(
+        "moved {} -> keychain (service allod, account {})",
+        source_path.display(),
+        account
+    );
     Ok(())
 }
 
