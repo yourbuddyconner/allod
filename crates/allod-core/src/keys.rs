@@ -125,6 +125,18 @@ impl FileBackend {
         kp: &crate::sign::Keypair,
     ) -> Result<KeyHandle, String> {
         let dir = self.create_dir.join(graph_dir_component(graph_id));
+        // On Unix, create the per-graph directory with mode 0700 so its
+        // contents are inaccessible to other users on the same machine.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt as _;
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(&dir)
+                .map_err(|e| format!("cannot create key dir {}: {e}", dir.display()))?;
+        }
+        #[cfg(not(unix))]
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("cannot create key dir {}: {e}", dir.display()))?;
         let path = dir.join(format!("{}.yaml", kp.name));
@@ -132,7 +144,25 @@ impl FileBackend {
         let contents = serde_yaml::to_string(&yaml_value)
             .map_err(|e| format!("cannot serialize key: {e}"))?;
         // Use create_new so the no-overwrite check is atomic (no TOCTOU).
+        // On Unix, open with mode 0600 so key files are owner-read/write only.
         use std::io::Write as _;
+        #[cfg(unix)]
+        let mut file = {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&path)
+                .map_err(|e| {
+                    if e.kind() == std::io::ErrorKind::AlreadyExists {
+                        format!("key already exists at {}", path.display())
+                    } else {
+                        format!("cannot create key file {}: {e}", path.display())
+                    }
+                })?
+        };
+        #[cfg(not(unix))]
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -342,6 +372,36 @@ mod tests {
         let be = FileBackend { create_dir: tmp.join("xdg"), fallbacks: vec![legacy.clone()] };
         let h = be.resolve("sha256:anything", "carol").unwrap();
         assert_eq!(be.public(&h).unwrap(), kp.public_hex());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_backend_key_file_has_0600_permissions() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = std::env::temp_dir()
+            .join(format!("allod-keys-perms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let be = FileBackend { create_dir: tmp.clone(), fallbacks: vec![] };
+        let kp = crate::sign::Keypair::generate("perms-test");
+        be.store("sha256:perm1", &kp).unwrap();
+        let key_path = tmp.join("perm1").join("perms-test.yaml");
+        assert!(key_path.is_file(), "key file must exist at {}", key_path.display());
+        let meta = std::fs::metadata(&key_path).unwrap();
+        let mode = meta.permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "key file permissions must be 0600, got {:04o}",
+            mode
+        );
+        // Also check the directory has 0700.
+        let dir_meta = std::fs::metadata(tmp.join("perm1")).unwrap();
+        let dir_mode = dir_meta.permissions().mode() & 0o777;
+        assert_eq!(
+            dir_mode, 0o700,
+            "key directory permissions must be 0700, got {:04o}",
+            dir_mode
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

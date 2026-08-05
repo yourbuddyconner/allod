@@ -167,7 +167,19 @@ fn verify_report_is_stable_across_substrate_rewire() {
     // after the substrate rewire. So flows::verify returns Err whose message
     // names the recompute failure. The loop never sees the corrupted changeset.
     {
+        // Hold the KEYS_DIR_LOCK and point ALLOD_KEYS_DIR at a temp dir so
+        // keys land in an isolated location, never ~/.local/share/allod/keys.
+        let _guard = KEYS_DIR_LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap();
         let tmp = TempDir::new().expect("tempdir");
+        let keys_tmp = std::env::temp_dir().join(format!(
+            "allod-tamper-keys-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0),
+        ));
+        std::env::set_var("ALLOD_KEYS_DIR", &keys_tmp);
         let graph_dir = tmp.path();
         // Graph::create(dir) sets up FsStore at dir/.allod
         let graph = CoreGraph::create(graph_dir).expect("create fs graph");
@@ -207,6 +219,10 @@ fn verify_report_is_stable_across_substrate_rewire() {
             let msg = e.to_string();
             assert!(!msg.is_empty(), "Err message must be non-empty");
         }
+        // Reset ALLOD_KEYS_DIR to the shared hermetic dir before releasing the
+        // lock so a plain-file path cannot leak into the next test.
+        std::env::set_var("ALLOD_KEYS_DIR", &keys_tmp);
+        let _ = std::fs::remove_dir_all(&keys_tmp);
     }
 }
 
@@ -644,6 +660,12 @@ fn init_writes_owner_key_to_xdg_backend_not_repo() {
     );
 
     let _ = std::fs::remove_dir_all(&root);
+    // Reset ALLOD_KEYS_DIR to a safe temp dir before releasing the lock so
+    // the plain-file path cannot leak into a test that runs next.
+    std::env::set_var(
+        "ALLOD_KEYS_DIR",
+        std::env::temp_dir().join(format!("allod-keys-reset-{}", std::process::id())),
+    );
 }
 
 /// When `create_key` fails (simulated by making `ALLOD_KEYS_DIR` a plain file so
@@ -697,6 +719,12 @@ fn init_create_key_failure_leaves_no_head() {
     );
 
     let _ = std::fs::remove_dir_all(&root);
+    // Reset ALLOD_KEYS_DIR to a safe temp dir before releasing the lock so
+    // the plain-file path cannot leak into the next test.
+    std::env::set_var(
+        "ALLOD_KEYS_DIR",
+        std::env::temp_dir().join(format!("allod-keys-reset-{}", std::process::id())),
+    );
 }
 
 // ---- Task 3: two-phase decide ----

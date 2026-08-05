@@ -41,6 +41,8 @@ not implemented. Shipped: `allod key where <dir> --as <principal>` and
 The wasm-internal file-signing path (`commit`/`decide`) is unchanged and
 additive.
 
+**Keychain item value: plain-keypair YAML, not 32-byte base64.** The spec says the keychain item stores the ed25519 secret as 32 bytes, base64-encoded. The shipped implementation stores the full plain-keypair YAML record (the same bytes the file backend writes — name, public key hex, and secret key hex fields) as the item's password data. The choice was made so a single serialization format covers both backends and round-trip through `Keypair::from_yaml` is identical regardless of which backend loaded the key. freehold's TypeScript mirror must therefore parse the YAML record when reading a keychain item — reading raw bytes as a scalar secret will not work.
+
 **YubiKey PIV + WebAuthn: not implemented.** Deferred per spec.
 
 ## Goal

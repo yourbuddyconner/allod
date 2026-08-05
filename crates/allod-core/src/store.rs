@@ -676,6 +676,12 @@ mod tests {
         // (c) unknown principal errors.
         assert!(graph.signer("nobody").is_err());
         let _ = std::fs::remove_dir_all(&root);
+        // Reset ALLOD_KEYS_DIR to a safe temp dir before releasing the lock so
+        // the path set above cannot leak into other tests.
+        std::env::set_var(
+            "ALLOD_KEYS_DIR",
+            std::env::temp_dir().join(format!("allod-keys-reset-{}", std::process::id())),
+        );
     }
 
     // ---- helpers for building unsigned test changesets ----
