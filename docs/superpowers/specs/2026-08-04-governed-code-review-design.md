@@ -69,7 +69,7 @@ Implementations:
   (`allod-core` store/fold, `allod-graph` plumbing). This is a
   re-homing, not a rewrite. Zero behavior change; existing tests pass
   unmodified.
-- `GitSubstrate` (crate `allod-substrate-git`, gix-based): commit =
+- `GitSubstrate` (crate `allod-substrate-git`, over the git CLI — the `repo.rs` idiom; gix remains an option if shelling out ever binds): commit =
   changeset, operation set = byte-level tree diff against the first
   parent with rename detection disabled (§3.3), tree hash = state hash,
   refs = heads, commit signature = authorship. Built over a pluggable
@@ -146,8 +146,12 @@ against §4.4's structure requirements.
 - Inbox: git proposals listed beside native ones, showing checklist
   state, the semantic diff from the derived graph, and both file
   versions fetched via the GitHub API. Deciding writes the signed
-  decision record into `.allod/`; once pushed, the next eval run turns
-  the check green.
+  decision record; for git commits, decisions live in git notes
+  (`refs/notes/allod-decisions`), attached to the decided sha without
+  rewriting it — committing a decision into the PR branch would change
+  the head sha under decision. The governance graph still holds
+  native-side records; freehold pushes the notes ref. Once pushed, the
+  next eval run turns the check green.
 
 ### GitHub connector
 
@@ -191,7 +195,9 @@ Each independently shippable, in order:
    change. Plan: `docs/superpowers/plans/2026-08-04-substrate-refactor.md`. **Status: done.**
 2. **Git evaluation + CI action.** `allod-substrate-git`, policy
    unstub, `allod git eval`, advisory check on allod's own PRs with
-   path/ref rules. `review` ontology package drafted.
+   path/ref rules. `review` ontology package drafted. **Status: done.**
+   Plan: `docs/superpowers/plans/2026-08-04-git-evaluation.md`.
+   Deviations: git CLI not gix; decisions in git notes.
 3. **Derived graph.** `allod-index-code`, commit-aligned derivation,
    region-reach rules live.
 4. **Freehold review surface.** wasm additions, connector (credential
