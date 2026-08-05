@@ -22,6 +22,7 @@ mod md;
 mod repo;
 
 use allod_core::get_str;
+use allod_core::keys::KeyBackend as _;
 use allod_core::store::Graph;
 use allod_graph::ops::Admission;
 use std::path::{Path, PathBuf};
@@ -106,7 +107,110 @@ fn cmd_init_profile(
         .map_err(|e| e.to_string())?;
     let result = allod_graph::flows::init(&graph, owner, profile_src)
         .map_err(|e| e.to_string())?;
+    // Write .allod/.gitignore so keys/ is never committed.
+    let gitignore_path = dir.join(".allod/.gitignore");
+    std::fs::write(&gitignore_path, "keys/\n")
+        .map_err(|e| format!("cannot write {}: {e}", gitignore_path.display()))?;
     println!("  ✓ graph {} (owner {})", allod_graph::ops::short(&result.graph_id), result.owner);
+    Ok(())
+}
+
+// ─── key subcommands ─────────────────────────────────────────────────────────
+
+fn cmd_key(args: &[String]) -> Result<(), String> {
+    let sub = args.first().cloned().unwrap_or_default();
+    let rest = &args[1.min(args.len())..];
+    match sub.as_str() {
+        "where" => {
+            let pos = positional(rest);
+            let dir = pos.first().map(PathBuf::from)
+                .ok_or("usage: allod key where <dir> --as <principal>")?;
+            let principal = flag(rest, "--as")
+                .ok_or("usage: allod key where <dir> --as <principal>")?;
+            cmd_key_where(&dir, &principal)
+        }
+        "migrate" => {
+            let pos = positional(rest);
+            let dir = pos.first().map(PathBuf::from)
+                .ok_or("usage: allod key migrate <dir> --as <principal> [--to keychain]")?;
+            let principal = flag(rest, "--as")
+                .ok_or("usage: allod key migrate <dir> --as <principal> [--to keychain]")?;
+            let to = flag(rest, "--to");
+            cmd_key_migrate(&dir, &principal, to.as_deref())
+        }
+        _ => Err(format!(
+            "usage: allod key where|migrate …\n  unknown subcommand: {sub}"
+        )),
+    }
+}
+
+fn cmd_key_where(dir: &Path, principal: &str) -> Result<(), String> {
+    let graph = Graph::open(dir)?;
+    let graph_id = graph
+        .meta()
+        .ok()
+        .and_then(|m| m.get("graph_id").and_then(|v| v.as_str().map(String::from)))
+        .unwrap_or_default();
+    let legacy_keys = dir.join(".allod/keys");
+    let backend = allod_core::keys::FileBackend::platform_default(vec![legacy_keys]);
+    let handle = backend.resolve(&graph_id, principal)?;
+    println!("{}", handle.describe());
+    Ok(())
+}
+
+fn cmd_key_migrate(dir: &Path, principal: &str, to: Option<&str>) -> Result<(), String> {
+    if let Some(dest) = to {
+        if dest == "keychain" {
+            #[cfg(target_os = "macos")]
+            return Err("keychain backend not built yet".into());
+            #[cfg(not(target_os = "macos"))]
+            return Err("keychain backend is macOS-only".into());
+        }
+        return Err(format!("unknown --to destination: {dest}"));
+    }
+
+    let graph = Graph::open(dir)?;
+    let graph_id = graph
+        .meta()
+        .ok()
+        .and_then(|m| m.get("graph_id").and_then(|v| v.as_str().map(String::from)))
+        .unwrap_or_default();
+
+    // Source: legacy repo-local key at <dir>/.allod/keys/<principal>.yaml
+    let legacy_path = dir.join(".allod/keys").join(format!("{principal}.yaml"));
+    if !legacy_path.is_file() {
+        return Err(format!(
+            "nothing to migrate: no repo-local key at {}",
+            legacy_path.display()
+        ));
+    }
+
+    // Load the legacy keypair
+    let contents = std::fs::read_to_string(&legacy_path)
+        .map_err(|e| format!("cannot read {}: {e}", legacy_path.display()))?;
+    let doc: serde_yaml::Value = serde_yaml::from_str(&contents)
+        .map_err(|e| format!("cannot parse key YAML {}: {e}", legacy_path.display()))?;
+    let kp = allod_core::sign::Keypair::from_yaml(&doc)?;
+
+    // Destination: XDG path via FileBackend (no fallbacks — we don't want to read the legacy)
+    let dest_backend = allod_core::keys::FileBackend::platform_default(vec![]);
+    let handle = dest_backend.store(&graph_id, &kp)?;
+    let dest_path = match &handle {
+        allod_core::keys::KeyHandle::File { path, .. } => path.clone(),
+        #[cfg(target_os = "macos")]
+        allod_core::keys::KeyHandle::Keychain { .. } => {
+            return Err("unexpected keychain handle from file backend".into());
+        }
+    };
+
+    // Verify re-resolve succeeds through the full graph chain before deleting
+    graph.signer(principal)?;
+
+    // Delete legacy file only after successful store + re-resolve
+    std::fs::remove_file(&legacy_path)
+        .map_err(|e| format!("cannot remove {}: {e}", legacy_path.display()))?;
+
+    println!("moved {} -> {}", legacy_path.display(), dest_path.display());
     Ok(())
 }
 
@@ -656,6 +760,7 @@ fn main() -> ExitCode {
             let b = pos.get(1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("allod-demo-b"));
             cmd_demo_federation(&a, &b, &schema)
         }
+        "key" => cmd_key(rest),
         "git" => gitcmd::cmd_git(rest),
         "install-policy" => match (dir, pos.get(1), flag(rest, "--as")) {
             (Some(dir), Some(policy_file), Some(by)) => {

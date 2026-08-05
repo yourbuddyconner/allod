@@ -15,3 +15,5 @@ rand = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
+allod-core = { path = "../allod-core" }
+serde_yaml = "0.9"
