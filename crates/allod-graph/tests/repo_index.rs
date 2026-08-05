@@ -144,3 +144,42 @@ fn deletions_propagate_files_items_and_edges() {
     let err = import_commit(&graph, repo.path(), "HEAD", "owner").unwrap_err();
     assert!(err.to_string().contains("nothing changed"));
 }
+
+#[test]
+fn deleting_a_file_removes_inbound_call_edges_from_survivors() {
+    let (graph, _owner) = fixture_graph();
+    let repo = git_fixture();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    // a.rs declares f (and g calling f); b.rs declares h which calls f cross-file.
+    std::fs::write(repo.path().join("src/a.rs"), "pub fn f() {}\npub fn g() { f() }\n").unwrap();
+    std::fs::write(repo.path().join("src/b.rs"), "pub fn h() { f() }\n").unwrap();
+    sh(repo.path(), &["add", "-A"]);
+    sh(repo.path(), &["commit", "-q", "-m", "c1"]);
+    import_commit(&graph, repo.path(), "HEAD", "owner").unwrap();
+
+    // c2: delete a.rs entirely; b.rs survives (h keeps its text).
+    std::fs::remove_file(repo.path().join("src/a.rs")).unwrap();
+    sh(repo.path(), &["add", "-A"]);
+    sh(repo.path(), &["commit", "-q", "-m", "c2"]);
+    import_commit(&graph, repo.path(), "HEAD", "owner").unwrap();
+
+    let state = graph.fold().unwrap();
+    let live_fn = |n: &str| {
+        state.objects.iter().any(|((k, _), o)| {
+            k == "node"
+                && !o.deleted
+                && get_str(&o.content, "type").map(allod_core::bare) == Some("code/Function")
+                && o.content.get("attributes").and_then(|a| get_str(a, "name")) == Some(n)
+        })
+    };
+    assert!(!live_fn("f") && !live_fn("g"), "a.rs items tombstoned");
+    assert!(live_fn("h"), "survivor h intact");
+    for ((k, id), o) in &state.objects {
+        if k == "edge" && !o.deleted {
+            for side in ["from", "to"] {
+                let r = get_str(&o.content, side).unwrap();
+                assert!(state.resolve_ref(r).is_some(), "edge {id} dangling {side}");
+            }
+        }
+    }
+}

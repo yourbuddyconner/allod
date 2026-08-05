@@ -226,7 +226,6 @@ fn index_state(state: &State) -> ExistingIndex {
                         // We'll fill declares_edges after we know item keys (done below)
                         // For now, store a temporary association: edge_id by (file_id, item_id)
                         // We'll process this after building items.
-                        let _ = (edge_id, item_id); // placeholder; resolved in the third pass
                     }
                 }
             }
