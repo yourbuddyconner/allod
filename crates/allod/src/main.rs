@@ -17,8 +17,9 @@
 //! verification pass.
 
 mod fed;
-mod repo;
+mod gitcmd;
 mod md;
+mod repo;
 
 use allod_core::get_str;
 use allod_core::store::Graph;
@@ -630,6 +631,13 @@ fn main() -> ExitCode {
             let b = pos.get(1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("allod-demo-b"));
             cmd_demo_federation(&a, &b, &schema)
         }
+        "git" => gitcmd::cmd_git(rest),
+        "install-policy" => match (dir, pos.get(1), flag(rest, "--as")) {
+            (Some(dir), Some(policy_file), Some(by)) => {
+                gitcmd::cmd_install_policy(&dir, std::path::Path::new(policy_file), &by)
+            }
+            _ => Err("usage: allod install-policy <graph-dir> <policy-file> --as <principal>".into()),
+        },
         "export-md" => match (dir, pos.get(1)) {
             (Some(dir), Some(out)) => md::export(&dir, Path::new(out)),
             _ => Err("usage: allod export-md <dir> <out-dir>".into()),
@@ -650,7 +658,7 @@ fn main() -> ExitCode {
             cmd_demo(&dir, &schema)
         }
         _ => Err(
-            "usage: allod <init|agent-add|note|propose-preference|proposals|approve|log|show|verify|demo> …"
+            "usage: allod <init|agent-add|note|propose-preference|proposals|approve|log|show|verify|demo|git|install-policy> …"
                 .into(),
         ),
     };
