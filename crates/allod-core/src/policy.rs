@@ -335,7 +335,13 @@ pub fn glob_match(pattern: &str, text: &str) -> bool {
         match p.first() {
             None => t.is_empty(),
             Some(b'*') => {
-                (0..=t.len()).any(|i| inner(&p[1..], &t[i..]))
+                // Collapse runs of consecutive stars: `**` ≡ `*`.
+                // Skip ahead while the next pattern byte is also `*`.
+                let mut i = 1;
+                while i < p.len() && p[i] == b'*' {
+                    i += 1;
+                }
+                (0..=t.len()).any(|j| inner(&p[i..], &t[j..]))
             }
             Some(c) => t.first() == Some(c) && inner(&p[1..], &t[1..]),
         }
@@ -1074,6 +1080,15 @@ rules:
         assert!(!glob_match(".github/workflows/*", "src/lib.rs"));
         assert!(glob_match("a*c*e", "abcde"));
         assert!(!glob_match("a*c*e", "abcdf"));
+    }
+
+    #[test]
+    fn glob_match_collapses_consecutive_stars() {
+        assert!(glob_match("a****b", "a-very-long-middle-b"));
+        assert!(!glob_match("****x", "a-long-string-without-that-letter"));
+        // Pathological pattern terminates fast (would hang pre-fix).
+        let text = "p/".repeat(100);
+        assert!(!glob_match("*********************q", &text));
     }
 
     #[test]
