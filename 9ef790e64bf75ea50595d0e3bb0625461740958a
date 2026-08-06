@@ -8,3 +8,12 @@ decisions:
     subject: git:9ef790e64bf75ea50595d0e3bb0625461740958a
     timestamp: '2026-08-06T18:42:31Z'
     verdict: approve
+  - deciders:
+      - principal: principal:conner
+        signature: >-
+          sig:ed25519:4777c44fcc7e2e081bff1b33e0e4e1ad750004f798e0f0ff874ba8510071f3137d8e39f8131aa5d82db4ecf382fe53e0ab83da2a365586854a026a4aad680a0b
+    kind: decision-record
+    policy_context: sha256:14628b4970680c1460e05ce47da2145cdfcea976e8ebc91b6ffb244f0b365902
+    subject: git:9ef790e64bf75ea50595d0e3bb0625461740958a
+    timestamp: '2026-08-06T23:12:42Z'
+    verdict: approve
