@@ -2,3 +2,7 @@
 /target
 # governance graph signing keys — never committed
 .allod/keys/
+
+# local, never commit
+.mcp.json
+crates/allod-wasm/*.tgz
