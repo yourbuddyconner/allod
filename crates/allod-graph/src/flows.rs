@@ -166,34 +166,30 @@ pub fn init(graph: &Graph, owner: &str, mut profile: ProfileSource) -> Result<In
     })
 }
 
-/// Install a schema package into the graph through policy admission.
+/// Build the ops vector for installing a schema package without signing or committing.
 ///
-/// Compiles `docs` and optional `policy` into meta-node create ops and submits them
-/// through `ops::commit` so governance rules apply. Under the reference policy, ops
-/// targeting meta-typed nodes match `operation: define-type` / `set-policy` /
-/// `deprecate-term` selectors (§3.2.2 sugar mapping in `policy::op_contexts`).
+/// This is the read-only half of `install_package`. It compiles `docs` and optional
+/// `policy` into meta-node ops and applies the existing-policy dedup rewrite (create →
+/// update) when a live `meta/Policy` node is already present in `graph`.
 ///
-/// Policy contract:
+/// Use this when the signing key is host-managed (e.g. XDG file or macOS Keychain in a
+/// WASM embedding). Pair the returned ops with
+/// `commit_payload(author, intent, ops, key_id)` + `commit_signed` for host-managed
+/// keys, or with `ops::commit` / `ops::commit_with_envelope` for native callers.
+///
+/// Policy contract (identical to `install_package`):
 /// - If `policy` is `Some(p)` and **no** live `meta/Policy` node exists yet, exactly
-///   one `meta/Policy@1` node is created with that policy definition.
+///   one `meta/Policy@1` create op is included.
 /// - If `policy` is `Some(p)` and a live `meta/Policy` node **already exists**, the
-///   create op is automatically rewritten as an update op so the graph carries exactly
-///   one policy node at all times (deduplication by prior-revision chain).
-/// - If `policy` is `None`, **no** policy node is emitted — only the docs are
-///   compiled. This preserves the existing policy in the graph; a policy update
-///   must be explicit via `Some(policy)`.
-///
-/// `by` is the principal name whose keypair signs the changeset.
-pub fn install_package(
+///   create op is rewritten as an update op (deduplication).
+/// - If `policy` is `None`, no policy op is emitted.
+pub fn install_package_ops(
     graph: &Graph,
     docs: &[(String, Value)],
     policy: Option<&Value>,
-    by: &str,
-) -> Result<Admission, AllodError> {
+) -> Result<Vec<Value>, AllodError> {
     use allod_core::{bare, schemaops::compile_schema_ops};
 
-    // Compile docs only, with optional policy override.
-    // If policy is None, no policy node is emitted.
     let mut mint_id = crate::ops::uuid4;
     let mut schema_ops = compile_schema_ops(docs, policy, &mut mint_id)
         .map_err(AllodError::from)?;
@@ -259,6 +255,34 @@ pub fn install_package(
         }
     }
 
+    Ok(schema_ops)
+}
+
+/// Install a schema package into the graph through policy admission.
+///
+/// Compiles `docs` and optional `policy` into meta-node create ops and submits them
+/// through `ops::commit` so governance rules apply. Under the reference policy, ops
+/// targeting meta-typed nodes match `operation: define-type` / `set-policy` /
+/// `deprecate-term` selectors (§3.2.2 sugar mapping in `policy::op_contexts`).
+///
+/// Policy contract:
+/// - If `policy` is `Some(p)` and **no** live `meta/Policy` node exists yet, exactly
+///   one `meta/Policy@1` node is created with that policy definition.
+/// - If `policy` is `Some(p)` and a live `meta/Policy` node **already exists**, the
+///   create op is automatically rewritten as an update op so the graph carries exactly
+///   one policy node at all times (deduplication by prior-revision chain).
+/// - If `policy` is `None`, **no** policy node is emitted — only the docs are
+///   compiled. This preserves the existing policy in the graph; a policy update
+///   must be explicit via `Some(policy)`.
+///
+/// `by` is the principal name whose keypair signs the changeset.
+pub fn install_package(
+    graph: &Graph,
+    docs: &[(String, Value)],
+    policy: Option<&Value>,
+    by: &str,
+) -> Result<Admission, AllodError> {
+    let schema_ops = install_package_ops(graph, docs, policy)?;
     crate::ops::commit(
         graph,
         by,

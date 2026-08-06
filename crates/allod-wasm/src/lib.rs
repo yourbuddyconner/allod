@@ -291,6 +291,29 @@ impl AllodGraph {
 
     // ---- Read-only methods --------------------------------------------------
 
+    /// Build the ops vector for a policy install without signing or committing.
+    ///
+    /// Parses `policy_yaml`, calls `install_package_ops` with an empty doc set and the
+    /// parsed policy, and returns the ops as a JS array of plain objects.
+    ///
+    /// Pair with `commit_payload(author, intent, ops, key_id)` + `commit_signed` for
+    /// host-managed keys (e.g. XDG file or macOS Keychain). The returned ops are
+    /// identical to those that `install_policy` would commit, including the
+    /// create-to-update dedup rewrite when a live `meta/Policy` node already exists.
+    pub fn install_policy_ops(&self, policy_yaml: String) -> Result<JsValue, JsValue> {
+        let policy: serde_yaml::Value =
+            serde_yaml::from_str(&policy_yaml).map_err(|e| err(e))?;
+        let ops =
+            allod_graph::flows::install_package_ops(&self.graph, &[], Some(&policy))
+                .map_err(err)?;
+        // Return as a JS array of plain objects.
+        let arr = Array::new();
+        for op in &ops {
+            arr.push(&yaml_to_js(op)?);
+        }
+        Ok(arr.into())
+    }
+
     pub fn proposals(&self) -> Result<JsValue, JsValue> {
         let res = allod_graph::flows::proposals(&self.graph).map_err(err)?;
         to_js(&res)
