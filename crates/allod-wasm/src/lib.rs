@@ -575,19 +575,34 @@ impl AllodGraph {
 
     /// Phase 1 (read-only): build the changeset without signing.
     /// Returns `{ changeset, hash }`. The `changeset` has no `signature` field yet.
+    ///
+    /// `key_id`: when the private key is managed by the host (e.g. an XDG key
+    /// file or macOS Keychain), the host knows the key record and must pass its
+    /// `key_id` here. When `None`, the graph's local key store is consulted
+    /// instead (the original behaviour for native callers).
     pub fn commit_payload(
         &self,
         author: String,
         intent: String,
         ops: JsValue,
+        key_id: Option<String>,
     ) -> Result<JsValue, JsValue> {
         let ops_vec = js_array_to_yaml_vec(ops)?;
-        let (cs, hash) = allod_graph::ops::build_changeset_unsigned(
-            &self.graph,
-            &author,
-            &intent,
-            ops_vec,
-        )
+        let (cs, hash) = match key_id {
+            Some(kid) => allod_graph::ops::build_changeset_unsigned_with_key(
+                &self.graph,
+                &author,
+                &kid,
+                &intent,
+                ops_vec,
+            ),
+            None => allod_graph::ops::build_changeset_unsigned(
+                &self.graph,
+                &author,
+                &intent,
+                ops_vec,
+            ),
+        }
         .map_err(err)?;
         let mut map = serde_yaml::Mapping::new();
         map.insert(serde_yaml::Value::String("changeset".into()), cs);

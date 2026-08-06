@@ -457,6 +457,89 @@ mod tests {
         let _ = (cs_unsigned, hash_unsigned, hash_full);
     }
 
+    /// `build_changeset_unsigned_with_key` produces the same changeset body as the
+    /// signer-resolution path when the same key_id is supplied; and it succeeds on a
+    /// graph whose author has NO local key registered (host-managed key scenario).
+    #[test]
+    fn build_changeset_unsigned_with_key_matches_signer_path_and_works_without_local_key() {
+        let meta_op = create_meta_node_op("meta-wk-1", "WithKeyWidget", "myapp");
+        let (cs0, hash0) = raw_changeset(None, vec![meta_op]);
+
+        // Graph that has a local key (control path).
+        let graph_with_key = Graph::with_store(Box::new(MemStore::new()));
+        graph_with_key.write_meta("test-with-key", &[]).unwrap();
+        graph_with_key.append_changeset(&cs0, &hash0, None).unwrap();
+
+        let kp = Keypair::generate("wk-author");
+        graph_with_key.save_key(&kp).unwrap();
+        let known_key_id = kp.key_id();
+
+        let op1 = create_meta_node_op("meta-wk-op1", "WK1", "myapp");
+        let op2 = create_meta_node_op("meta-wk-op2", "WK2", "myapp");
+
+        // Control: build via signer resolution.
+        let (cs_via_signer, hash_via_signer) =
+            build_changeset_unsigned(&graph_with_key, "wk-author", "wk intent", vec![op1.clone()])
+                .expect("signer path must succeed");
+
+        // Variant: build via explicit key_id (same graph, same author, same op).
+        let (cs_via_key, hash_via_key) = build_changeset_unsigned_with_key(
+            &graph_with_key,
+            "wk-author",
+            &known_key_id,
+            "wk intent",
+            vec![op1.clone()],
+        )
+        .expect("with_key path must succeed");
+
+        // Both should produce the same hash (identical content, same timestamp window —
+        // timestamps may differ by a second so compare structural fields instead).
+        let author_key_signer = cs_via_signer
+            .get("author")
+            .and_then(|a| a.get("key"))
+            .and_then(|v| v.as_str())
+            .expect("author.key must be set via signer path");
+        let author_key_explicit = cs_via_key
+            .get("author")
+            .and_then(|a| a.get("key"))
+            .and_then(|v| v.as_str())
+            .expect("author.key must be set via with_key path");
+
+        assert_eq!(
+            author_key_signer, author_key_explicit,
+            "author.key must be identical regardless of path"
+        );
+        assert_eq!(author_key_explicit, known_key_id, "key_id must land in author.key");
+        assert!(cs_via_key.get("signature").is_none(), "unsigned cs must have no signature");
+        assert!(cs_via_key.get("hash").is_some(), "unsigned cs must have hash field");
+
+        // Host-managed key scenario: a graph with NO local key registered must succeed.
+        let graph_no_key = Graph::with_store(Box::new(MemStore::new()));
+        graph_no_key.write_meta("test-no-key", &[]).unwrap();
+        graph_no_key.append_changeset(&cs0, &hash0, None).unwrap();
+        // Do NOT save a key — simulate host-managed key.
+
+        let op3 = create_meta_node_op("meta-wk-op3", "WK3", "myapp");
+        let (cs_host, _hash_host) = build_changeset_unsigned_with_key(
+            &graph_no_key,
+            "host-author",
+            &known_key_id,
+            "host intent",
+            vec![op3],
+        )
+        .expect("with_key path must succeed even without a local key");
+
+        assert_eq!(
+            cs_host.get("author").and_then(|a| a.get("key")).and_then(|v| v.as_str()),
+            Some(known_key_id.as_str()),
+            "host-supplied key_id must be in author.key"
+        );
+        assert!(cs_host.get("signature").is_none());
+
+        // Suppress unused warnings.
+        let _ = (cs_via_signer, hash_via_signer, hash_via_key, op2);
+    }
+
     /// Parity: `envelope_payload_parts` is deterministic and `attach_envelope_signature`
     /// produces a correctly-shaped envelope (same invariants as `signed_envelope`).
     /// Since `signed_envelope` now delegates to these two helpers, this also pins
@@ -508,7 +591,24 @@ pub fn build_changeset_unsigned(
 ) -> Result<(Value, String), AllodError> {
     let signer = graph.signer(author_name).map_err(AllodError::from)?;
     let key_id = signer.key_id().map_err(AllodError::from)?;
-    build_changeset_body(graph, author_name, &key_id, intent, ops)
+    build_changeset_unsigned_with_key(graph, author_name, &key_id, intent, ops)
+}
+
+/// Build a changeset without signing, using a caller-supplied `key_id`.
+///
+/// This skips signer resolution entirely. Use this when the private key is
+/// host-managed (e.g. XDG file or macOS Keychain in a WASM embedding): the
+/// host necessarily holds the key record and therefore knows its `key_id`.
+/// The `key_id` is embedded in the changeset body (`author.key`) so the
+/// verifier can locate the public key. Returns `(cs_without_signature, hash)`.
+pub fn build_changeset_unsigned_with_key(
+    graph: &Graph,
+    author_name: &str,
+    key_id: &str,
+    intent: &str,
+    ops: Vec<Value>,
+) -> Result<(Value, String), AllodError> {
+    build_changeset_body(graph, author_name, key_id, intent, ops)
 }
 
 /// Attach a top-level `signature` field to a changeset that was built without one.
