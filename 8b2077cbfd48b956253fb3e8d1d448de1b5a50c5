@@ -1,0 +1,10 @@
+decisions:
+  - deciders:
+      - principal: principal:conner
+        signature: >-
+          sig:ed25519:b6a4fdb0075549608c46584f74f92faa801fa475b2573d14a15a17e19fb311d6ab596e678a1e13138a1fc85976e5fb7a715f723a9321ecdda1a19abec58afd04
+    kind: decision-record
+    policy_context: sha256:14628b4970680c1460e05ce47da2145cdfcea976e8ebc91b6ffb244f0b365902
+    subject: git:8b2077cbfd48b956253fb3e8d1d448de1b5a50c5
+    timestamp: '2026-08-06T02:51:00Z'
+    verdict: approve
